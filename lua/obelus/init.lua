@@ -116,22 +116,33 @@ end
 
 ---Set the engagement modality (session override, survives re-setup()) and repaint.
 ---@param mode "inline"|"sidebar"
-function M.set_engage(mode)
-  config.ui.engage = mode
+function M.set_mode(mode)
+  config.ui.mode = mode
   render.render_all()
   vim.notify("obelus: " .. mode .. " mode", vim.log.levels.INFO)
 end
 
 ---Toggle between inline and sidebar engagement.
-function M.toggle_engage()
-  M.set_engage(config.engage() == "sidebar" and "inline" or "sidebar")
+function M.toggle_mode()
+  M.set_mode(config.mode() == "sidebar" and "inline" or "sidebar")
+end
+
+---Toggle the keybind hint footers (session override, survives re-setup()) and
+---repaint every surface (bands, sidebar/popup, compose) so they appear/disappear live.
+function M.toggle_hints()
+  config.ui.hints = not render.hints_shown()
+  pcall(function()
+    require("obelus.panel").refresh()
+  end)
+  render.render_all()
+  vim.notify("obelus: keybind hints " .. (config.ui.hints and "shown" or "hidden"), vim.log.levels.INFO)
 end
 
 ---Reply to the comment under the cursor in whichever modality is active.
 function M.reply_here()
   local panel = require("obelus.panel")
   local c = render.at_cursor()
-  if config.engage() == "sidebar" then
+  if config.mode() == "sidebar" then
     if not c then
       return M.open_chat() -- nothing under the cursor: just open the navigator
     end
@@ -320,9 +331,9 @@ local function commands()
 
   cmd("ObelusMode", function(a)
     if a.args == "inline" or a.args == "sidebar" then
-      M.set_engage(a.args)
+      M.set_mode(a.args)
     else
-      M.toggle_engage()
+      M.toggle_mode()
     end
   end, {
     nargs = "?",
@@ -331,6 +342,10 @@ local function commands()
     end,
     desc = "obelus: toggle/set engagement mode (inline|sidebar)",
   })
+
+  cmd("ObelusHints", function()
+    M.toggle_hints()
+  end, { desc = "obelus: toggle keybind hint footers" })
 end
 
 -- Declarative keymap spec: one row per default mapping (lhs = keys.prefix .. suffix).
@@ -447,9 +462,17 @@ local MAPSPEC = {
     suffix = "m",
     modes = "n",
     rhs = function()
-      M.toggle_engage()
+      M.toggle_mode()
     end,
     desc = "obelus: toggle inline/sidebar mode",
+  },
+  {
+    suffix = "?",
+    modes = "n",
+    rhs = function()
+      M.toggle_hints()
+    end,
+    desc = "obelus: toggle keybind hints",
   },
   {
     suffix = "o",
@@ -742,12 +765,23 @@ local function whichkey()
   )
 
   add("m", function()
-    M.toggle_engage()
+    M.toggle_mode()
   end, function()
-    return "mode: " .. config.engage()
+    return "mode: " .. config.mode()
   end, function()
-    return sw(config.engage() ~= "sidebar")
+    return sw(config.mode() ~= "sidebar")
   end)
+
+  add(
+    "?",
+    function()
+      M.toggle_hints()
+    end,
+    "toggle keybind hints",
+    function()
+      return sw(render.hints_shown())
+    end
+  )
 
   add("G", function()
     M.tag_mode()

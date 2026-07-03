@@ -40,15 +40,15 @@ T.it("set_renderer survives a re-run of setup() (e.g. a plugin manager reload)",
   T.eq(config.ui.renderer, "treesitter")
 end)
 
-T.it("toggle_engage / toggle_band_style / toggle_resolved survive a re-run of setup()", function()
+T.it("toggle_mode / toggle_band_style / toggle_resolved survive a re-run of setup()", function()
   local ctx = T.fresh()
   local obelus = require("obelus")
   local render = require("obelus.render")
   local config = require("obelus.config")
 
-  T.eq(config.engage(), "inline")
-  obelus.toggle_engage()
-  T.eq(config.engage(), "sidebar")
+  T.eq(config.mode(), "inline")
+  obelus.toggle_mode()
+  T.eq(config.mode(), "sidebar")
 
   local style_before = render.band_style()
   render.toggle_band_style()
@@ -62,9 +62,24 @@ T.it("toggle_engage / toggle_band_style / toggle_resolved survive a re-run of se
 
   obelus.setup({ root = ctx.root, persist = { backend = "data", auto = false } })
 
-  T.eq(config.engage(), "sidebar")
+  T.eq(config.mode(), "sidebar")
   T.eq(render.band_style(), style_after)
   T.eq(render.resolved_shown(), resolved_after)
+end)
+
+T.it("toggle_hints survives a re-run of setup()", function()
+  local ctx = T.fresh()
+  local obelus = require("obelus")
+  local render = require("obelus.render")
+
+  local hints_before = render.hints_shown()
+  obelus.toggle_hints()
+  local hints_after = render.hints_shown()
+  T.eq(hints_after, not hints_before)
+
+  obelus.setup({ root = ctx.root, persist = { backend = "data", auto = false } })
+
+  T.eq(render.hints_shown(), hints_after)
 end)
 
 T.it("open_thread (builtin) opens the chat with a docked reply box", function()

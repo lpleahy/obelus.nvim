@@ -40,10 +40,10 @@ T.it("typo'd render.renderer resets to the default (nil/auto)", function()
   T.is_nil(config.options.render.renderer)
 end)
 
-T.it("typo'd engage resets to the default", function()
+T.it("typo'd mode resets to the default", function()
   local config = require("obelus.config")
-  config.setup({ engage = "side" })
-  T.eq(config.options.engage, "inline")
+  config.setup({ mode = "side" })
+  T.eq(config.options.mode, "inline")
 end)
 
 T.it("typo'd transport.batch.mode resets to the default", function()
@@ -67,23 +67,31 @@ T.it("render.bands = false normalizes to { enabled = false, ... } and bands.band
   T.eq(render.bands_on(), false)
 end)
 
-T.it("render.hints = false normalizes to { chat = false, compose = false }", function()
+T.it("render.hints = false stays the boolean false", function()
   local config = require("obelus.config")
   config.setup({ render = { hints = false } })
-  T.eq(config.options.render.hints, { chat = false, compose = false })
+  T.eq(config.options.render.hints, false)
 end)
 
--- MIGRATION: render.thread (deprecated) merges into render.bands; the user's
--- thread values WIN over bands' own defaults.
-
-T.it("render.thread shim: values land in render.bands", function()
+T.it("render.hints = true stays the boolean true", function()
   local config = require("obelus.config")
-  config.setup({ render = { thread = { markdown = false, max_height = 12 } } })
-  T.is_nil(config.options.render.thread)
-  T.eq(config.options.render.bands.markdown, false)
-  T.eq(config.options.render.bands.max_height, 12)
-  -- untouched bands keys keep their own defaults
-  T.eq(config.options.render.bands.style, "popup")
+  config.setup({ render = { hints = true } })
+  T.eq(config.options.render.hints, true)
+end)
+
+-- MIGRATION: render.hints used to be a { chat, compose } table; a user-passed table
+-- coerces to a single boolean (true if ANY sub-value was true) with a one-time warning.
+
+T.it("render.hints = { chat = true, compose = false } (old shape) coerces to true", function()
+  local config = require("obelus.config")
+  config.setup({ render = { hints = { chat = true, compose = false } } })
+  T.eq(config.options.render.hints, true)
+end)
+
+T.it("render.hints = { chat = false, compose = false } (old shape) coerces to false", function()
+  local config = require("obelus.config")
+  config.setup({ render = { hints = { chat = false, compose = false } } })
+  T.eq(config.options.render.hints, false)
 end)
 
 T.it("scalar garbage where tables belong never crashes setup (render = true, transport = 0)", function()
@@ -94,9 +102,54 @@ T.it("scalar garbage where tables belong never crashes setup (render = true, tra
   T.eq(o.render.bands.enabled, true)
 end)
 
-T.it("render.thread shim: an EXPLICIT render.bands key beats a leftover thread key", function()
-  local ctx = T.fresh({ render = { bands = { markdown = false }, thread = { markdown = true, max_height = 5 } } })
-  local b = ctx.config.options.render.bands
-  T.eq(b.markdown, false, "the current-API bands.markdown wins over the deprecated thread.markdown")
-  T.eq(b.max_height, 5, "thread keys the user did NOT set in bands still migrate")
+-- CLEAN BREAK: removed keys are ignored (new defaults land instead) and warned about
+-- once — no migration, unlike the false-table/hints shims above.
+
+T.it("removed keys are ignored: engage, render.signs, transport.cli.model", function()
+  local config = require("obelus.config")
+  config.setup({
+    engage = "sidebar",
+    render = { signs = false },
+    transport = { cli = { model = "gpt-x" } },
+  })
+  T.eq(config.options.mode, "inline", "engage is ignored; mode keeps its default")
+  T.eq(config.options.render.annotations.signs, true, "render.signs is ignored; annotations.signs keeps its default")
+  T.is_nil(config.options.transport.cli.models.send, "transport.cli.model is ignored")
+end)
+
+T.it("removed keys are ignored: render.thread, render.markview, cli.fast_model/batch_model", function()
+  local config = require("obelus.config")
+  config.setup({
+    render = { thread = { markdown = false, max_height = 12 }, markview = false },
+    transport = { cli = { fast_model = "a", batch_model = "b" } },
+  })
+  T.is_nil(config.options.render.thread, "render.thread is dropped, not migrated")
+  T.eq(config.options.render.bands.markdown, true, "render.bands is untouched by the ignored render.thread")
+  T.eq(config.options.render.bands.max_height, 0.6, "render.bands.max_height keeps its default")
+  T.is_nil(config.options.render.markview, "render.markview is dropped")
+  T.is_nil(config.options.transport.cli.models.fast, "transport.cli.fast_model is ignored")
+  T.is_nil(config.options.transport.cli.models.batch, "transport.cli.batch_model is ignored")
+end)
+
+T.it("render.annotations carries the new defaults (signs/sign/preview/etc.)", function()
+  local config = require("obelus.config")
+  config.setup({})
+  local a = config.options.render.annotations
+  T.eq(a.signs, true)
+  T.eq(a.sign, "▌")
+  T.eq(a.sign_hl, "DiagnosticInfo")
+  T.eq(a.preview, true)
+  T.eq(a.preview_hl, "Comment")
+  T.eq(a.preview_prefix, "  ▌ ")
+  T.eq(a.resolved_sign, "✓")
+  T.eq(a.show_resolved, false)
+end)
+
+T.it("transport.cli.models subtable merges: one key overridden, siblings default to nil", function()
+  local config = require("obelus.config")
+  config.setup({ transport = { cli = { models = { fast = "haiku" } } } })
+  local models = config.options.transport.cli.models
+  T.eq(models.fast, "haiku")
+  T.is_nil(models.send)
+  T.is_nil(models.batch)
 end)

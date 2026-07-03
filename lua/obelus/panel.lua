@@ -2,14 +2,14 @@ local store = require("obelus.store")
 local format = require("obelus.format")
 local nav_util = require("obelus.nav")
 
--- Use markview to render the conversation *content* as Markdown? render.markview
+-- Use markview to render the conversation *content* as Markdown? render.renderer
 -- can force on/off; default auto = on iff markview is installed. When on, obelus
 -- still draws the structure (bars/dividers/headers) but leaves the turn bodies raw
 -- so markview renders them (tables, syntax-highlighted code, links, …).
 -- Which markdown renderer drives the chat bodies: "markview" | "builtin" | "treesitter".
--- Resolves the `render.renderer` setting (with the deprecated `render.markview` bool and a
--- markview-if-installed auto-default), and downgrades "markview" to "builtin" when the plugin
--- isn't available so a bad config never leaves the chat unrendered.
+-- Resolves the `render.renderer` setting (with a markview-if-installed auto-default),
+-- and downgrades "markview" to "builtin" when the plugin isn't available so a bad
+-- config never leaves the chat unrendered.
 local function render_mode()
   local config = require("obelus.config")
   local cfg = config.options.render or {}
@@ -33,12 +33,7 @@ local function render_mode()
   elseif m == "markview" then
     return has_mv and "markview" or "builtin"
   end
-  -- deprecated boolean shim + auto default
-  if cfg.markview == false then
-    return "builtin"
-  elseif cfg.markview == true then
-    return has_mv and "markview" or "builtin"
-  end
+  -- nil == auto: markview if installed, else builtin
   return has_mv and "markview" or "builtin"
 end
 
@@ -137,9 +132,11 @@ local function transparent()
   return (require("obelus.config").options.render or {}).transparent == true
 end
 
--- keybind-hint visibility (off by default; see config.render.hints)
+-- keybind-hint visibility (off by default; see config.render.hints). Delegates to
+-- render.lua's M.hints_shown(), which resolves the config.ui.hints session toggle
+-- over options.render.hints — the single switch every hint footer reads.
 local function hints()
-  return (require("obelus.config").options.render or {}).hints or {}
+  return require("obelus.render").hints_shown()
 end
 
 -- append markview's per-window highlight remap to a base winhighlight (markview's
@@ -381,7 +378,7 @@ local function build_list()
     hdr = hdr .. "  ·  tagging #" .. store.active_tag
   end
   push(hdr, nil, { segs = { { 0, #hdr, "ObelusChrome" } } })
-  if hints().chat then
+  if hints() then
     local keys = "  <CR> open · gd jump · D send · x resolve · dd delete · q close"
     push(keys, nil, { segs = { { 0, #keys, "ObelusChrome" } } })
   end
@@ -546,7 +543,7 @@ local function build_chat(id, opts)
   if not is_float then
     push(string.format(" ◆ %s  %s  [%s]", format.relpath(c.file), format.range_label(c), status_of(c)))
   end
-  if not read_only and hints().chat then
+  if not read_only and hints() then
     local back = is_float and "q close" or "<BS> back"
     local resolve = status_of(c) == "resolved" and "o reopen" or "x resolve"
     push(" " .. back .. " · r reply · " .. resolve .. " · <CR> jump")
@@ -766,7 +763,7 @@ local function input_wincfg()
     title_pos = "left",
     zindex = 60, -- above the chat float so it never renders behind it
   }
-  if hints().chat then -- footer + footer_pos must be set together (or neither)
+  if hints() then -- footer + footer_pos must be set together (or neither)
     cfg.footer = { { " ⏎ send · <C-s> save · <Tab> history · q close ", "ObelusThreadMeta" } }
     cfg.footer_pos = "right"
   end
@@ -1532,7 +1529,7 @@ function M.jump_to(id)
 end
 
 local function nav(id)
-  if require("obelus.config").engage() == "inline" then
+  if require("obelus.config").mode() == "inline" then
     M.jump_to(id)
   else
     M.open_thread(id)

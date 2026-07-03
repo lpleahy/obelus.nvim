@@ -32,7 +32,7 @@ end
 
 -- Are inline bands on for this buffer? Per-buffer override wins; else config default.
 local function bands_enabled(bufnr)
-  if config.engage() ~= "inline" then
+  if config.mode() ~= "inline" then
     return false -- sidebar mode: chat lives in the sidebar, not inline bands
   end
   if band_override[bufnr] ~= nil then
@@ -77,7 +77,7 @@ function M.resolved_shown()
   if config.ui.show_resolved ~= nil then
     return config.ui.show_resolved
   end
-  return config.options.render.show_resolved == true
+  return config.options.render.annotations.show_resolved == true
 end
 
 function M.toggle_resolved()
@@ -86,12 +86,24 @@ function M.toggle_resolved()
   vim.notify("obelus: resolved comments " .. (config.ui.show_resolved and "shown" or "hidden"), vim.log.levels.INFO)
 end
 
+-- Effective keybind-hint visibility: config.ui.hints (the :ObelusHints / <prefix>?
+-- session toggle; nil = never toggled) overrides options.render.hints. One switch for
+-- every hint footer (the sidebar/popup keybind line, the docked reply box's footer,
+-- the compose footer, the inline band's paginated tips) — see config.lua's comment.
+function M.hints_shown()
+  if config.ui.hints ~= nil then
+    return config.ui.hints
+  end
+  return config.options.render.hints == true
+end
+
 ---Place (or update) the extmark for a single comment in `bufnr`.
 function M.place(bufnr, c)
   if not display_enabled(bufnr) then
     return
   end
   local r = config.options.render
+  local a = r.annotations or {}
   local total = vim.api.nvim_buf_line_count(bufnr)
   local line0 = c.range.sl - 1
   if line0 < 0 or line0 >= total then
@@ -101,7 +113,7 @@ function M.place(bufnr, c)
   if c.status == "resolved" and not M.resolved_shown() then
     local sok, sid = pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, line0, 0, {
       id = c.extmark_id,
-      sign_text = r.resolved_sign or "✓",
+      sign_text = a.resolved_sign or "✓",
       sign_hl_group = "ObelusReplyHeader",
     })
     if sok then
@@ -113,15 +125,15 @@ function M.place(bufnr, c)
   local charwise = c.kind == "char" and c.range.sc and c.range.ec
 
   local opts = { id = c.extmark_id }
-  if r.signs then
-    opts.sign_text = r.sign_text
-    opts.sign_hl_group = r.sign_hl
+  if a.signs then
+    opts.sign_text = a.sign
+    opts.sign_hl_group = a.sign_hl
   end
   -- eol preview only in inline mode with bands off; in sidebar mode the chat
   -- lives in the sidebar, so don't ghost the file
-  if r.virt_text and config.engage() == "inline" and not bands_enabled(bufnr) then
+  if a.preview and config.mode() == "inline" and not bands_enabled(bufnr) then
     local first = vim.split(c.comment or "", "\n")[1] or ""
-    opts.virt_text = { { (r.virt_text_prefix or "  ▌ ") .. first, r.virt_text_hl } }
+    opts.virt_text = { { (a.preview_prefix or "  ▌ ") .. first, a.preview_hl } }
     opts.virt_text_pos = "eol"
   end
   -- mark the WHOLE commented region: a precise char span for charwise, a line
@@ -146,9 +158,9 @@ function M.place(bufnr, c)
     if not charwise then
       lopts.line_hl_group = "ObelusThreadBg"
     end
-    if r.signs then
-      lopts.sign_text = r.sign_text
-      lopts.sign_hl_group = r.sign_hl
+    if a.signs then
+      lopts.sign_text = a.sign
+      lopts.sign_hl_group = a.sign_hl
     end
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, l, 0, lopts)
   end
@@ -371,9 +383,9 @@ local function cap_rows(rows, win, id)
   local function ind(text)
     return { { text, "ObelusChrome" } }
   end
-  -- the keybind tips are opt-in (config.render.hints.chat); off by default we show
+  -- the keybind tips are opt-in (config.render.hints); off by default we show
   -- just a minimal "⋯ N above/below" count so you still know the band is paginated
-  local hints_on = ((config.options.render or {}).hints or {}).chat
+  local hints_on = M.hints_shown()
   local function tip(label, keys)
     return ind(hints_on and (label .. " · " .. keys .. " ") or (label .. " "))
   end
@@ -719,7 +731,7 @@ function M.compose(opts)
   wcfg.border = "rounded"
   wcfg.title = { { " ▎ " .. (opts.title or "you") .. " ", "ObelusInputHeader" } }
   wcfg.title_pos = "left"
-  if ((config.options.render or {}).hints or {}).compose then
+  if M.hints_shown() then
     wcfg.footer = { { " ⏎ send · <C-s> save · <Esc> cancel ", "ObelusThreadMeta" } }
     wcfg.footer_pos = "right"
   end

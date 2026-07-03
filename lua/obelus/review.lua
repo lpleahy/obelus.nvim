@@ -61,7 +61,8 @@ function M.submit(name, opts)
   opts = opts or {}
   if opts.model == nil then
     local cli = config.options.transport.cli or {}
-    opts.model = cli.batch_model or cli.model
+    local models = cli.models or {}
+    opts.model = models.batch or models.send
   end
   local bc = config.options.transport.batch
   if not name and bc and bc.enabled then
@@ -216,7 +217,7 @@ end)
 M.busy = jobs.busy
 
 -- Add a follow-up user turn and continue the agent conversation (--resume).
--- mode: "send" (default → cli.model) | "fast" (→ cli.fast_model, falling back to model)
+-- mode: "send" (default → cli.models.send) | "fast" (→ cli.models.fast, falling back to send)
 local function do_respond(c, text, mode)
   if M.busy(c.id) then
     return vim.notify("obelus: the agent is still replying — wait for it to finish", vim.log.levels.WARN)
@@ -227,7 +228,8 @@ local function do_respond(c, text, mode)
   render.render_all()
   require("obelus.panel").on_send(c.id) -- modal popup/sidebar: re-arm its auto-scroll
   local cli = config.options.transport.cli or {}
-  local model = (mode == "fast") and (cli.fast_model or cli.model) or cli.model
+  local models = cli.models or {}
+  local model = (mode == "fast") and (models.fast or models.send) or models.send
   -- transport.submit pcalls the backend and RETURNS FALSE on failure (unknown
   -- transport name, backend threw) — and this pcall is belt-and-braces for anything
   -- thrown before that catch. Either way the send never started: unstick the panel's

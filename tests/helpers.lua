@@ -96,10 +96,10 @@ function H.fresh(opts)
   require("obelus.panel")._timing.fill_throttle = 160
   require("obelus.panel")._timing.preview_settle = 180
   require("obelus.progress")._timing.tick = 100
-  -- session UI toggles (renderer/engage/band_style/show_resolved) now SURVIVE
+  -- session UI toggles (renderer/mode/band_style/show_resolved/hints) now SURVIVE
   -- obelus.setup() by design (config surface refactor) — reset them here instead,
-  -- so a prior spec's toggle_engage()/set_renderer()/etc. can't leak into this one.
-  require("obelus.config").ui = { renderer = nil, engage = nil, band_style = nil, show_resolved = nil }
+  -- so a prior spec's toggle_mode()/set_renderer()/etc. can't leak into this one.
+  require("obelus.config").ui = { renderer = nil, mode = nil, band_style = nil, show_resolved = nil, hints = nil }
   local root = vim.fn.tempname()
   vim.fn.mkdir(root, "p")
   local obelus = require("obelus")

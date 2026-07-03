@@ -45,6 +45,7 @@ also has an `:Obelus*` command.
 | `oz` | Pin/collapse the band at cursor |
 | `oJ` / `oK` | Scroll the thread at cursor down / up |
 | `om` | Toggle inline ↔ sidebar |
+| `o?` | Toggle keybind hint footers |
 | `ox` | Clear all threads |
 | `<A-d>` / `<A-u>` | Scroll a long inline band in place (global default; `keys.band_scroll`) |
 
@@ -66,8 +67,9 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | `open_chat(id?)` | Open the sidebar for a thread (or the navigator list) |
 | `reply_here()` | Reply to the thread at cursor in the active modality |
 | `quick_reply(id?)` | Reply via the small inline compose float |
-| `set_engage(mode)` / `toggle_engage()` | Set/toggle `"inline"` \| `"sidebar"` |
+| `set_mode(mode)` / `toggle_mode()` | Set/toggle `"inline"` \| `"sidebar"` |
 | `set_renderer(mode?)` | Set/cycle the chat markdown renderer |
+| `toggle_hints()` | Toggle the keybind hint footers |
 | `edit(id?)` / `delete(id?)` | Edit / delete a comment |
 | `submit(name?, opts?)` | Submit pending comments (batch or one-shot) |
 | `tag(id?, name?)` / `tag_mode(name?)` | Tag/untag a thread / sticky tagging mode |
@@ -85,12 +87,19 @@ Defaults are in [`lua/obelus/config.lua`](lua/obelus/config.lua).
 
 ```lua
 require("obelus").setup({
-  engage = "inline",                            -- "inline" | "sidebar"
+  mode = "inline",                              -- "inline" | "sidebar"
   persist = { backend = "data", auto = true },  -- "data" (out-of-repo) | "jsonl" (in-repo file)
+  render = {
+    hints = false,                               -- keybind hint footers everywhere; <leader>o? toggles
+    annotations = { signs = true, preview = true }, -- in-file gutter/eol decorations
+  },
   transport = {
     default = "sidekick",
     sidekick = { name = "crush" },
-    cli = { cmd = { "claude", "-p" } },          -- any headless command
+    cli = {
+      cmd = { "claude", "-p" },                  -- any headless command
+      models = { send = nil, fast = nil, batch = nil }, -- per send-mode --model overrides
+    },
   },
 })
 ```

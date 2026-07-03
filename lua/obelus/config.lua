@@ -9,7 +9,7 @@ M.defaults = {
   -- Engagement modality (one or the other — toggle with :ObelusMode):
   --   "inline"  — chat in the file via bands; the sidebar is a navigator
   --   "sidebar" — chat lives in the threads sidebar
-  engage = "inline",
+  mode = "inline",
 
   persist = {
     backend = "data", -- "data" (out-of-repo, keyed by project) | "jsonl" (in-repo file)
@@ -32,21 +32,25 @@ M.defaults = {
 
   render = {
     enabled = true,
-    signs = true,
-    virt_text = true,
-    sign_text = "▌",
-    sign_hl = "DiagnosticInfo",
-    virt_text_hl = "Comment",
-    virt_text_prefix = "  ▌ ",
-    show_resolved = false, -- hide resolved threads (just a gutter ✓); <leader>oh toggles
-    resolved_sign = "✓",
+    -- In-file gutter/eol decorations for a comment's range.
+    annotations = {
+      signs = true, -- gutter sign on every line of the range
+      sign = "▌", -- the gutter sign glyph
+      sign_hl = "DiagnosticInfo", -- gutter sign highlight group
+      preview = true, -- eol first-line preview text (inline mode, bands off only)
+      preview_hl = "Comment", -- eol preview highlight group
+      preview_prefix = "  ▌ ", -- eol preview glyph/prefix
+      resolved_sign = "✓", -- gutter sign for a hidden resolved comment
+      show_resolved = false, -- hide resolved threads (just the gutter sign); <leader>oh toggles
+    },
     winblend = 0, -- 0 = opaque floats; >0 (e.g. 12) = see-through popup/input/compose
     transparent = false, -- drop bubble backgrounds (NONE) everywhere; keep bars/dividers/text
     bar = "▎", -- left accent bar glyph (1 cell); e.g. "▌" or "█" for a thicker/bolder bar
-    -- Keybind hint footers in the chat surfaces. Off = cleaner (the keys still work).
-    --   chat    — the sidebar/popup keybind line + the docked reply box's footer
-    --   compose — the quick-reply composer's footer
-    hints = { chat = false, compose = true },
+    -- Keybind hint footers in the chat surfaces (the sidebar/popup keybind line, the
+    -- docked reply box's footer, and the quick-reply composer's footer) — ONE switch
+    -- for all of them. Off = cleaner (the keys still work). Toggle live with
+    -- <prefix>? / :ObelusHints / obelus.toggle_hints().
+    hints = false,
     -- How the docked reply box behaves as you scroll the chat output:
     --   "pinned" — floats at the bottom of the view at all times (type while you read
     --              back through history). Its accent bar dims while you're scrolled up
@@ -61,7 +65,6 @@ M.defaults = {
     --   "treesitter" — raw Markdown + treesitter syntax highlighting (real lines, no conceal)
     -- nil = auto: markview if installed, else builtin.
     renderer = nil,
-    -- markview = nil, -- DEPRECATED (use `renderer`): nil auto | true → markview | false → builtin.
 
     -- Inline thread bands: how a comment's conversation shows at its spot in the
     -- buffer (native, collapsible review view — either a rooted hover popup or a
@@ -112,9 +115,11 @@ M.defaults = {
       stdin = false, -- true => pipe the prompt on stdin instead of as an arg
       -- Per send-mode models (nil = whatever the cmd / account default is). obelus
       -- passes `--model` itself, so DON'T also bake one into `cmd`.
-      model = nil, -- normal chat reply  (<CR> in the reply box)  — your "harder" model
-      fast_model = nil, -- "send fast"     (<M-CR> in the reply box) — a quicker/cheaper model
-      batch_model = nil, -- the batch submit (<prefix>s) — falls back to `model` when nil
+      models = {
+        send = nil, -- normal chat reply  (<CR> in the reply box)  — your "harder" model
+        fast = nil, -- "send fast"     (<M-CR> in the reply box) — a quicker/cheaper model
+        batch = nil, -- the batch submit (<prefix>s) — falls back to `send` when nil
+      },
     },
     -- Continuable batch conversations: send related comments to ONE agent and keep
     -- talking to it across rounds (shared context). Only the session-capable transport
@@ -173,16 +178,16 @@ M.options = vim.deepcopy(M.defaults)
 -- re-running setup() (e.g. a plugin manager reload) never reverts a live toggle.
 -- nil = never toggled (fall through to options); set_renderer("auto") stores the
 -- string "auto" — an EXPLICIT auto that still overrides an options.render.renderer.
-M.ui = { renderer = nil, engage = nil, band_style = nil, show_resolved = nil }
+M.ui = { renderer = nil, mode = nil, band_style = nil, show_resolved = nil, hints = nil }
 
 ---Effective engagement modality: the session override if one was ever set
----(:ObelusMode / toggle_engage), else options.engage.
+---(:ObelusMode / toggle_mode), else options.mode.
 ---@return "inline"|"sidebar"
-function M.engage()
-  if M.ui.engage ~= nil then
-    return M.ui.engage
+function M.mode()
+  if M.ui.mode ~= nil then
+    return M.ui.mode
   end
-  return M.options.engage
+  return M.options.mode
 end
 
 -- Warn once per distinct bad value (path + value + allowed set both baked into the
@@ -225,6 +230,22 @@ local function enum(opts, key, path, allowed, default, allow_nil)
   end
 end
 
+-- Validate a boolean-typed field: anything other than `true`/`false` warns once and
+-- resets to `default`. render.hints used to be a { chat, compose } table —
+-- normalize_hints (below) coerces that shape to a boolean before this ever runs, so
+-- by the time validate() gets here only a genuinely bad value (a string, a number,
+-- some other stray table) trips this.
+local function boolean(opts, key, path, default)
+  local v = opts[key]
+  if type(v) ~= "boolean" then
+    vim.notify_once(
+      string.format("obelus: %s = %s is invalid (expected true|false) — using the default", path, vim.inspect(v)),
+      vim.log.levels.WARN
+    )
+    opts[key] = default
+  end
+end
+
 -- A scalar where a config TABLE belongs (e.g. `render = false`, `transport = 0`)
 -- would crash the normalize/validate passes below with an index error — restore the
 -- default subtable and warn once instead. `keys = false` is exempt (documented:
@@ -244,16 +265,16 @@ local function ensure_tables(o)
   ensure_table(o, "progress", "progress", M.defaults.progress)
   ensure_table(o, "transport", "transport", M.defaults.transport)
   ensure_table(o.transport, "batch", "transport.batch", M.defaults.transport.batch)
+  ensure_table(o.transport, "cli", "transport.cli", M.defaults.transport.cli)
+  ensure_table(o.transport.cli, "models", "transport.cli.models", M.defaults.transport.cli.models)
   if o.render.bands ~= false then -- false is the documented all-off shorthand (normalized below)
     ensure_table(o.render, "bands", "render.bands", M.defaults.render.bands)
   end
-  if o.render.hints ~= false then
-    ensure_table(o.render, "hints", "render.hints", M.defaults.render.hints)
-  end
+  ensure_table(o.render, "annotations", "render.annotations", M.defaults.render.annotations)
   ensure_table(o.render, "colors", "render.colors", M.defaults.render.colors)
 end
 
--- render.bands/render.hints == false is a documented "all off" shorthand, but
+-- render.bands == false is a documented "all off" shorthand, but
 -- tbl_deep_extend("force", ...) REPLACES the whole subtable with the boolean `false`
 -- rather than merging — so `(cfg.bands or {}).enabled ~= false` at every call site
 -- silently reads an empty table and re-enables bands. Normalize false → the real
@@ -265,46 +286,91 @@ local function normalize_false_tables(o)
     -- disabled, and keeps re-enabling (bands.enabled = true) a one-key change.
     o.render.bands = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.render.bands), { enabled = false })
   end
-  if o.render.hints == false then
-    o.render.hints = { chat = false, compose = false }
+end
+
+-- MIGRATION: render.hints was a { chat, compose } table; it's now a single boolean
+-- (see config.defaults.render.hints). A user-passed table coerces to `true` if ANY of
+-- its values was true, else `false` — so a config that had SOME hints already on
+-- doesn't go fully silent. Runs after ensure_tables, so o.render is guaranteed a table.
+local function normalize_hints(o)
+  if type(o.render.hints) ~= "table" then
+    return
+  end
+  local any = false
+  for _, v in pairs(o.render.hints) do
+    if v == true then
+      any = true
+      break
+    end
+  end
+  vim.notify_once(
+    "obelus: render.hints is a single boolean now (was { chat = ..., compose = ... }) — using " .. tostring(any),
+    vim.log.levels.WARN
+  )
+  o.render.hints = any
+end
+
+-- One-time "removed — use X" warning per OLD key actually found in `raw_parent` (the
+-- user's RAW opts subtable — never the merged/normalized copy, so the warning fires
+-- on exactly what the user wrote). This is a clean break, not a migration: clears the
+-- stale key from `merged_parent` too, so `config.options` never carries old-shape
+-- leftovers forward — the value is fully ignored, not just unconsulted.
+local function warn_and_clear(raw_parent, merged_parent, key, msg)
+  if raw_parent and raw_parent[key] ~= nil then
+    vim.notify_once("obelus: " .. msg, vim.log.levels.WARN)
+    merged_parent[key] = nil
   end
 end
 
--- MIGRATION: render.thread (markdown/rules/max_width/max_height) merged into
--- render.bands. A user-passed `render.thread` table deep-extends into the already-
--- merged render.bands, so the user's thread values WIN over bands' defaults (same
--- precedent as the markview shim below). `render.thread` is retired after this —
--- render.lua and friends read render.bands exclusively.
-local function migrate_render_thread(o, opts)
-  -- read the RAW opts defensively: opts.render may be any scalar garbage here
-  -- (ensure_tables only repaired the MERGED copy, not the user's input table)
-  local raw = type(opts.render) == "table" and opts.render or {}
-  local thread = raw.thread
-  if type(thread) == "table" then
-    vim.notify_once(
-      "obelus: render.thread is deprecated — its keys (markdown/rules/max_width/max_height) moved into render.bands",
-      vim.log.levels.WARN
-    )
-    -- precedence: thread values beat bands DEFAULTS, but a user's EXPLICIT
-    -- render.bands keys beat a leftover render.thread (the current API wins) —
-    -- re-apply the raw bands table last.
-    local user_bands = type(raw.bands) == "table" and raw.bands or {}
-    o.render.bands = vim.tbl_deep_extend("force", o.render.bands, thread, user_bands)
-  end
-  o.render.thread = nil
-end
+-- Runs after ensure_tables, so merged.render / merged.transport.cli are guaranteed
+-- tables. Guards raw opts.render/opts.transport/opts.transport.cli with type checks
+-- (opts is unvalidated input, so any of them could be scalar garbage).
+local function warn_removed(opts, merged)
+  warn_and_clear(opts, merged, "engage", "engage is removed — use `mode` instead")
 
-local function warn_deprecated_markview(opts)
-  if type(opts.render) == "table" and opts.render.markview ~= nil then
-    vim.notify_once(
-      'obelus: render.markview is deprecated — use render.renderer = "markview"|"builtin"',
-      vim.log.levels.WARN
-    )
-  end
+  local r = type(opts.render) == "table" and opts.render or nil
+  local mr = merged.render
+  warn_and_clear(r, mr, "thread", "render.thread is removed — its keys merged into render.bands")
+  warn_and_clear(r, mr, "markview", 'render.markview is removed — use render.renderer = "markview"|"builtin"')
+  warn_and_clear(r, mr, "signs", "render.signs is removed — moved into render.annotations.signs")
+  warn_and_clear(r, mr, "sign_text", "render.sign_text is removed — moved into render.annotations.sign")
+  warn_and_clear(r, mr, "sign_hl", "render.sign_hl is removed — moved into render.annotations.sign_hl")
+  warn_and_clear(r, mr, "virt_text", "render.virt_text is removed — moved into render.annotations.preview")
+  warn_and_clear(r, mr, "virt_text_hl", "render.virt_text_hl is removed — moved into render.annotations.preview_hl")
+  warn_and_clear(
+    r,
+    mr,
+    "virt_text_prefix",
+    "render.virt_text_prefix is removed — moved into render.annotations.preview_prefix"
+  )
+  warn_and_clear(
+    r,
+    mr,
+    "resolved_sign",
+    "render.resolved_sign is removed — moved into render.annotations.resolved_sign"
+  )
+  warn_and_clear(
+    r,
+    mr,
+    "show_resolved",
+    "render.show_resolved is removed — moved into render.annotations.show_resolved"
+  )
+
+  local t = type(opts.transport) == "table" and opts.transport or nil
+  local cli = t and type(t.cli) == "table" and t.cli or nil
+  local mc = merged.transport.cli
+  warn_and_clear(cli, mc, "model", "transport.cli.model is removed — moved into transport.cli.models.send")
+  warn_and_clear(cli, mc, "fast_model", "transport.cli.fast_model is removed — moved into transport.cli.models.fast")
+  warn_and_clear(
+    cli,
+    mc,
+    "batch_model",
+    "transport.cli.batch_model is removed — moved into transport.cli.models.batch"
+  )
 end
 
 local function validate(o)
-  enum(o, "engage", "engage", { "inline", "sidebar" }, M.defaults.engage)
+  enum(o, "mode", "mode", { "inline", "sidebar" }, M.defaults.mode)
   enum(o.persist, "backend", "persist.backend", { "data", "jsonl" }, M.defaults.persist.backend)
   enum(o.view, "default", "view.default", { "buffer", "quickfix", "split" }, M.defaults.view.default)
   enum(
@@ -316,6 +382,7 @@ local function validate(o)
     true -- nil == auto: legal, not a typo
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
+  boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
   enum(o.render.bands, "style", "render.bands.style", { "popup", "inline" }, M.defaults.render.bands.style)
   enum(o.render.bands, "mode", "render.bands.mode", { "focus", "all" }, M.defaults.render.bands.mode)
   enum(
@@ -336,8 +403,8 @@ function M.setup(opts)
 
   ensure_tables(merged)
   normalize_false_tables(merged)
-  migrate_render_thread(merged, opts)
-  warn_deprecated_markview(opts)
+  normalize_hints(merged)
+  warn_removed(opts, merged)
   validate(merged)
 
   if type(merged.root) == "string" then
@@ -349,7 +416,7 @@ function M.setup(opts)
 
   M.options = merged
   -- M.ui is intentionally NOT reset here: session toggles (:ObelusRenderer,
-  -- :ObelusMode, band style, show-resolved) must survive a re-run of setup().
+  -- :ObelusMode, band style, show-resolved, hints) must survive a re-run of setup().
   return M.options
 end
 
