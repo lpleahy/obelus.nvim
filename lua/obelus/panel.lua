@@ -1113,6 +1113,37 @@ function M.render_info()
     end
     return n
   end
+  -- treesitter facts for the first fenced code line in `buf`: is the highlighter
+  -- attached, did the injected-language parse actually complete (captures exist),
+  -- and what would the screen paint there (the winhl-effective hl of the top
+  -- capture)? Distinguishes "parse never finished" from "parsed but painted grey".
+  local function ts_facts(buf)
+    if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+      return nil
+    end
+    local out = { highlighter_active = vim.treesitter.highlighter.active[buf] ~= nil }
+    local ok_p, parser = pcall(vim.treesitter.get_parser, buf, "markdown")
+    out.parser = ok_p and parser ~= nil
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local in_fence = false
+    for i, l in ipairs(lines) do
+      if l:match("^%s*```%w") then
+        in_fence = true
+      elseif in_fence and l:match("%S") then
+        out.fence_line = i - 1
+        local caps = {}
+        local ok_c, cs = pcall(vim.treesitter.get_captures_at_pos, buf, i - 1, math.max(#(l:match("^%s*") or ""), 1))
+        if ok_c then
+          for _, cap in ipairs(cs) do
+            caps[#caps + 1] = cap.capture .. "(" .. cap.lang .. ")"
+          end
+        end
+        out.fence_captures = caps
+        break
+      end
+    end
+    return out
+  end
   local function surface(label, thread_id, win, buf)
     local c = thread_id and require("obelus.store").get(thread_id)
     return {
@@ -1123,9 +1154,12 @@ function M.render_info()
       state_streaming = state.streaming or false,
       markview_marks = mvmarks(buf),
       conceallevel = (win and vim.api.nvim_win_is_valid(win)) and vim.wo[win].conceallevel or nil,
+      winhl = (win and vim.api.nvim_win_is_valid(win)) and vim.wo[win].winhighlight:sub(1, 120) or nil,
+      ts = ts_facts(buf),
     }
   end
   return {
+    nvim = tostring(vim.version()),
     render_mode = render_mode(),
     markview_loaded = (pcall(require, "markview.actions")),
     ui_renderer_override = config.ui.renderer,
