@@ -350,6 +350,10 @@ local function commands()
   cmd("ObelusPrompt", function()
     require("obelus.log").open_prompt()
   end, { desc = "obelus: show the last prompt sent to the agent (verbatim)" })
+
+  cmd("ObelusRenderInfo", function()
+    vim.print(require("obelus.panel").render_info())
+  end, { desc = "obelus: dump the renderer decision inputs for the chat/preview" })
 end
 
 -- Declarative keymap spec: one row per default mapping (lhs = keys.prefix .. suffix).
