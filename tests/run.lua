@@ -50,6 +50,7 @@ for _, spec in ipairs({
   "e2e",
   "panel",
   "mention",
+  "mention_completion",
   "markview",
 }) do
   local ok, err = pcall(require, spec .. "_spec")

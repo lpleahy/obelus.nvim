@@ -153,3 +153,38 @@ T.it("transport.cli.models subtable merges: one key overridden, siblings default
   T.is_nil(models.send)
   T.is_nil(models.batch)
 end)
+
+-- input.mention: false | true | { picker?, completion? } — true/table sugar
+-- normalizes into the expanded table; false is left alone (mention.attach()
+-- short-circuits on the bare boolean, so it never becomes a table).
+
+T.it("input.mention = true normalizes to the default table (picker + auto completion)", function()
+  local config = require("obelus.config")
+  config.setup({})
+  T.eq(config.options.input.mention, { picker = true, completion = "auto" })
+end)
+
+T.it("input.mention = false stays the bare boolean (disabled entirely)", function()
+  local config = require("obelus.config")
+  config.setup({ input = { mention = false } })
+  T.eq(config.options.input.mention, false)
+end)
+
+T.it('input.mention = { completion = "cmp" } merges over the defaults: picker stays true', function()
+  local config = require("obelus.config")
+  config.setup({ input = { mention = { completion = "cmp" } } })
+  T.eq(config.options.input.mention, { picker = true, completion = "cmp" })
+end)
+
+T.it('input.mention.completion typo resets to "auto"; .picker typo resets to true', function()
+  local config = require("obelus.config")
+  config.setup({ input = { mention = { completion = "codeium", picker = "yes" } } })
+  T.eq(config.options.input.mention.completion, "auto")
+  T.eq(config.options.input.mention.picker, true)
+end)
+
+T.it("input.mention = 3 (garbage) resets to the default table", function()
+  local config = require("obelus.config")
+  config.setup({ input = { mention = 3 } })
+  T.eq(config.options.input.mention, { picker = true, completion = "auto" })
+end)

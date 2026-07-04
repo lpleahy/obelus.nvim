@@ -149,8 +149,15 @@ M.defaults = {
 
   input = {
     -- "@" in an obelus input buffer (the docked reply box, the quick-reply
-    -- composer) opens a file picker (fzf-lua if installed, else vim.ui.select)
-    -- and inserts the picked file's project-relative path. Set false to disable.
+    -- composer): false disables it entirely; true (the default) is sugar for
+    -- the table below; a table overrides individual fields.
+    --   picker     — fall back to a file picker (fzf-lua if installed, else
+    --                 vim.ui.select) when no completion engine is active.
+    --   completion — "auto" (blink.cmp if installed, else nvim-cmp, else
+    --                 neither), "blink"/"cmp" to force one (warns once + falls
+    --                 back to the picker if that plugin isn't present), or
+    --                 false to never use a completion engine. When an engine
+    --                 IS active it owns "@" — the picker keymap is not bound.
     mention = true,
   },
 
@@ -168,6 +175,9 @@ M.defaults = {
 
 ---@class obelus.Config.Render
 ---@field bands obelus.Config.Render.Bands
+
+-- input.mention's expanded shape once normalized from the true|false|table sugar.
+local MENTION_DEFAULTS = { picker = true, completion = "auto" }
 
 ---@class obelus.Config.Render.Bands
 ---@field enabled boolean
@@ -199,13 +209,19 @@ end
 
 -- Warn once per distinct bad value (path + value + allowed set both baked into the
 -- message, so a different typo/path warns again but the same one doesn't spam).
+-- `allowed` may itself contain non-strings (e.g. input.mention.completion's
+-- `false`) — table.concat requires strings/numbers, so stringify first.
 local function warn_enum(path, given, allowed)
+  local shown = {}
+  for i, a in ipairs(allowed) do
+    shown[i] = tostring(a)
+  end
   vim.notify_once(
     string.format(
       "obelus: %s = %s is invalid (expected one of: %s) — using the default",
       path,
       vim.inspect(given),
-      table.concat(allowed, " | ")
+      table.concat(shown, " | ")
     ),
     vim.log.levels.WARN
   )
@@ -318,6 +334,35 @@ local function normalize_hints(o)
   o.render.hints = any
 end
 
+-- input.mention: false | true | { picker?, completion? }. Runs after ensure_tables
+-- (o.input is guaranteed a table by then). `false` is left alone — attach() short-
+-- circuits on it, so it never becomes a table. `true` expands to MENTION_DEFAULTS.
+-- A table merges over MENTION_DEFAULTS, so `{ completion = "cmp" }` still implies
+-- `picker = true`. Anything else (a number, a string, ...) warns once and resets to
+-- the default table, same "garbage in, defaults out" idiom as boolean()/enum().
+local function normalize_mention(o)
+  local v = o.input.mention
+  if v == false then
+    return
+  end
+  if v == true then
+    o.input.mention = vim.deepcopy(MENTION_DEFAULTS)
+    return
+  end
+  if type(v) == "table" then
+    o.input.mention = vim.tbl_deep_extend("force", vim.deepcopy(MENTION_DEFAULTS), v)
+    return
+  end
+  vim.notify_once(
+    string.format(
+      "obelus: input.mention = %s is invalid (expected false|true|table) — using the default",
+      vim.inspect(v)
+    ),
+    vim.log.levels.WARN
+  )
+  o.input.mention = vim.deepcopy(MENTION_DEFAULTS)
+end
+
 -- One-time "removed — use X" warning per OLD key actually found in `raw_parent` (the
 -- user's RAW opts subtable — never the merged/normalized copy, so the warning fires
 -- on exactly what the user wrote). This is a clean break, not a migration: clears the
@@ -391,7 +436,16 @@ local function validate(o)
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
   boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
-  boolean(o.input, "mention", "input.mention", M.defaults.input.mention)
+  if o.input.mention ~= false then
+    boolean(o.input.mention, "picker", "input.mention.picker", MENTION_DEFAULTS.picker)
+    enum(
+      o.input.mention,
+      "completion",
+      "input.mention.completion",
+      { "auto", "blink", "cmp", false },
+      MENTION_DEFAULTS.completion
+    )
+  end
   enum(o.render.bands, "style", "render.bands.style", { "popup", "inline" }, M.defaults.render.bands.style)
   enum(o.render.bands, "mode", "render.bands.mode", { "focus", "all" }, M.defaults.render.bands.mode)
   enum(
@@ -413,6 +467,7 @@ function M.setup(opts)
   ensure_tables(merged)
   normalize_false_tables(merged)
   normalize_hints(merged)
+  normalize_mention(merged)
   warn_removed(opts, merged)
   validate(merged)
 

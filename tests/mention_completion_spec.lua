@@ -1,0 +1,413 @@
+-- Completion-engine "@" mentions (blink.cmp / nvim-cmp), extending mention_spec.lua's
+-- picker coverage: the shared item core (M._at_token/M._items) in mention.lua, engine
+-- resolution + lazy registration in mention.attach(), and the mention_blink.lua /
+-- mention_cmp.lua adapters driven directly with synthetic engine contexts. The
+-- headless test env has no blink.cmp/nvim-cmp on rtp (see tests/run.lua) — engine
+-- resolution here always drives package.loaded fakes, never the real plugins, and
+-- every fake is torn down at the end of its own test (helpers.fresh() doesn't
+-- touch package.loaded).
+T.describe("mention_completion")
+
+local mention = require("obelus.mention")
+
+-- The buffer-local Lua-function callback mention.attach bound to "@" in insert
+-- mode, or nil if none is bound (same helper as mention_spec.lua's, duplicated —
+-- each spec file is its own chunk, no shared locals across them).
+local function at_callback(buf)
+  for _, km in ipairs(vim.api.nvim_buf_get_keymap(buf, "i")) do
+    if km.lhs == "@" then
+      return km.callback
+    end
+  end
+end
+
+-- A scratch buffer on obelus's input filetype — enough for attach()/enabled()
+-- checks; the heavier real-panel open_input() (mention_spec.lua) isn't needed
+-- when nothing here actually renders a picker or a completion menu.
+local function scratch_buf()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].filetype = mention.FILETYPE
+  return buf
+end
+
+-- ---------------------------------------------------------------------------
+-- M._at_token
+-- ---------------------------------------------------------------------------
+
+T.it("_at_token: a lone boundary @ has an empty prefix", function()
+  local at_col0, prefix = mention._at_token("@", 1)
+  T.eq(at_col0, 0)
+  T.eq(prefix, "")
+end)
+
+T.it("_at_token: a boundary @ with a partial path prefix", function()
+  local line = "@lua/ob"
+  local at_col0, prefix = mention._at_token(line, #line)
+  T.eq(at_col0, 0)
+  T.eq(prefix, "lua/ob")
+end)
+
+T.it("_at_token: a boundary @ mid-line (preceded by whitespace)", function()
+  local line = "see @lua/x.lua"
+  local at_col0, prefix = mention._at_token(line, #line)
+  T.eq(at_col0, 4)
+  T.eq(prefix, "lua/x.lua")
+end)
+
+T.it("_at_token: mid-word @ (foo@bar) is rejected", function()
+  local at_col0 = mention._at_token("foo@bar", 7)
+  T.is_nil(at_col0)
+end)
+
+T.it("_at_token: an @ earlier in the line, cursor past a space, is nil (the token already ended)", function()
+  local at_col0 = mention._at_token("@foo bar", 8)
+  T.is_nil(at_col0, "a space ends the token; the @ is out of scope")
+end)
+
+T.it("_at_token: no @ in the line at all is nil", function()
+  local at_col0 = mention._at_token("just plain text", 16)
+  T.is_nil(at_col0)
+end)
+
+T.it("_at_token: multibyte filename chars stay inside the token (the scan is byte-wise)", function()
+  -- %w alone is ASCII-only: without \128-\255 in PATH_CHAR the scan died on
+  -- the é's continuation byte and the menu closed for good mid-mention
+  local line = "@caf\195\169/x.lua"
+  local at_col0, prefix = mention._at_token(line, #line)
+  T.eq(at_col0, 0, "the @ is still reachable past a multibyte char")
+  T.eq(prefix, "caf\195\169/x.lua")
+  -- boundary rule still applies with multibyte BEFORE the @
+  local at2 = mention._at_token("\226\134\146 @lua", #"\226\134\146 @lua")
+  T.eq(at2, #"\226\134\146 ", "multibyte text before a space-boundary @ is fine")
+end)
+
+-- ---------------------------------------------------------------------------
+-- M._items caching
+-- ---------------------------------------------------------------------------
+
+T.it("_items: two calls within the TTL run the lister once; _invalidate forces a re-list", function()
+  local real_list_async = mention._list_files_async
+  local calls = 0
+  -- synchronous stub: _items serves the refreshed cache on the SAME call (the
+  -- real async path serves stale-then-fresh across keystrokes instead)
+  mention._list_files_async = function(_, cb)
+    calls = calls + 1
+    cb({ "a.lua", "b.lua" })
+  end
+  mention._invalidate()
+
+  local items1 = mention._items("/fake/root")
+  local items2 = mention._items("/fake/root")
+  T.eq(calls, 1, "cached — the second call didn't re-list")
+  T.eq(#items1, 2)
+  T.eq(items1[1], { label = "a.lua", kind = 17, filterText = "a.lua" })
+  T.eq(items2, items1, "the second call served the same cached items")
+
+  mention._invalidate()
+  mention._items("/fake/root")
+  T.eq(calls, 2, "_invalidate forced a fresh list")
+
+  mention._list_files_async = real_list_async
+  mention._invalidate()
+end)
+
+-- ---------------------------------------------------------------------------
+-- Engine resolution + lazy registration (package.loaded fakes; no real
+-- blink.cmp/nvim-cmp on rtp in this test env)
+-- ---------------------------------------------------------------------------
+
+-- Crash-safe fake scaffolding: a failed assertion mid-spec raises, and cleanup
+-- written at the tail of the closure would be SKIPPED — the leaked fake then
+-- corrupts every later engine-resolution spec in this process. pcall + rethrow.
+local function with_fakes(fakes, fn)
+  for name, mod in pairs(fakes) do
+    package.loaded[name] = mod
+  end
+  local ok, err = pcall(fn)
+  for name in pairs(fakes) do
+    package.loaded[name] = nil
+  end
+  mention._reset_engine()
+  if not ok then
+    error(err, 0)
+  end
+end
+
+T.it("engine resolution: blink present -> attach registers ONCE across two attaches, binds no @ keymap", function()
+  T.fresh({ input = { mention = { completion = "blink" } } })
+  mention._reset_engine()
+  local provider_calls, filetype_calls = 0, {}
+  with_fakes({
+    ["blink.cmp"] = {
+      add_source_provider = function(id, cfg)
+        provider_calls = provider_calls + 1
+        T.eq(id, "obelus")
+        T.eq(cfg.module, "obelus.mention_blink")
+      end,
+      add_filetype_source = function(ft, id)
+        filetype_calls[#filetype_calls + 1] = ft
+        T.eq(id, "obelus")
+      end,
+    },
+  }, function()
+    local buf1, buf2 = scratch_buf(), scratch_buf()
+    mention.attach(buf1)
+    mention.attach(buf2)
+
+    T.eq(provider_calls, 1, "add_source_provider called exactly once across both attaches")
+    T.eq(filetype_calls, { mention.FILETYPE }, "add_filetype_source called exactly once, for our filetype")
+    T.is_nil(at_callback(buf1), "no @ picker keymap — blink's menu owns @")
+    T.is_nil(at_callback(buf2), "no @ picker keymap on the second buffer either")
+    vim.api.nvim_buf_delete(buf1, { force = true })
+    vim.api.nvim_buf_delete(buf2, { force = true })
+  end)
+end)
+
+T.it("engine resolution: a provider already in blink's registry (obelus-only reload) counts as registered", function()
+  T.fresh({ input = { mention = { completion = "blink" } } })
+  mention._reset_engine()
+  with_fakes({
+    ["blink.cmp"] = {
+      -- a re-register would assert in real blink — the fake makes it LOUD
+      add_source_provider = function()
+        error("duplicate registration — must not be called")
+      end,
+      add_filetype_source = function()
+        error("must not be called")
+      end,
+    },
+    ["blink.cmp.config"] = { sources = { providers = { obelus = { module = "obelus.mention_blink" } } } },
+  }, function()
+    local buf = scratch_buf()
+    mention.attach(buf)
+    T.is_nil(at_callback(buf), "no picker keymap — the pre-registered blink source still owns @")
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+end)
+
+T.it("engine resolution: cmp present -> attach registers ONCE across two attaches, binds no @ keymap", function()
+  T.fresh({ input = { mention = { completion = "cmp" } } })
+  mention._reset_engine()
+  local register_calls, filetype_calls = 0, 0
+  with_fakes({
+    ["cmp"] = {
+      register_source = function(id, src)
+        register_calls = register_calls + 1
+        T.eq(id, "obelus")
+        T.ok(src.complete, "the registered source has complete()")
+      end,
+      setup = {
+        filetype = function(ft, opts)
+          filetype_calls = filetype_calls + 1
+          T.eq(ft, mention.FILETYPE)
+          T.eq(opts.sources, { { name = "obelus" } })
+        end,
+      },
+    },
+  }, function()
+    local buf1, buf2 = scratch_buf(), scratch_buf()
+    mention.attach(buf1)
+    mention.attach(buf2)
+
+    T.eq(register_calls, 1, "register_source called exactly once across both attaches")
+    T.eq(filetype_calls, 1, "setup.filetype called exactly once")
+    T.is_nil(at_callback(buf1), "no @ picker keymap — cmp's menu owns @")
+    T.is_nil(at_callback(buf2))
+    vim.api.nvim_buf_delete(buf1, { force = true })
+    vim.api.nvim_buf_delete(buf2, { force = true })
+  end)
+end)
+
+T.it('engine resolution: completion = "blink" with no blink installed warns ONCE, the picker binds', function()
+  T.fresh({ input = { mention = { completion = "blink" } } })
+  mention._reset_engine()
+  package.loaded["blink.cmp"] = nil -- genuinely absent in this test env either way
+
+  -- vim.notify_once is left REAL (it dedupes internally, forever, by exact msg
+  -- text — see :h vim.notify_once) so this actually exercises "warns once", not
+  -- a hand-rolled dedupe; only the underlying vim.notify is stubbed to count.
+  local warns = 0
+  local real_notify = vim.notify
+  vim.notify = function(msg, ...)
+    if msg:match("blink%.cmp isn't installed") then
+      warns = warns + 1
+    end
+    return real_notify(msg, ...)
+  end
+
+  local buf1, buf2 = scratch_buf(), scratch_buf()
+  mention.attach(buf1)
+  mention.attach(buf2)
+
+  vim.notify = real_notify
+  T.eq(warns, 1, "warned exactly once across two attaches")
+  T.ok(at_callback(buf1), "the @ picker keymap bound (fallback)")
+  T.ok(at_callback(buf2), "the @ picker keymap bound on the second buffer too")
+
+  mention._reset_engine()
+  vim.api.nvim_buf_delete(buf1, { force = true })
+  vim.api.nvim_buf_delete(buf2, { force = true })
+end)
+
+T.it("engine resolution: completion = false never engages an engine — the picker binds", function()
+  T.fresh({ input = { mention = { completion = false } } })
+  mention._reset_engine()
+  local buf = scratch_buf()
+  mention.attach(buf)
+  T.ok(at_callback(buf), "the @ picker keymap bound")
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+T.it("engine resolution: picker = false with no engine present binds nothing at all", function()
+  T.fresh({ input = { mention = { picker = false, completion = "auto" } } })
+  mention._reset_engine()
+  local buf = scratch_buf()
+  mention.attach(buf)
+  T.is_nil(at_callback(buf), "neither an engine nor the picker claimed @")
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+-- ---------------------------------------------------------------------------
+-- mention_blink.lua, driven directly with a synthetic blink.cmp.Context
+-- (cursor = {row1, col0}, line = the current line's text — see
+-- completion/trigger/context.lua in the installed blink.cmp)
+-- ---------------------------------------------------------------------------
+
+T.it("mention_blink: no @ in scope -> empty items, no error, a cancel fn is returned", function()
+  local src = require("obelus.mention_blink").new()
+  local got
+  local cancel = src:get_completions({ cursor = { 1, 9 }, line = "just text" }, function(resp)
+    got = resp
+  end)
+  T.ok(got, "callback ran")
+  T.eq(got.items, {})
+  T.eq(got.is_incomplete_forward, false)
+  T.eq(got.is_incomplete_backward, false)
+  T.eq(type(cancel), "function", "returns a cancel fn per the installed interface")
+end)
+
+T.it("mention_blink: a boundary @ returns items with textEdit ranges + escaped newText", function()
+  local ctx = T.fresh()
+  vim.fn.mkdir(ctx.root .. "/dir with space", "p")
+  vim.fn.writefile({ "x" }, ctx.root .. "/dir with space/file.lua")
+  mention._invalidate()
+  -- pre-warm: _items is async-refreshing now — the first call serves nothing and
+  -- kicks the lister; wait for the fresh list like the engine's next keystroke would
+  local root = require("obelus.store").root()
+  mention._items(root)
+  T.ok(
+    T.wait_for(function()
+      return #mention._items(root) > 0
+    end, 3000),
+    "the async file list landed"
+  )
+
+  local src = require("obelus.mention_blink").new()
+  local line = "@lua"
+  local got
+  local cancel = src:get_completions({ cursor = { 3, #line }, line = line }, function(resp)
+    got = resp
+  end)
+  T.ok(got, "callback ran")
+  T.ok(#got.items > 0, "the project's files came back as items")
+  T.eq(got.is_incomplete_forward, true, "forces a re-query — path chars break blink's own keyword")
+  T.eq(got.is_incomplete_backward, true)
+  T.eq(type(cancel), "function")
+
+  local spacey
+  for _, item in ipairs(got.items) do
+    if item.label == "dir with space/file.lua" then
+      spacey = item
+    end
+  end
+  T.ok(spacey, "the spacey path is among the items")
+  T.eq(spacey.kind, 17)
+  T.eq(spacey.filterText, "dir with space/file.lua", "filterText is UNescaped")
+  T.eq(spacey.textEdit.newText, "dir\\ with\\ space/file.lua", "newText escapes the spaces")
+  T.eq(spacey.textEdit.range.start, { line = 2, character = 1 }, "range starts right after the @")
+  T.eq(spacey.textEdit.range["end"], { line = 2, character = #line }, "range ends at the cursor")
+end)
+
+T.it("mention_blink: enabled() is filetype- and config-gated", function()
+  T.fresh({ input = { mention = { completion = "blink" } } })
+  local src = require("obelus.mention_blink").new()
+  local orig = vim.api.nvim_get_current_buf()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_set_current_buf(buf)
+
+  vim.bo[buf].filetype = "lua"
+  T.eq(src:enabled(), false, "the wrong filetype is disabled")
+
+  vim.bo[buf].filetype = mention.FILETYPE
+  T.eq(src:enabled(), true, "our filetype, completion active -> enabled")
+
+  T.fresh({ input = { mention = { completion = false } } })
+  T.eq(src:enabled(), false, "completion turned off in config -> disabled even on our filetype")
+
+  pcall(vim.api.nvim_set_current_buf, orig)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+-- ---------------------------------------------------------------------------
+-- mention_cmp.lua, driven directly with a synthetic cmp.Context (targets the
+-- STANDARD nvim-cmp source contract — cmp isn't installed in this dev env to
+-- verify field names against; see mention_cmp.lua's header comment)
+-- ---------------------------------------------------------------------------
+
+T.it("mention_cmp: get_trigger_characters/get_keyword_pattern basic shape", function()
+  local src = require("obelus.mention_cmp").new()
+  T.eq(src:get_trigger_characters(), { "@" })
+  T.ok(
+    type(src:get_keyword_pattern()) == "string" and src:get_keyword_pattern():find("@", 1, true),
+    "pattern mentions @"
+  )
+end)
+
+T.it("mention_cmp: no @ in scope -> empty, isIncomplete false", function()
+  local src = require("obelus.mention_cmp").new()
+  local got
+  src:complete({ context = { cursor_before_line = "just text", cursor = { line = 0 } } }, function(resp)
+    got = resp
+  end)
+  T.ok(got, "callback ran")
+  T.eq(got.items, {})
+  T.eq(got.isIncomplete, false)
+end)
+
+T.it("mention_cmp: a boundary @ returns items with textEdit ranges + escaped newText", function()
+  local ctx = T.fresh()
+  vim.fn.mkdir(ctx.root .. "/dir with space", "p")
+  vim.fn.writefile({ "x" }, ctx.root .. "/dir with space/file.lua")
+  mention._invalidate()
+  -- pre-warm: _items is async-refreshing now — the first call serves nothing and
+  -- kicks the lister; wait for the fresh list like the engine's next keystroke would
+  local root = require("obelus.store").root()
+  mention._items(root)
+  T.ok(
+    T.wait_for(function()
+      return #mention._items(root) > 0
+    end, 3000),
+    "the async file list landed"
+  )
+
+  local src = require("obelus.mention_cmp").new()
+  local line = "@lua"
+  local got
+  src:complete({ context = { cursor_before_line = line, cursor = { line = 4 } } }, function(resp)
+    got = resp
+  end)
+  T.ok(got, "callback ran")
+  T.ok(#got.items > 0)
+  T.eq(got.isIncomplete, true)
+
+  local spacey
+  for _, item in ipairs(got.items) do
+    if item.label == "dir with space/file.lua" then
+      spacey = item
+    end
+  end
+  T.ok(spacey, "the spacey path is among the items")
+  T.eq(spacey.textEdit.newText, "dir\\ with\\ space/file.lua")
+  T.eq(spacey.textEdit.range.start, { line = 4, character = 1 })
+  T.eq(spacey.textEdit.range["end"], { line = 4, character = #line })
+end)
