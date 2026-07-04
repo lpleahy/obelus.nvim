@@ -21,10 +21,14 @@ function M.range_label(c)
   return string.format("L%d-L%d", c.range.sl, c.range.el)
 end
 
----Markdown for a single comment.
+---Markdown for a single comment. The file lands as a real "@path" mention, so
+---the transport choke point's mention policy (input.mention.send) governs
+---threads/batches exactly like typed mentions: "reference" appends the
+---read-these-paths note, "inline" embeds the commented file's contents.
 function M.comment_md(c, idx)
   local lines = {}
-  local head = string.format("%s%s `%s`", idx and (idx .. ". ") or "", M.relpath(c.file), M.range_label(c))
+  local head =
+    string.format("%s@%s `%s`", idx and (idx .. ". ") or "", M.relpath(c.file):gsub(" ", "\\ "), M.range_label(c))
   table.insert(lines, "### " .. head)
   table.insert(lines, "")
   table.insert(lines, "```" .. lang_of(c.file))

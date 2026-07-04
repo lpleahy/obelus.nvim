@@ -230,6 +230,14 @@ local function do_respond(c, text, mode)
   local cli = config.options.transport.cli or {}
   local models = cli.models or {}
   local model = (mode == "fast") and (models.fast or models.send) or models.send
+  -- No session to resume = the agent has never seen this comment (the user typed
+  -- into a thread that was never dispatched). Sending only `text` would reach the
+  -- model with ZERO file/selection context — prepend the serialized comment,
+  -- which also carries the @path so the mention send policy applies to it.
+  local prompt = text
+  if not c.session_id then
+    prompt = require("obelus.format").comment_md(c) .. "\n" .. text
+  end
   -- transport.submit pcalls the backend and RETURNS FALSE on failure (unknown
   -- transport name, backend threw) — and this pcall is belt-and-braces for anything
   -- thrown before that catch. Either way the send never started: unstick the panel's
@@ -238,7 +246,7 @@ local function do_respond(c, text, mode)
   local ok, ret = pcall(require("obelus.transport").submit, config.options.transport.dispatch or "cli", {
     comments = { c },
     resume = c.session_id,
-    prompt = text,
+    prompt = prompt,
     stream = true, -- replies stream live into the thread
     model = model, -- per send-mode model (nil = the cmd / account default)
   })
