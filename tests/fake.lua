@@ -28,15 +28,16 @@ function F.install()
     F.target = payload.comments and payload.comments[1]
     if payload.opts and payload.opts.stream and F.target then
       store.stream_start(F.target.id)
-      F.job = progress.start({ label = "fake", comments = payload.comments })
-      F.acc = ""
-      -- mirror cli.lua's provenance registration so jobs.busy()/cancel() see a real
-      -- job behind this thread instead of self-healing it away. Unlike cli.lua (whose
-      -- cancel closure only sends SIGTERM — the registration is cleared later, async,
-      -- by the exit callback once the OS actually reaps the process), the fake has no
-      -- real subprocess to reap: its cancel closure IS the end of the job, so it also
-      -- clears its own registration (else a cancel with no F.finish() ever following
-      -- would leak the entry forever).
+      -- REGISTER BEFORE progress.start — same ordering contract as cli.lua: the
+      -- progress tick can run a panel fill whose jobs.busy() cross-check would see
+      -- dispatching==true with no registered job and self-heal (abort) the stream.
+      -- Mirrors cli.lua's provenance registration so jobs.busy()/cancel() see a real
+      -- job behind this thread. Unlike cli.lua (whose cancel closure only sends
+      -- SIGTERM — the registration is cleared later, async, by the exit callback once
+      -- the OS actually reaps the process), the fake has no real subprocess to reap:
+      -- its cancel closure IS the end of the job, so it also clears its own
+      -- registration (else a cancel with no F.finish() ever following would leak the
+      -- entry forever).
       local id = F.target.id
       require("obelus.jobs").register(id, {
         transport = "fake",
@@ -45,6 +46,8 @@ function F.install()
           require("obelus.jobs").clear(id)
         end,
       })
+      F.job = progress.start({ label = "fake", comments = payload.comments })
+      F.acc = ""
     else
       F.oneshots[#F.oneshots + 1] = payload
     end

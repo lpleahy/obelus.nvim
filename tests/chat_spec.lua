@@ -299,3 +299,26 @@ T.it("chat winhighlight dims NonText — smoothscroll's <<< marker renders as ch
   T.contains(vim.wo[g.win].winhighlight, "NonText:ObelusChrome")
   panel.close()
 end)
+
+T.it("a stale dispatching flag (stream died, no job) self-heals when the chat opens", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  ctx.store.add_turn(c.id, "agent", "an old reply")
+  c.dispatching = true -- as left behind by a stream that never finalized
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  T.ok(
+    T.wait_for(function()
+      return ctx.store.get(c.id).dispatching == nil
+    end, 1000),
+    "the stale flag was cleared by the render pass — renderer/spinner no longer stuck"
+  )
+  panel.close()
+end)

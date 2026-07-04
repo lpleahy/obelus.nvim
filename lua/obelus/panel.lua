@@ -593,7 +593,10 @@ local function build_chat(id, opts)
   -- code/tables flash + mis-place table borders below the box) — so render the in-house
   -- styled markdown instead, which is stable-height and gets the bubble bg. On finish we
   -- swap to raw + re-attach markview (see fill()'s markview lifecycle block).
-  local streaming = c.dispatching == true or (id == state.thread and state.streaming == true)
+  -- via jobs.busy, NOT the raw flag: a stream that died without finalizing leaves
+  -- dispatching==true forever, which kept these bodies on the in-house renderer
+  -- (and the spinner alive) until the next send. busy() self-heals that flag.
+  local streaming = require("obelus.jobs").busy(c.id) or (id == state.thread and state.streaming == true)
   -- `ext` = an EXTERNAL renderer (markview or treesitter) colours the body, so leave it raw
   -- Markdown and drop obelus's own body segments. markview mode falls back to the in-house
   -- styling WHILE streaming (markview is detached then); treesitter is stable so it stays raw
@@ -993,7 +996,9 @@ local function fill()
   local streaming = false
   if state.mode == "chat" and state.thread then
     local sc = require("obelus.store").get(state.thread)
-    streaming = (sc ~= nil and sc.dispatching == true) or state.streaming == true
+    -- jobs.busy, not the raw dispatching flag — see build_chat's note (self-heals
+    -- a stale flag so markview isn't stuck off for this thread all session)
+    streaming = (sc ~= nil and require("obelus.jobs").busy(sc.id)) or state.streaming == true
   end
   local mode = render_mode()
   -- throttle the heavy rebuild during streaming: the 100ms progress timer would otherwise
