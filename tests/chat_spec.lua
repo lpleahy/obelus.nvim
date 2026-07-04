@@ -322,3 +322,117 @@ T.it("a stale dispatching flag (stream died, no job) self-heals when the chat op
   )
   panel.close()
 end)
+
+-- ---------------------------------------------------------------------------
+-- 7. wrap toggle (section B; keys.chat.wrap, default "W") — nvim can't h-scroll a
+--    wrapped window, so the chat window's own buffer-local "W" (see panel.lua's
+--    maps()) flips vim.wo[win].wrap and pins it in state.wrap_override so the
+--    NEXT fill (apply_winopts) doesn't stomp it back to the mode=="chat" default.
+-- ---------------------------------------------------------------------------
+
+-- The buffer-local normal-mode callback bound to `lhs` (mention_spec's at_callback
+-- idiom — retrieved via nvim_buf_get_keymap rather than simulating a keystroke).
+local function n_callback(buf, lhs)
+  for _, km in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+    if km.lhs == lhs then
+      return km.callback
+    end
+  end
+end
+
+local function open_wrap_thread(opts)
+  local ctx = T.fresh(opts)
+  require("obelus.panel")._timing.fill_throttle = 0
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  ctx.store.add_turn(c.id, "agent", "hello")
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  return ctx, panel, c
+end
+
+T.it("wrap toggle: W flips vim.wo[win].wrap and survives a forced refresh", function()
+  local ctx, panel, c = open_wrap_thread()
+  local g = panel.geom()
+  T.eq(vim.wo[g.win].wrap, true, "wrap starts on (the chat-mode default)")
+
+  local cb = n_callback(g.buf, "W")
+  T.ok(cb, "the W keymap is bound on the chat buffer")
+  cb()
+  T.eq(vim.wo[g.win].wrap, false, "wrap toggled off")
+
+  -- a real (non-coalesced) fill pass must not stomp the override back to the
+  -- mode=="chat" default — change the content so fill()'s signature check can't
+  -- just skip the pass (see fill()'s `sig`/`force` comment).
+  ctx.store.add_turn(c.id, "agent", "one more thing")
+  panel.refresh()
+  T.eq(vim.wo[g.win].wrap, false, "wrap survives a forced refresh/fill")
+
+  cb() -- toggle back on
+  T.eq(vim.wo[g.win].wrap, true, "toggles back on")
+  panel.close()
+end)
+
+T.it("wrap toggle: closing the chat clears the override for the next open", function()
+  local _, panel, c = open_wrap_thread()
+  local g = panel.geom()
+  local cb = n_callback(g.buf, "W")
+  cb()
+  T.eq(vim.wo[g.win].wrap, false, "wrap toggled off")
+  panel.close()
+
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g2 = panel.geom()
+      return g2 ~= nil and g2.input_win ~= nil and not g2.input_pending_reveal
+    end),
+    "reopened"
+  )
+  local g2 = panel.geom()
+  T.eq(vim.wo[g2.win].wrap, true, "reopening starts from the plain default, not the cleared toggle")
+  panel.close()
+end)
+
+T.it("wrap toggle: keys.chat.wrap = false disables the binding entirely", function()
+  local _, panel = open_wrap_thread({ keys = { chat = { wrap = false } } })
+  local g = panel.geom()
+  T.is_nil(n_callback(g.buf, "W"), "no W keymap bound when keys.chat.wrap = false")
+  panel.close()
+end)
+
+T.it("wrap toggle: keys.chat.wrap = a custom lhs rebinds it", function()
+  local _, panel = open_wrap_thread({ keys = { chat = { wrap = "Z" } } })
+  local g = panel.geom()
+  T.is_nil(n_callback(g.buf, "W"), "the default W is no longer bound")
+  T.ok(n_callback(g.buf, "Z"), "the custom lhs is bound instead")
+  panel.close()
+end)
+
+-- ---------------------------------------------------------------------------
+-- 8. keys.chat overridability (section C) — the docked reply box's own bindings
+-- ---------------------------------------------------------------------------
+
+T.it("keys.chat.close = 'x': the reply box gets x, not q", function()
+  local ctx = T.fresh({ keys = { chat = { close = "x" } } })
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  local ibuf = vim.api.nvim_win_get_buf(panel.geom().input_win)
+  T.ok(n_callback(ibuf, "x"), "x is bound on the reply box")
+  T.is_nil(n_callback(ibuf, "q"), "q is no longer bound")
+  panel.close()
+end)

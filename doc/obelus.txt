@@ -152,10 +152,17 @@ render.preview_matches_chat        *obelus-config-render.preview_matches_chat*
               preview, chat popup) sizes its own comfortable width
               independently.
       true  — the hover preview and the chat popup share ONE geometry (the
-              chat's width recipe: auto base + grow-to-content) and a
-              per-thread anchor side decided on first placement and HELD —
-              so replying to a hovered thread just adds the input box, with
-              no resize and no jump across the selection.
+              chat's own width recipe — see below) and a per-thread anchor
+              side decided on first placement and HELD — so replying to a
+              hovered thread just adds the input box, with no resize and no
+              jump across the selection.
+
+    The chat popup's width recipe (either knob setting, per-surface) is
+    two-way and SOURCE-derived (measured on the thread's raw stored text,
+    not the rendered/wrapped buffer, so it never oscillates): a short
+    exchange gets a snug box; a fenced code block or table row that can't
+    rewrap without damage is allowed to push it past the usual 100-120
+    comfort base, up to the editor width.
 
 render.reply_dock                            *obelus-config-render.reply_dock*
     Default: `"pinned"`     Enum: `"pinned"` | `"serial"`
@@ -385,13 +392,52 @@ keys.band_scroll                              *obelus-config-keys.band_scroll*
     free for you. `<prefix>J`/`<prefix>K` scroll the same way regardless of
     this table.
 
+keys.overrides                                  *obelus-config-keys.overrides*
+    Default: `{}`
+    Full replacement of a default mapping's LHS, keyed by the MAPSPEC suffix
+    (the same letter `keys.disabled` uses): a string is the new lhs, used
+    VERBATIM — it is NOT appended to `keys.prefix`. `false` disables that row
+    entirely (the same effect as listing the suffix in `keys.disabled`).
+    Example: >lua
+        overrides = { s = "<leader>gs", J = false }
+<   remaps `<prefix>s` (submit/continue batch) to `<leader>gs` and drops the
+    `<prefix>J` (scroll down) mapping. An override that lands OUTSIDE
+    `keys.prefix` still gets a real mapping, but drops out of the which-key
+    `<prefix>` group shown by |obelus-keymaps| (which-key has no notion of a
+    member mapping living under a different lhs family). An unknown suffix
+    warns once and is otherwise ignored.
+
+keys.chat                                            *obelus-config-keys.chat*
+    Default: `{}`
+    Chat-surface key bindings — the docked reply box (the modal chat/popup's
+    input) and the quick-reply composer share this ONE table. A name maps to
+    an lhs string, or `false` to disable; an unset name keeps its default:
+
+    Name ~         Default ~   Action ~
+    send           `<CR>`      Send the reply
+    send_fast      `<M-CR>`    Send with the configured FAST model
+    save           `<C-s>`     Save as a draft without sending
+    to_code        `<C-h>`     Jump to the source code (docked reply box only)
+    cycle          `<Tab>`     Hop to the chat history / the parent window
+    cycle_back     `<S-Tab>`   Same, backwards (docked reply box only)
+    close          `q`         Close (the popup/panel, or cancel the composer)
+    close_esc      `<Esc>`     Same as `close`, via Escape
+    wrap           `W`         Toggle wrap in the CHAT window (see |obelus-keymaps|)
+
+    Example: >lua
+        keys = { chat = { close = "x", wrap = false } }
+<
+
 ==============================================================================
 4. KEYMAPS                                                  *obelus-keymaps*
 
 All default mappings are `keys.prefix .. suffix`, normal mode unless noted;
 each has a matching `:Obelus*` command (|obelus-commands|). Skip specific
 ones with `keys.disabled = { <suffix>, ... }`; skip all of them with `keys
-= false`.
+= false`. Replace any one mapping's lhs entirely with
+|obelus-config-keys.overrides| (`overrides = { <suffix> = "<newlhs>" }`, or
+`false` to disable — an override outside `keys.prefix` still works but drops
+out of the group below in a which-key popup).
 
     Suffix ~   Action ~
     c  (n)     Comment the current line
@@ -426,6 +472,27 @@ ones with `keys.disabled = { <suffix>, ... }`; skip all of them with `keys
 Plus, independent of the prefix (|obelus-config-keys.band_scroll|):
 `<A-d>`/`<A-u>` scroll a long inline band in place (half-page); disable or
 remap via `keys.band_scroll`.
+
+Chat-surface keys (the docked reply box + the quick-reply composer; buffer-
+local to those inputs, not `keys.prefix`-based) are configured as a group via
+|obelus-config-keys.chat|:
+
+    Name ~         Default ~   Action ~
+    send           `<CR>`      Send the reply
+    send_fast      `<M-CR>`    Send with the configured FAST model
+    save           `<C-s>`     Save as a draft without sending
+    to_code        `<C-h>`     Jump to the source code (docked reply box only)
+    cycle          `<Tab>`     Hop to the chat history / the parent window
+    cycle_back     `<S-Tab>`   Same, backwards (docked reply box only)
+    close          `q`         Close (the popup/panel, or cancel the composer)
+    close_esc      `<Esc>`     Same as `close`, via Escape
+    wrap           `W`         Toggle wrap in the CHAT window (below)
+
+nvim cannot horizontally scroll a WRAPPED window. `W` (chat window only, not
+the unfocusable hover preview) toggles `wrap` off/on for that one chat/popup;
+with wrap off, native `zl`/`zh`/`$`/`0` pan a long line sideways. The choice
+is session-scoped: it survives further replies/streaming, and clears on
+close or on opening a different thread.
 
 ==============================================================================
 5. COMMANDS                                                *obelus-commands*

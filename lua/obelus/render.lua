@@ -691,6 +691,16 @@ function M.on_cursor()
   end
 end
 
+-- Buffer-local chat-surface keybind, driven by keys.chat[name] (config.chat_key —
+-- shared with panel.lua's docked reply box, section C): `false` skips the binding
+-- entirely, unset keeps `default` (today's hardcoded key).
+local function bind_chat(o, modes, name, default, fn)
+  local lhs = config.chat_key(name, default)
+  if lhs then
+    vim.keymap.set(modes, lhs, fn, o)
+  end
+end
+
 ---Band-styled input float near the cursor — the one composer for new comments
 ---and replies alike. opts: { title, row, height, default, on_submit(text, action), on_cancel }.
 function M.compose(opts)
@@ -771,29 +781,31 @@ function M.compose(opts)
     end
   end
   local o = { buffer = ibuf, nowait = true, silent = true }
-  vim.keymap.set("n", "<CR>", function() -- Enter sends, like the persistent reply box
+  -- Chat-surface keybinds (section C; keys.chat — shared table with the docked reply
+  -- box, see panel.lua's open_input), defaults = today's hardcoded keys.
+  bind_chat(o, "n", "send", "<CR>", function() -- Enter sends, like the persistent reply box
     finish("send")
-  end, o)
-  vim.keymap.set({ "n", "i" }, "<M-CR>", function() -- Alt+Enter: send with the fast model
+  end)
+  bind_chat(o, { "n", "i" }, "send_fast", "<M-CR>", function() -- Alt+Enter: send with the fast model
     finish("send_fast")
-  end, o)
-  vim.keymap.set({ "n", "i" }, "<C-s>", function()
+  end)
+  bind_chat(o, { "n", "i" }, "save", "<C-s>", function()
     finish("save")
-  end, o)
-  vim.keymap.set("n", "<Esc>", function()
+  end)
+  bind_chat(o, "n", "close_esc", "<Esc>", function()
     finish("cancel")
-  end, o)
-  vim.keymap.set("n", "q", function()
+  end)
+  bind_chat(o, "n", "close", "q", function()
     finish("cancel")
-  end, o)
-  -- Tab (normal mode) hops to the history window so you can yank earlier output;
+  end)
+  -- cycle (normal mode) hops to the history window so you can yank earlier output;
   -- Tab there hops back here (wired by the caller that owns the history window).
   if opts.parent_win and vim.api.nvim_win_is_valid(opts.parent_win) then
-    vim.keymap.set("n", "<Tab>", function()
+    bind_chat(o, "n", "cycle", "<Tab>", function()
       if vim.api.nvim_win_is_valid(opts.parent_win) then
         vim.api.nvim_set_current_win(opts.parent_win)
       end
-    end, o)
+    end)
   end
   return fwin
 end

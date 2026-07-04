@@ -188,3 +188,100 @@ T.it("input.mention = 3 (garbage) resets to the default table", function()
   config.setup({ input = { mention = 3 } })
   T.eq(config.options.input.mention, { picker = true, completion = "auto", send = "reference" })
 end)
+
+-- ---------------------------------------------------------------------------
+-- keys.overrides / keys.chat (section C: full key overridability) — sparse maps
+-- of name -> lhs string, or `false` to disable. Bad VALUES drop just that one
+-- entry (warn once), unlike enum()/boolean() which reset the whole field; the
+-- surrounding table itself follows the usual ensure_table scalar-garbage idiom.
+-- ---------------------------------------------------------------------------
+
+T.it("keys.overrides/keys.chat default to empty tables", function()
+  local config = require("obelus.config")
+  config.setup({})
+  T.eq(config.options.keys.overrides, {})
+  T.eq(config.options.keys.chat, {})
+end)
+
+T.it("keys.overrides/keys.chat accept string|false values", function()
+  local config = require("obelus.config")
+  config.setup({
+    keys = { overrides = { s = "<leader>Zs", J = false }, chat = { wrap = false, send = "<C-CR>" } },
+  })
+  T.eq(config.options.keys.overrides.s, "<leader>Zs")
+  T.eq(config.options.keys.overrides.J, false)
+  T.eq(config.options.keys.chat.wrap, false)
+  T.eq(config.options.keys.chat.send, "<C-CR>")
+end)
+
+T.it("keys.overrides/keys.chat: a garbage value warns once and drops only that entry", function()
+  local config = require("obelus.config")
+  config.setup({
+    keys = { overrides = { s = 5 }, chat = { send = 5, save = "<C-x>" } },
+  })
+  T.is_nil(config.options.keys.overrides.s, "garbage override value dropped")
+  T.is_nil(config.options.keys.chat.send, "garbage chat key value dropped")
+  T.eq(config.options.keys.chat.save, "<C-x>", "sibling entry unaffected by the neighbor's garbage")
+end)
+
+T.it("keys = false stays the bare boolean (overrides/chat validation skipped, not crashed)", function()
+  local config = require("obelus.config")
+  config.setup({ keys = false })
+  T.eq(config.options.keys, false)
+end)
+
+T.it("keys = 5 (garbage) resets to the default table, with overrides/chat defaults intact", function()
+  local ctx = T.fresh({ keys = 5 })
+  T.eq(type(ctx.config.options.keys), "table")
+  T.eq(ctx.config.options.keys.overrides, {})
+  T.eq(ctx.config.options.keys.chat, {})
+end)
+
+-- ---------------------------------------------------------------------------
+-- keys.overrides (init.lua's keymaps()/whichkey()) — the ACTUAL mapping behavior.
+-- keymaps()/whichkey() only run once for real per process (the `did_setup` latch
+-- in init.lua), so a later config.setup() with different overrides wouldn't be
+-- observable through the real session mappings. init._keymaps/_whichkey are test
+-- seams that re-run the same registration logic directly against a throwaway `k`
+-- table — each spec picks a prefix/lhs family it owns exclusively so it can't
+-- collide with the real session's mappings (this only ADDS mappings; it never
+-- unmaps a stale lhs from a previous call).
+-- ---------------------------------------------------------------------------
+
+T.it("keys.overrides: a full-lhs override maps there instead of prefix..suffix", function()
+  local init = require("obelus.init")
+  local prefix = "<leader>ZZQ"
+  init._keymaps({ prefix = prefix, disabled = {}, overrides = { s = "<leader>ZZs" } })
+  T.ok(vim.fn.maparg("<leader>ZZs", "n") ~= "", "the override lhs is mapped")
+  T.eq(vim.fn.maparg(prefix .. "s", "n"), "", "the default prefix..suffix is NOT mapped for an overridden suffix")
+  T.ok(vim.fn.maparg(prefix .. "l", "n") ~= "", "a non-overridden suffix still maps under the prefix")
+end)
+
+T.it("keys.overrides: false disables the row entirely (no mapping at the default lhs)", function()
+  local init = require("obelus.init")
+  local prefix = "<leader>ZZR"
+  init._keymaps({ prefix = prefix, disabled = {}, overrides = { J = false } })
+  T.eq(vim.fn.maparg(prefix .. "J", "n"), "", "disabled-via-override suffix: no mapping at the default lhs")
+end)
+
+T.it("keys.overrides: an unknown suffix warns once (typo'd or removed row)", function()
+  local init = require("obelus.init")
+  -- vim.notify_once dedupes by message text; a fresh, never-used-before suffix here
+  -- guarantees this exact message hasn't fired in an earlier spec in this process.
+  local seen = false
+  local orig = vim.notify_once
+  vim.notify_once = function(msg, ...)
+    if msg:find("keys.overrides has no suffix 'ZzUnknownSuffix99'", 1, true) then
+      seen = true
+    end
+    return orig(msg, ...)
+  end
+  local ok, err = pcall(function()
+    init._keymaps({ prefix = "<leader>ZZU", disabled = {}, overrides = { ZzUnknownSuffix99 = "<leader>ZZUx" } })
+  end)
+  vim.notify_once = orig
+  if not ok then
+    error(err, 0)
+  end
+  T.ok(seen, "warned about the unknown override suffix")
+end)

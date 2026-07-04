@@ -726,6 +726,64 @@ local function is_table_sep(l)
   return l:match("^%s*|[%s:%-|]+|%s*$") ~= nil
 end
 
+-- Preferred content width for a comment's whole conversation — the SOURCE-derived
+-- sizing panel.fit_rooted/preview_base_width grow-or-shrink the popup to (see those
+-- for the recipe). Measured at the SOURCE (the turns' raw stored text), never the
+-- rendered chat buffer: rendered lines are already wrapped to the CURRENT window
+-- width, so measuring THEM oscillates (shrink -> rebuild narrower -> lines rewrap ->
+-- shrink again). Source text is width-independent: STABLE across refits.
+--
+-- Same fence/table walk as pad_table_edges/body_rows above (duplicated, not shared —
+-- those two build OUTPUT rows; this only measures, so it skips their line-splicing).
+-- Returns two widths:
+--   hard_w — max display width over lines INSIDE a fenced code block or a table row
+--            (is_table_row/is_table_sep): content that cannot rewrap without visual
+--            damage (broken columns, mis-highlighted code), so it may push the popup
+--            past the comfort base, up to the editor cap.
+--   soft_w — max display width over every other (prose) line: prose wraps fine, so
+--            the caller caps it at the comfort base instead of letting it grow the
+--            popup (an unbroken long word/URL still wraps — just not at a word
+--            boundary — so it's deliberately NOT hard content).
+function M.pref_width(comment)
+  local store = require("obelus.store")
+  local hard_w, soft_w = 0, 0
+  if not comment then
+    return hard_w, soft_w
+  end
+  for _, t in ipairs(store.turns(comment)) do
+    local lines = vim.split(t.text or "", "\n", { plain = true })
+    local fence = nil -- backtick count of the OPEN fence (nil = not in a code block)
+    local li, ln = 1, #lines
+    while li <= ln do
+      local raw = lines[li]
+      local bt = raw:match("^%s*(`+)")
+      if bt and #bt >= 3 and not fence then
+        fence = #bt -- OPEN fence
+        hard_w = math.max(hard_w, vim.fn.strdisplaywidth(raw))
+        li = li + 1
+      elseif fence and bt and #bt >= fence and raw:match("^%s*`+%s*$") then
+        fence = nil -- CLOSE fence (bare backticks, at least as long as the open)
+        hard_w = math.max(hard_w, vim.fn.strdisplaywidth(raw))
+        li = li + 1
+      elseif fence then
+        hard_w = math.max(hard_w, vim.fn.strdisplaywidth(raw)) -- inside the block
+        li = li + 1
+      elseif is_table_row(raw) and li < ln and is_table_sep(lines[li + 1]) then
+        hard_w = math.max(hard_w, vim.fn.strdisplaywidth(raw), vim.fn.strdisplaywidth(lines[li + 1]))
+        li = li + 2
+        while li <= ln and is_table_row(lines[li]) do
+          hard_w = math.max(hard_w, vim.fn.strdisplaywidth(lines[li]))
+          li = li + 1
+        end
+      else
+        soft_w = math.max(soft_w, vim.fn.strdisplaywidth(raw))
+        li = li + 1
+      end
+    end
+  end
+  return hard_w, soft_w
+end
+
 -- With the scoped markview render (tables.use_virt_lines=false), markview draws a
 -- table's top/bottom border on the REAL blank lines around it — a table hugging
 -- text silently loses those borders. obelus owns the markdown it hands to the

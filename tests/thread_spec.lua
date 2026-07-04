@@ -681,6 +681,49 @@ T.it("panel._fit_width: grows to content, never below base, never past cap", fun
   T.eq(fit_width(100, 120, 90), 90, "cap below base: cap wins even though content is wider still")
 end)
 
+-- ---------------------------------------------------------------------------
+-- thread.pref_width: SOURCE-derived preferred width (panel.fit_rooted's two-way
+-- sizing) — hard_w (fenced code / table rows, can't rewrap without damage) vs
+-- soft_w (everything else, wraps fine) — measured on the comment's RAW turn text
+-- (store.turns), never rendered/wrapped lines.
+-- ---------------------------------------------------------------------------
+
+T.it("pref_width: a prose-only thread has hard_w == 0 and soft_w == the widest line", function()
+  local pref_width = require("obelus.thread").pref_width
+  local hard_w, soft_w = pref_width({
+    turns = {
+      { author = "you", text = "short line" },
+      { author = "agent", text = "a longer prose reply line here" },
+    },
+  })
+  T.eq(hard_w, 0, "no fences/tables: nothing is hard content")
+  T.eq(soft_w, vim.fn.strdisplaywidth("a longer prose reply line here"), "soft_w is the widest prose line")
+end)
+
+T.it("pref_width: a 130-col fenced code line is hard content, wider than the surrounding prose", function()
+  local pref_width = require("obelus.thread").pref_width
+  local code = string.rep("x", 130)
+  local hard_w, soft_w = pref_width({ turns = { { author = "agent", text = "prose\n```\n" .. code .. "\n```" } } })
+  T.eq(hard_w, 130, "the fenced line's width is hard_w")
+  T.ok(soft_w < hard_w, "the prose line stays in soft_w, narrower than the code line")
+end)
+
+T.it("pref_width: an empty (or nil) comment floors both widths at 0", function()
+  local pref_width = require("obelus.thread").pref_width
+  T.eq({ pref_width({ turns = {} }) }, { 0, 0 })
+  T.eq({ pref_width({}) }, { 0, 0 })
+  T.eq({ pref_width(nil) }, { 0, 0 })
+end)
+
+T.it("pref_width: a table row's width counts as hard, even outside a fenced block", function()
+  local pref_width = require("obelus.thread").pref_width
+  local row = "| " .. string.rep("z", 100) .. " | b |"
+  local sep = "| --- | --- |"
+  local hard_w, soft_w = pref_width({ turns = { { author = "agent", text = row .. "\n" .. sep } } })
+  T.eq(hard_w, vim.fn.strdisplaywidth(row), "the table row's width is hard_w")
+  T.eq(soft_w, 0, "no prose lines in this turn")
+end)
+
 T.it("fit_table_cells: CJK cells truncate by DISPLAY width, rows never exceed the budget", function()
   local ctx = T.fresh()
   local c = ctx.store.add(T.comment({ comment = "q" }))

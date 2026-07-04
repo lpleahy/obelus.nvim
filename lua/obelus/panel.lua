@@ -240,12 +240,30 @@ end
 
 -- Pure width-fit arithmetic (a spec seam — M._fit_width below): grow `base` up to
 -- `content_w` (never shrink below it), capped at `cap` so a very wide line still
--- can't blow the float past the editor. Used by fit_rooted to let a wide table/line
--- widen the rooted popup instead of getting clipped inside a fixed-width box.
+-- can't blow the float past the editor.
 local function fit_width(base, content_w, cap)
   return math.min(math.max(base, content_w), cap)
 end
 M._fit_width = fit_width -- test seam (geometry_spec/thread_spec unit-test the pure arithmetic)
+
+-- Two-way content sizing (fit_rooted + preview_base_width, when render.preview_matches_chat):
+-- a SOURCE-derived preferred width (thread.pref_width — see its comment for why source,
+-- not the rendered buffer). Grows a short exchange down to a snug floor instead of every
+-- popup defaulting to the 100-120 comfort base, while code/tables can still push wider.
+--   G       — gutter+padding: the bar (2, statuscolumn) + breathing room (2).
+--   pref    — hard content (fences/tables) floors the width even past the comfort base;
+--             soft content (prose) is capped AT the comfort base (popup_width()) — it
+--             wraps fine, so it never NEEDS more room, however long a line runs.
+--   base_w  — pref, floored at MIN_W (a one-line reply still gets a readable box) and
+--             capped at the editor (never wider than the screen).
+local MIN_W = 50
+local function base_width_for(comment)
+  local G = 4
+  local cap = math.max(40, vim.o.columns - 4) -- never wider than the editor
+  local hard_w, soft_w = require("obelus.thread").pref_width(comment)
+  local pref = math.max(hard_w + G, math.min(soft_w + G, popup_width()))
+  return math.max(MIN_W, math.min(pref, cap))
+end
 
 -- Shared rooted-float title: file + range label, or the generic fallback when
 -- there's no live comment (centred fallback / a stale or deleted thread id).
@@ -300,13 +318,22 @@ end
 -- doesn't detach markview while streaming; see fill_preview's unconditional
 -- mv.render), so passing streaming=false there reproduces its original behaviour
 -- exactly: conceallevel tracks markview_on() alone.
-local function apply_winopts(win, buf, mode, streaming)
+-- `wrap_override` (chat call site only — declared below `state`, so it's passed in
+-- rather than read here) pins wrap regardless of `mode`: the session wrap toggle
+-- (keys.chat.wrap, see M.toggle_wrap). nil (the preview's call, always) keeps the
+-- plain mode=="chat" default — the preview is unfocusable, so it never has a toggle
+-- to honor.
+local function apply_winopts(win, buf, mode, streaming, wrap_override)
   if not (win and vim.api.nvim_win_is_valid(win)) then
     return
   end
   local rmode = render_mode()
   vim.wo[win].signcolumn = "no" -- the bar lives in the statuscolumn now
-  vim.wo[win].wrap = mode == "chat"
+  local want_wrap = mode == "chat"
+  if wrap_override ~= nil then
+    want_wrap = wrap_override
+  end
+  vim.wo[win].wrap = want_wrap
   -- the statuscolumn draws the accent bar on EVERY screen line (incl. wraps), a fixed
   -- 2-cell gutter — so wrapped body lines align past the bar without showbreak tricks
   vim.wo[win].statuscolumn = mode == "chat" and ("%!v:lua.require'obelus.panel'.statuscol(" .. buf .. ")") or ""
@@ -357,6 +384,10 @@ local state = {
   preview_buf = nil,
   preview_thread = nil,
   preview_root = nil,
+  -- session wrap toggle (keys.chat.wrap, default "W") for the CHAT window only —
+  -- nil = no override (apply_winopts' usual mode=="chat" default); true/false pins
+  -- wrap regardless of mode/streaming until cleared (M.close / a new open_thread).
+  wrap_override = nil,
 }
 
 -- Three DIFFERENT "are we following the bottom" predicates live in this file — by
@@ -845,23 +876,15 @@ local function fit_rooted(force)
   if not (state.buf and vim.api.nvim_buf_is_valid(state.buf)) then
     return
   end
-  local title = float_title(store.get(state.thread))
-  -- Grow the float to fit the widest buffer line (a wide table, an unbroken long line)
-  -- instead of clipping it inside a fixed-width popup. O(lines) — but this only runs
-  -- once per EXECUTED fill (fit_rooted is called from fill() AFTER its own
-  -- coalesce/throttle gate has already let the pass through — see fill()'s `force`/
-  -- `sig` checks above), not per keystroke or redraw.
-  -- Raw markdown is what's measured here, even in markview mode where conceal (hidden
-  -- `**`/`|` markers, etc.) makes the DISPLAYED width narrower than the raw text — so
-  -- the popup can end up a little wider than strictly necessary under markview.
-  -- Acceptable: still-correct, just not pixel-tight, and only in that one render mode.
-  local content_w = 0
-  for _, l in ipairs(vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)) do
-    content_w = math.max(content_w, vim.fn.strdisplaywidth(l))
-  end
-  content_w = content_w + 4 -- bar gutter (2, statuscolumn) + breathing room (2)
-  local cap = math.max(40, vim.o.columns - 4) -- never wider than the editor
-  local base_w = fit_width(popup_width(), content_w, cap)
+  local c = store.get(state.thread)
+  local title = float_title(c)
+  -- Two-way content sizing (base_width_for -> thread.pref_width): measured at the
+  -- SOURCE (the comment's stored turn text), not the rendered buffer — see
+  -- base_width_for's comment for the recipe and thread.pref_width's for why source,
+  -- not rendered lines. O(turns' lines) — but this only runs once per EXECUTED fill
+  -- (fit_rooted is called from fill() AFTER its own coalesce/throttle gate has already
+  -- let the pass through — see fill()'s `force`/`sig` checks above), not per keystroke.
+  local base_w = base_width_for(c)
   -- fit the CONTENT. The window wraps (wrap=true), so its real height is the WRAPPED
   -- screen-row count, not the buffer line count — buffer lines undersize a popup whose
   -- long agent lines wrap (cutting content off). Take the larger of the two; the rooted
@@ -1053,7 +1076,7 @@ local function fill()
   -- clobbering conceallevel back to 0, and later coalesced fills would never
   -- re-assert it, leaving markview's conceal marks (table pipes, fences) showing
   -- as raw text. Setting the options last makes every executed pass authoritative.
-  apply_winopts(state.win, state.buf, state.mode, streaming)
+  apply_winopts(state.win, state.buf, state.mode, streaming, state.wrap_override)
   fit_rooted(force) -- re-fit the rooted float (+ reposition the reply box) BEFORE scrolling
   if jump and state.win and vim.api.nvim_win_is_valid(state.win) then
     -- pin the LAST line to the window bottom in ONE wrap-aware step (zb) — the old
@@ -1302,6 +1325,24 @@ function M.reseat()
   end
 end
 
+-- Wrap toggle for the CHAT window (keys.chat.wrap, default "W"; section B — nvim
+-- can't h-scroll a WRAPPED window). Flips vim.wo[win].wrap immediately and pins the
+-- choice in state.wrap_override so apply_winopts' next pass (every fill(), incl. a
+-- streaming tick) doesn't stomp it back to the mode=="chat" default. The override is
+-- session-scoped: cleared on M.close() and on the next open_thread() (a fresh
+-- thread starts from the plain default, not a stale wrap state from the last one).
+-- With wrap off, native zl/zh/$/0 pan horizontally (nvim has no other way to scroll a
+-- wrapped window sideways).
+function M.toggle_wrap()
+  if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
+    return
+  end
+  local want = not vim.wo[state.win].wrap
+  state.wrap_override = want
+  vim.wo[state.win].wrap = want
+  vim.notify(want and "obelus: wrap on" or "obelus: wrap off — zl/zh to pan")
+end
+
 -- Scroll the focused popup/sidebar chat (the docked input counts as focused too).
 -- Returns true if it handled the scroll, so the inline band scroll can fall through.
 -- Scrolling up stops the auto-scroll follow; reaching the bottom re-arms it.
@@ -1437,6 +1478,16 @@ function M.focus_history()
   end
 end
 
+-- Buffer-local chat-surface keybind, driven by keys.chat[name] (config.chat_key —
+-- section C): `false` skips the binding entirely (the key is unset in `o`), unset
+-- keeps `default` (today's hardcoded key).
+local function bind_chat(o, modes, name, default, fn)
+  local lhs = require("obelus.config").chat_key(name, default)
+  if lhs then
+    vim.keymap.set(modes, lhs, fn, o)
+  end
+end
+
 local function open_input()
   if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
     return
@@ -1481,9 +1532,22 @@ local function open_input()
     "Normal:ObelusInput,NormalFloat:ObelusInput,FloatBorder:ObelusInputBorder,FloatTitle:ObelusInputHeader,EndOfBuffer:ObelusInput"
   vim.wo[state.input_win].winblend = require("obelus.config").options.render.winblend or 0
   local o = { buffer = buf, nowait = true, silent = true }
-  -- <C-h> from the input jumps STRAIGHT to the code (skip the chat output that sits between
-  -- the input float and the code — the float isn't in the wincmd-h direction order)
-  vim.keymap.set({ "n", "i" }, "<C-h>", function()
+  -- Chat-surface keybinds (section C; keys.chat — see bind_chat above), defaults =
+  -- today's hardcoded keys:
+  --   to_code    <C-h> — jumps STRAIGHT to the code (skip the chat output that sits
+  --                      between the input float and the code — the float isn't in
+  --                      the wincmd-h direction order)
+  --   send       <CR>
+  --   send_fast  <M-CR> — send with the configured FAST model
+  --   save       <C-s>
+  --   cycle      <Tab>   — from insert too, so "type, then Tab" hops to the history
+  --                        and leaves the box (and its text) in place instead of
+  --                        falling through to a global/cmp <Tab>
+  --   cycle_back <S-Tab>
+  --   close_esc  <Esc>   — hops to the history (Esc-Esc, from `maps()`'s own <Esc>,
+  --                        closes the whole popup)
+  --   close      q       — closes the whole panel
+  bind_chat(o, { "n", "i" }, "to_code", "<C-h>", function()
     pcall(vim.cmd, "stopinsert")
     if state.is_float then
       if state.root and vim.api.nvim_win_is_valid(state.root.win) then
@@ -1493,31 +1557,28 @@ local function open_input()
       pcall(vim.api.nvim_set_current_win, state.win) -- sidebar: hop to the chat, then left
       pcall(vim.cmd, "wincmd h")
     end
-  end, o)
-  vim.keymap.set("n", "<CR>", function()
+  end)
+  bind_chat(o, "n", "send", "<CR>", function()
     input_submit("send")
-  end, o)
-  -- Alt+Enter (works in insert too): send with the configured FAST model
-  vim.keymap.set({ "n", "i" }, "<M-CR>", function()
+  end)
+  bind_chat(o, { "n", "i" }, "send_fast", "<M-CR>", function()
     input_submit("send_fast")
-  end, o)
-  vim.keymap.set({ "n", "i" }, "<C-s>", function()
+  end)
+  bind_chat(o, { "n", "i" }, "save", "<C-s>", function()
     input_submit("save")
-  end, o)
-  -- Tab from insert too, so "type, then Tab" hops to the history and leaves the
-  -- box (and its text) in place instead of falling through to a global/cmp <Tab>
-  vim.keymap.set({ "n", "i" }, "<Tab>", function()
+  end)
+  bind_chat(o, { "n", "i" }, "cycle", "<Tab>", function()
     M.focus_history()
-  end, o)
-  vim.keymap.set({ "n", "i" }, "<S-Tab>", function()
+  end)
+  bind_chat(o, { "n", "i" }, "cycle_back", "<S-Tab>", function()
     M.focus_history()
-  end, o)
-  vim.keymap.set("n", "<Esc>", function()
+  end)
+  bind_chat(o, "n", "close_esc", "<Esc>", function()
     M.focus_history()
-  end, o)
-  vim.keymap.set("n", "q", function()
+  end)
+  bind_chat(o, "n", "close", "q", function()
     M.close()
-  end, o)
+  end)
   -- scroll the history WITHOUT leaving the input (works in insert too, so you can read
   -- back while composing). M.scroll routes to the focused chat (the input counts).
   local bs = (require("obelus.config").options.keys or {}).band_scroll
@@ -1607,6 +1668,7 @@ function M.open_thread(id, as_float)
   state.scroll_once = true -- one jump to the bottom on open
   state.follow = true -- start following the latest until the user scrolls up
   state._fillsig, state._inputsig, state._rootfit, state._lastfill = nil, nil, nil, nil -- fresh thread
+  state.wrap_override = nil -- a fresh thread starts from the plain wrap default, not a stale toggle
   -- (the sticky anchor side is a per-thread MAP now — a re-open reuses the side
   -- this thread was first placed on; a different thread decides its own)
   -- Create the docked reply box BEFORE the chat fill. fill() seats the chat (scroll to
@@ -1815,6 +1877,17 @@ local function maps()
       require("obelus").delete(id)
     end)
   )
+  -- chat-window wrap toggle (section B; keys.chat.wrap, default "W") — no-op in list
+  -- mode (nothing to h-scroll there). `false` disables it, like every other keys.chat
+  -- entry.
+  local wrap_lhs = require("obelus.config").chat_key("wrap", "W")
+  if wrap_lhs then
+    set(wrap_lhs, function()
+      if state.mode == "chat" then
+        M.toggle_wrap()
+      end
+    end)
+  end
 end
 
 function M.open(as_float)
@@ -1960,6 +2033,7 @@ function M.close()
     pcall(vim.api.nvim_win_close, state.win, true)
   end
   state.win, state.buf, state.is_float = nil, nil, nil
+  state.wrap_override = nil -- clear the session wrap toggle with the window it applied to
   -- the thread's inline band returns now the popup is gone
   pcall(function()
     require("obelus.render").render_all()
@@ -2048,13 +2122,13 @@ local function preview_matching()
   return (require("obelus.config").options.render or {}).preview_matches_chat == true
 end
 
+-- SAME recipe as the chat popup (base_width_for -> thread.pref_width), measured on
+-- the previewed comment's SOURCE text — never the preview buffer (that's the
+-- rendered/wrapped copy; measuring it oscillates, see thread.pref_width). This is
+-- what makes hover == chat: replying to a hovered thread never resizes the box.
 local function preview_base_width()
-  if preview_matching() and state.preview_buf and vim.api.nvim_buf_is_valid(state.preview_buf) then
-    local content_w = 0
-    for _, l in ipairs(vim.api.nvim_buf_get_lines(state.preview_buf, 0, -1, false)) do
-      content_w = math.max(content_w, vim.fn.strdisplaywidth(l))
-    end
-    return fit_width(popup_width(), content_w + 4, math.max(40, vim.o.columns - 4))
+  if preview_matching() and state.preview_thread then
+    return base_width_for(store.get(state.preview_thread))
   end
   return popup_width(0.7)
 end

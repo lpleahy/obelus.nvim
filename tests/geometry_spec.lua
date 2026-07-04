@@ -195,20 +195,20 @@ T.it("popup: a rooted float, seated box, no gap", function()
   T.eq(g.input_hidden, false, "input visible (not hidden)")
 end)
 
--- Width-fit (panel.lua's fit_rooted/fit_width): the popup grows to fit its widest
--- buffer line, capped at math.max(40, vim.o.columns - 4).
+-- Two-way width-fit (panel.lua's fit_rooted -> base_width_for -> thread.pref_width):
+-- a short exchange gets a SNUG box (floored at MIN_W=50), not the old 100-120
+-- comfort base; a fenced code block's hard content can still push past that base,
+-- up to math.max(40, vim.o.columns - 4).
 --
 -- This can't be observed at the headless DEFAULT 80 columns: popup_width()'s 100-col
--- floor already exceeds that cap (max(40, 80-4) = 76 < 100) — fit_width's
--- math.min(max(base, content_w), cap) then always lands on `cap` regardless of
--- content_w, so a wide- and a narrow-content popup would come out at the exact same
--- width and the spec would be vacuous. Widen the editor for the duration of this one
+-- floor already exceeds that cap (max(40, 80-4) = 76 < 100), so a hard-content popup
+-- would land on `cap` regardless of how wide the code line actually is, and the spec
+-- would be vacuous for the growth half. Widen the editor for the duration of this one
 -- spec (restored after) so popup_width() (120 @ 150 cols) sits BELOW the cap (146) —
 -- the one condition where a real open_thread() pass can show actual content-driven
--- growth, not just the cap. (The pure arithmetic — including the cap-below-base case
--- that 80 cols can't exercise here — is unit-tested directly: thread_spec's
--- "panel._fit_width" spec.)
-T.it("popup width: a very wide unbroken line grows the float past popup_width(), capped to the editor", function()
+-- growth, not just the cap. (The pure arithmetic is unit-tested directly: thread_spec's
+-- "panel._fit_width" spec and thread_spec's "pref_width" specs.)
+T.it("popup width: snug for a short reply, wide for a fenced code line (capped to the editor)", function()
   local old_columns = vim.o.columns
   local ok, err = pcall(function()
     vim.o.columns = 150
@@ -229,11 +229,11 @@ T.it("popup width: a very wide unbroken line grows the float past popup_width(),
     vim.cmd("edit " .. file)
     local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
 
-    -- WIDE: an agent turn with one 200-char unbroken "word" (no spaces — the builtin
-    -- wrapper can't break a single token, see thread.lua's wrap()), so the chat
-    -- buffer really does contain a 200-wide physical line.
+    -- WIDE: an agent turn with a FENCED code block containing one 200-char line —
+    -- hard content (can't rewrap without breaking the block), so it's allowed to
+    -- push the popup past the comfort base, up to the editor cap.
     local wide = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
-    ctx.store.add_turn(wide.id, "agent", string.rep("x", 200))
+    ctx.store.add_turn(wide.id, "agent", "```\n" .. string.rep("x", 200) .. "\n```")
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
     panel.open_thread(wide.id, true)
     T.ok(
@@ -247,7 +247,7 @@ T.it("popup width: a very wide unbroken line grows the float past popup_width(),
     local wide_width = vim.api.nvim_win_get_config(panel.geom().win).width
     panel.close()
 
-    -- NARROW: a short single-turn draft thread — the smallest real popup.
+    -- NARROW: a short single-turn draft thread (prose only) — the smallest real popup.
     local narrow = ctx.store.add(T.comment({ file = fabs, range = { sl = 2, el = 2 }, comment = "short" }))
     vim.api.nvim_win_set_cursor(0, { 2, 0 })
     panel.open_thread(narrow.id, true)
@@ -262,9 +262,10 @@ T.it("popup width: a very wide unbroken line grows the float past popup_width(),
     local narrow_width = vim.api.nvim_win_get_config(panel.geom().win).width
     panel.close()
 
-    T.eq(wide_width, cap, "the wide-line popup grew to exactly the editor cap: " .. tostring(wide_width))
+    T.eq(wide_width, cap, "the fenced-code popup grew to exactly the editor cap: " .. tostring(wide_width))
+    T.ok(narrow_width < 100, "the narrow (prose-only) popup is snug, below the old 100-col comfort floor")
+    T.ok(narrow_width >= 50, "the narrow popup never shrinks below MIN_W (50): " .. tostring(narrow_width))
     T.ok(narrow_width < wide_width, "the narrow popup did NOT also grow to the cap: " .. tostring(narrow_width))
-    T.ok(narrow_width <= cap, "the narrow popup never exceeds the same cap")
   end)
   vim.o.columns = old_columns
   if not ok then
@@ -471,7 +472,7 @@ T.it("preview_matches_chat: hover decides the side; the modal reuses it (no flip
   panel.close()
 end)
 
-T.it("preview_matches_chat: the hover width uses the chat recipe (base + content growth)", function()
+T.it("preview_matches_chat: a short reply hover is snug too (MIN_W floor, like the chat popup)", function()
   local saved = vim.o.columns
   vim.o.columns = 150
   local ctx = T.fresh({ render = { preview_matches_chat = true } })
@@ -495,9 +496,39 @@ T.it("preview_matches_chat: the hover width uses the chat recipe (base + content
   end
   panel.hide_preview()
   vim.o.columns = saved
-  -- the CHAT's auto base at 150 cols: clamp(150*0.8, 100, 120) = 120; the old
-  -- preview base would have been clamp(150*0.7, 100, 120) = 105
-  T.eq(pw, 120, "hover uses the chat's own auto width recipe")
+  -- source-derived recipe (base_width_for -> thread.pref_width): a short exchange
+  -- floors at MIN_W (50), same as the modal chat popup would for the same content —
+  -- NOT the old fixed 100-120 comfort base regardless of content length.
+  T.eq(pw, 50, "hover floors at MIN_W like the chat popup would for the same short content")
+end)
+
+T.it("preview_matches_chat: hard content (a fenced code line) grows the hover past the base, capped", function()
+  local saved = vim.o.columns
+  vim.o.columns = 150
+  local ctx = T.fresh({ render = { preview_matches_chat = true } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  require("obelus.panel")._timing.preview_settle = 0
+  local file = ctx.root .. "/h2b.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  -- a fenced code line pushes hard_w past the comfort base, same as the chat popup
+  ctx.store.add_turn(c.id, "agent", "```\n" .. string.rep("x", 200) .. "\n```")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.preview(c.id)
+  vim.wait(300)
+  local pw
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= "" then
+      pw = vim.api.nvim_win_get_width(w)
+    end
+  end
+  panel.hide_preview()
+  vim.o.columns = saved
+  -- same cap the chat popup would grow to: math.max(40, 150 - 4) = 146
+  T.eq(pw, 146, "hover grows past the comfort base for hard content, same as the chat popup")
 end)
 
 T.it("default (knob off): the hover keeps its own narrower auto width", function()

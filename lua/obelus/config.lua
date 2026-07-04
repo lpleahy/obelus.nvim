@@ -188,6 +188,16 @@ M.defaults = {
     -- band_scroll = false to disable, or add line_down/line_up = "<A-j>"/"<A-k>"
     -- if those are free for you. <prefix>J/<prefix>K also scroll.
     band_scroll = { down = "<A-d>", up = "<A-u>" },
+    -- Full replacement of a default mapping's lhs, by MAPSPEC suffix: a string is
+    -- the new lhs (used VERBATIM, not appended to `prefix`), `false` disables it
+    -- (same effect as listing it in `disabled`). e.g. `overrides = { s = "<leader>gs",
+    -- J = false }`. An override that lands OUTSIDE `prefix` still gets a real mapping,
+    -- but drops out of the which-key <prefix> group (see |obelus-keymaps|).
+    overrides = {},
+    -- Chat-surface key bindings (the docked reply box + the quick-reply composer):
+    -- name -> lhs string, or `false` to disable. Unset names keep today's default —
+    -- see |obelus-config-keys.chat| for the full name -> default table.
+    chat = {},
   },
 }
 
@@ -223,6 +233,23 @@ function M.mode()
     return M.ui.mode
   end
   return M.options.mode
+end
+
+---Resolve one keys.chat[name] binding, shared by the docked reply box
+---(panel.lua's open_input/maps) and the quick-reply composer (render.lua's
+---M.compose) so both surfaces read the same table. `default` is today's
+---hardcoded key: nil (unset) keeps it; `false` disables the binding (the caller
+---must skip vim.keymap.set entirely); a string is the user's replacement lhs.
+---@param name string
+---@param default string
+---@return string|false
+function M.chat_key(name, default)
+  local chat = (M.options.keys or {}).chat
+  local v = chat and chat[name]
+  if v == nil then
+    return default
+  end
+  return v
 end
 
 -- Warn once per distinct bad value (path + value + allowed set both baked into the
@@ -287,6 +314,30 @@ local function boolean(opts, key, path, default)
   end
 end
 
+-- keys.overrides / keys.chat: sparse maps of name -> lhs string, or `false` to
+-- disable that one binding. A bad VALUE only drops that one entry (warn once, same
+-- "garbage in, defaults out" idiom as boolean()/enum()) rather than resetting the
+-- whole table — one typo'd override shouldn't cost every other one.
+local function validate_key_map(t, path)
+  if type(t) ~= "table" then
+    return
+  end
+  for k, v in pairs(t) do
+    if type(v) ~= "string" and v ~= false then
+      vim.notify_once(
+        string.format(
+          "obelus: %s.%s = %s is invalid (expected string|false) — ignored",
+          path,
+          tostring(k),
+          vim.inspect(v)
+        ),
+        vim.log.levels.WARN
+      )
+      t[k] = nil
+    end
+  end
+end
+
 -- A scalar where a config TABLE belongs (e.g. `render = false`, `transport = 0`)
 -- would crash the normalize/validate passes below with an index error — restore the
 -- default subtable and warn once instead. `keys = false` is exempt (documented:
@@ -314,6 +365,14 @@ local function ensure_tables(o)
   end
   ensure_table(o.render, "annotations", "render.annotations", M.defaults.render.annotations)
   ensure_table(o.render, "colors", "render.colors", M.defaults.render.colors)
+  -- `keys = false` is the documented all-off shorthand (skip every default mapping) —
+  -- exempt here, same as render.bands = false above; keys.overrides/keys.chat are
+  -- meaningless with no mappings to override.
+  if o.keys ~= false then
+    ensure_table(o, "keys", "keys", M.defaults.keys)
+    ensure_table(o.keys, "overrides", "keys.overrides", M.defaults.keys.overrides)
+    ensure_table(o.keys, "chat", "keys.chat", M.defaults.keys.chat)
+  end
 end
 
 -- render.bands == false is a documented "all off" shorthand, but
@@ -484,6 +543,10 @@ local function validate(o)
   )
   enum(o.transport.batch, "mode", "transport.batch.mode", { "session", "stateless" }, M.defaults.transport.batch.mode)
   enum(o.transport.batch, "prompt", "transport.batch.prompt", { "diff", "full" }, M.defaults.transport.batch.prompt)
+  if o.keys ~= false then
+    validate_key_map(o.keys.overrides, "keys.overrides")
+    validate_key_map(o.keys.chat, "keys.chat")
+  end
 end
 
 ---@param opts? table

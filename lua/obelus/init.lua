@@ -593,17 +593,67 @@ local function disabled_suffixes(k)
   return disabled
 end
 
-local function keymaps()
-  local k = config.options.keys
+-- keys.overrides[suffix]: nil keeps the default `prefix .. suffix` lhs; `false`
+-- disables the row (same effect as listing it in keys.disabled); a string is a FULL
+-- replacement lhs (used verbatim — NOT appended to `prefix`). Shared by keymaps()
+-- (the real mapping) and whichkey()'s `add` (which must follow the same lhs, or
+-- skip the row when the override moved outside the <prefix> group — see there).
+-- Returns the lhs to map, or nil if the row should be skipped entirely.
+local function suffix_lhs(k, suffix, p)
+  -- NOT the `cond and a or b` idiom: overrides[suffix] can legitimately BE `false`,
+  -- which that idiom silently swallows back into the `or` branch.
+  local ov = nil
+  if type(k.overrides) == "table" then
+    ov = k.overrides[suffix]
+  end
+  if ov == false then
+    return nil
+  elseif ov ~= nil then
+    return ov
+  end
+  return p .. suffix
+end
+
+-- One-time warning for a keys.overrides suffix that doesn't match any MAPSPEC row
+-- (a typo, or a suffix from a since-removed mapping) — silently ignored otherwise,
+-- so surface it instead of leaving the override looking like it did nothing.
+local function warn_unknown_overrides(k)
+  if type(k.overrides) ~= "table" then
+    return
+  end
+  local known = {}
+  for _, spec in ipairs(MAPSPEC) do
+    known[spec.suffix] = true
+  end
+  for suffix in pairs(k.overrides) do
+    if not known[suffix] then
+      vim.notify_once(
+        "obelus: keys.overrides has no suffix '" .. tostring(suffix) .. "' — ignored",
+        vim.log.levels.WARN
+      )
+    end
+  end
+end
+
+-- `k` defaults to config.options.keys; a test seam (M._keymaps) can pass a throwaway
+-- config directly, so a spec can verify override/disable behavior without disturbing
+-- the real session's mappings (this only ADDS mappings — it never unmaps a stale lhs
+-- from a prior call, so tests should use a prefix/lhs family they own exclusively).
+local function keymaps(k)
+  k = k or config.options.keys
   if not k then
     return
   end
   local p = k.prefix or "<leader>o"
   local map = vim.keymap.set
   local disabled = disabled_suffixes(k)
+  warn_unknown_overrides(k)
   for _, spec in ipairs(MAPSPEC) do
     if not disabled[spec.suffix] then
-      map(spec.modes, p .. spec.suffix, spec.rhs, { desc = spec.desc, silent = spec.silent })
+      local lhs = suffix_lhs(k, spec.suffix, p)
+      if lhs then
+        map(spec.modes, lhs, spec.rhs, { desc = spec.desc, silent = spec.silent })
+      end
     end
   end
   -- band_scroll: user-chosen lhs (not keys.prefix .. suffix), so it stays outside MAPSPEC
@@ -705,12 +755,12 @@ local function sw(on)
   return on and { icon = "󰔡", color = "yellow" } or { icon = "󰨙", color = "grey" }
 end
 
-local function whichkey()
+local function whichkey(k)
   local ok, wk = pcall(require, "which-key")
   if not ok then
     return
   end
-  local k = config.options.keys
+  k = k or config.options.keys
   if not k then -- keys = false: no mappings at all, so nothing for which-key to own
     return
   end
@@ -721,9 +771,20 @@ local function whichkey()
   -- Registering WITH the rhs makes which-key own these so it uses our state icon.
   local specs = { { p, group = "obelus" } }
   local function add(suffix, rhs, desc, icon)
-    if not disabled[suffix] then
-      specs[#specs + 1] = { p .. suffix, rhs, desc = desc, icon = icon }
+    if disabled[suffix] then
+      return
     end
+    local lhs = suffix_lhs(k, suffix, p)
+    if not lhs then -- keys.overrides[suffix] == false
+      return
+    end
+    -- an override that moved OUTSIDE keys.prefix is still a real mapping (keymaps()
+    -- set it), but it no longer belongs to this which-key <prefix> GROUP — drop it
+    -- from `specs` rather than registering a stray entry under the wrong group.
+    if lhs:sub(1, #p) ~= p then
+      return
+    end
+    specs[#specs + 1] = { lhs, rhs, desc = desc, icon = icon }
   end
 
   add(
@@ -857,5 +918,14 @@ function M.setup(opts)
   end)
   return M
 end
+
+-- Test seams (config_spec/init spec): keymaps()/whichkey() only ever run ONCE for
+-- real, on the first M.setup() call (the `did_setup` latch above) — a later
+-- setup() with a different keys.overrides/keys.chat wouldn't otherwise be
+-- observable. Exposed so a spec can re-run the registration logic directly against
+-- a throwaway `k` table, same idea as panel.lua's `_fit_width`.
+M._keymaps = keymaps
+M._whichkey = whichkey
+M._MAPSPEC = MAPSPEC
 
 return M
