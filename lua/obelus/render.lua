@@ -699,6 +699,7 @@ function M.compose(opts)
   local ibuf = vim.api.nvim_create_buf(false, true)
   vim.bo[ibuf].bufhidden = "wipe"
   vim.bo[ibuf].filetype = "obelus_reply" -- so cursor-animation plugins can exclude it
+  require("obelus.mention").attach(ibuf) -- "@" opens a project file picker (see mention.lua)
   if opts.default and opts.default ~= "" then
     vim.api.nvim_buf_set_lines(ibuf, 0, -1, false, vim.split(opts.default, "\n"))
   end

@@ -1327,6 +1327,7 @@ local function open_input()
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "obelus_reply" -- so cursor-animation plugins can exclude it
   state.input_buf = buf
+  require("obelus.mention").attach(buf) -- "@" opens a project file picker (see mention.lua)
   -- load the trailing UNSENT "you" message (a new comment, or a reply you're drafting) into the
   -- box so you edit it in place; it shows in the thread as "· draft" until sent
   local st = require("obelus.store")

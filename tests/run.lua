@@ -49,6 +49,7 @@ for _, spec in ipairs({
   "geometry",
   "e2e",
   "panel",
+  "mention",
   "markview",
 }) do
   local ok, err = pcall(require, spec .. "_spec")

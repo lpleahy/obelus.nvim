@@ -8,6 +8,9 @@ Transports: `sidekick` (a running CLI agent), `cli` (headless, e.g. `claude -p` 
 `file`, and `quickfix`. Early stage: capturing, annotating, curating, and submitting a batch works
 today.
 
+Reply inputs support `@` file mentions: type `@` to open a file picker (fzf-lua if installed, a
+built-in fallback otherwise) and insert the picked file's project-relative path.
+
 ## Install
 
 lazy.nvim:
@@ -53,6 +56,9 @@ Chat rendering: `:ObelusRenderer markview|builtin|treesitter` (no argument cycle
 Skip specific default mappings with `keys.disabled = { "x", "T" }` (a list of suffixes);
 `keys = false` skips all of them.
 
+In the reply box (or the quick-reply composer), `@` in insert mode opens a file picker scoped to
+the project; set `input.mention = false` to disable it.
+
 ## API
 
 The public surface of `require("obelus")` (also see `require("obelus.review")`, which
@@ -93,6 +99,8 @@ require("obelus").setup({
     hints = false,                               -- keybind hint footers everywhere; <leader>o? toggles
     annotations = { signs = true, preview = true }, -- in-file gutter/eol decorations
   },
+  input = { mention = true },                    -- "@" file picker in reply inputs
+
   transport = {
     default = "sidekick",
     sidekick = { name = "crush" },

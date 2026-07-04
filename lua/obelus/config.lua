@@ -147,6 +147,13 @@ M.defaults = {
   -- Background-job spinner. "auto" | "inline" | "corner" | "statusline" | "off".
   progress = { display = "auto" },
 
+  input = {
+    -- "@" in an obelus input buffer (the docked reply box, the quick-reply
+    -- composer) opens a file picker (fzf-lua if installed, else vim.ui.select)
+    -- and inserts the picked file's project-relative path. Set false to disable.
+    mention = true,
+  },
+
   keys = {
     prefix = "<leader>o", -- set keys = false to skip default mappings
     -- skip specific default mappings by suffix (the letter after the prefix), e.g.
@@ -263,6 +270,7 @@ local function ensure_tables(o)
   ensure_table(o, "view", "view", M.defaults.view)
   ensure_table(o, "render", "render", M.defaults.render)
   ensure_table(o, "progress", "progress", M.defaults.progress)
+  ensure_table(o, "input", "input", M.defaults.input)
   ensure_table(o, "transport", "transport", M.defaults.transport)
   ensure_table(o.transport, "batch", "transport.batch", M.defaults.transport.batch)
   ensure_table(o.transport, "cli", "transport.cli", M.defaults.transport.cli)
@@ -383,6 +391,7 @@ local function validate(o)
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
   boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
+  boolean(o.input, "mention", "input.mention", M.defaults.input.mention)
   enum(o.render.bands, "style", "render.bands.style", { "popup", "inline" }, M.defaults.render.bands.style)
   enum(o.render.bands, "mode", "render.bands.mode", { "focus", "all" }, M.defaults.render.bands.mode)
   enum(
