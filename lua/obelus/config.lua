@@ -90,6 +90,10 @@ M.defaults = {
       you = "DiagnosticInfo", -- accent for your turns
       agent = "DiagnosticOk", -- accent for agent turns
       meta = "Comment", -- metadata (range, timestamps)
+      -- valid @mention accent (input box + chat bodies). nil = the theme's warn
+      -- orange — chosen because it collides with none of the surface tints
+      -- (input = accent, your turns = you, agent turns = agent).
+      mention = nil,
       tint = 0.08, -- background blend strength (0 = none); kept subtle
       rule = 0.75, -- divider brightness: blend toward the turn colour (0..1, 1 = full)
       -- markview inline `code` background inside the bubble:

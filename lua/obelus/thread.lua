@@ -103,6 +103,15 @@ function M.setup_highlights()
     or color("Statement", "fg")
     or color("Special", "fg")
     or 0xbb9af7
+  -- @mention accent: deliberately NOT brand/you/agent — every obelus surface a
+  -- mention can appear on is tinted with one of those (input box = brand, your
+  -- turns = you, agent turns = agent), so any of them would blend in somewhere.
+  -- The theme's warn orange collides with none of them; override with
+  -- render.colors.mention.
+  local mentionc = color(cc.mention or "DiagnosticWarn", "fg")
+    or color("WarningMsg", "fg")
+    or color("Number", "fg")
+    or 0xe0af68
   -- Identity lives on the BAR + DIVIDER LINES (full colour); the bubble bg is a
   -- whisper-soft tint so blocks of colour don't encroach on each other. In
   -- `transparent` mode the bg is dropped entirely (NONE) — the code/editor shows
@@ -149,8 +158,8 @@ function M.setup_highlights()
   -- valid @mention spans (thread.lua's md_chunks post-pass): brand fg (same accent
   -- as links/tags) on the turn's own bubble bg — bg follows band/reply exactly like
   -- Bold above, so it drops to NONE in transparent mode too.
-  set("ObelusThreadMention", { fg = brand, bg = band, bold = true })
-  set("ObelusReplyMention", { fg = brand, bg = reply, bold = true })
+  set("ObelusThreadMention", { fg = mentionc, bg = band, bold = true })
+  set("ObelusReplyMention", { fg = mentionc, bg = reply, bold = true })
   set("ObelusThreadCodeLabel", { fg = meta, bg = codeb })
   set("ObelusReplyCodeLabel", { fg = meta, bg = rcodeb })
   -- neutral-bg dividers for the sidebar (drawn as virt_lines, so the tint can't
@@ -181,8 +190,10 @@ function M.setup_highlights()
   set("ObelusInputBar", { fg = brand, bg = inbg }) -- the input's left statuscolumn bar
   set("ObelusInputHeader", { fg = brand, bg = inbg, bold = true }) -- the "reply"/"you" title
   -- live VALID @mention highlight in an input buffer (mention.lua's rescan_mentions):
-  -- brand fg only, no bg — the input box's own bg (inbg above) already shows through
-  set("ObelusMention", { fg = brand, bold = true })
+  -- mention accent fg only, no bg — the input box's own bg (inbg above) shows
+  -- through, and its chrome is BRAND-tinted, which is exactly why the mention
+  -- accent is a different colour (see mentionc above)
+  set("ObelusMention", { fg = mentionc, bold = true })
   -- optional Visual-selection override for the chat windows (render.colors.selection).
   -- Remapped onto the chat window via chat_winhl so it doesn't touch Visual elsewhere.
   if cc.selection ~= nil then
