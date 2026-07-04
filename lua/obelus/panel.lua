@@ -42,46 +42,6 @@ local function markview_on()
   return render_mode() == "markview"
 end
 
--- :ObelusRenderInfo — every input to the "which renderer painted this?" decision,
--- for the chat AND the hover preview, so a live "why is this body in-house styled?"
--- has answers without guesswork. Returns a table (also vim.print-ed by the command).
-function M.render_info()
-  local config = require("obelus.config")
-  local jobs = require("obelus.jobs")
-  local function mvmarks(buf)
-    local n = 0
-    if buf and vim.api.nvim_buf_is_valid(buf) then
-      for name, nsid in pairs(vim.api.nvim_get_namespaces()) do
-        if name:find("markview", 1, true) then
-          n = n + #vim.api.nvim_buf_get_extmarks(buf, nsid, 0, -1, {})
-        end
-      end
-    end
-    return n
-  end
-  local function surface(label, thread_id, win, buf)
-    local c = thread_id and require("obelus.store").get(thread_id)
-    return {
-      surface = label,
-      thread = thread_id,
-      dispatching_flag = c and c.dispatching or false,
-      jobs_busy = (c and jobs.busy(c.id)) or false,
-      state_streaming = state.streaming or false,
-      markview_marks = mvmarks(buf),
-      conceallevel = (win and vim.api.nvim_win_is_valid(win)) and vim.wo[win].conceallevel or nil,
-    }
-  end
-  return {
-    render_mode = render_mode(),
-    markview_loaded = (pcall(require, "markview.actions")),
-    ui_renderer_override = config.ui.renderer,
-    options_renderer = (config.options.render or {}).renderer,
-    chat = state.thread and surface("chat", state.thread, state.win, state.buf) or nil,
-    preview = state.preview_thread and surface("preview", state.preview_thread, state.preview_win, state.preview_buf)
-      or nil,
-  }
-end
-
 -- raise markview's max_buf_lines once (default 1000 only renders a cursor window,
 -- which truncates long threads); a deep-extend keeps the user's other markview opts
 local markview_configured = false
@@ -1129,6 +1089,46 @@ end
 -- Structured, READ-ONLY introspection of the live chat + reply-box geometry — the
 -- numbers the seating/over-scroll behaviours are defined by. Specs assert on this
 -- instead of reverse-engineering windows.
+-- :ObelusRenderInfo — every input to the "which renderer painted this?" decision,
+-- for the chat AND the hover preview, so a live "why is this body in-house styled?"
+-- has answers without guesswork. Returns a table (also vim.print-ed by the command).
+function M.render_info()
+  local config = require("obelus.config")
+  local jobs = require("obelus.jobs")
+  local function mvmarks(buf)
+    local n = 0
+    if buf and vim.api.nvim_buf_is_valid(buf) then
+      for name, nsid in pairs(vim.api.nvim_get_namespaces()) do
+        if name:find("markview", 1, true) then
+          n = n + #vim.api.nvim_buf_get_extmarks(buf, nsid, 0, -1, {})
+        end
+      end
+    end
+    return n
+  end
+  local function surface(label, thread_id, win, buf)
+    local c = thread_id and require("obelus.store").get(thread_id)
+    return {
+      surface = label,
+      thread = thread_id,
+      dispatching_flag = c and c.dispatching or false,
+      jobs_busy = (c and jobs.busy(c.id)) or false,
+      state_streaming = state.streaming or false,
+      markview_marks = mvmarks(buf),
+      conceallevel = (win and vim.api.nvim_win_is_valid(win)) and vim.wo[win].conceallevel or nil,
+    }
+  end
+  return {
+    render_mode = render_mode(),
+    markview_loaded = (pcall(require, "markview.actions")),
+    ui_renderer_override = config.ui.renderer,
+    options_renderer = (config.options.render or {}).renderer,
+    chat = state.thread and surface("chat", state.thread, state.win, state.buf) or nil,
+    preview = state.preview_thread and surface("preview", state.preview_thread, state.preview_win, state.preview_buf)
+      or nil,
+  }
+end
+
 -- nil when no panel window is open. `gap` = box_top - expect_top: 0 means the reply
 -- box sits exactly on the reserved rows (seated); nil when it can't be measured.
 function M.geom()
