@@ -2041,6 +2041,17 @@ local function fill_preview(force)
     -- size_preview below re-seats moments later anyway whenever preview_root is set.
     seat_bottom(win, state.preview_buf, {})
   end
+  local pmode = render_mode()
+  if pmode == "markview" or pmode == "treesitter" then
+    -- the markdown TS highlighter supplies the CODE-BLOCK token colours (language
+    -- injections) — markview only draws the box/label around them. The chat path
+    -- starts it in reconcile_renderer; without this the preview's fences render
+    -- as an all-grey box while the modal shows them coloured.
+    if state._pts_buf ~= state.preview_buf then
+      pcall(vim.treesitter.start, state.preview_buf, "markdown")
+      state._pts_buf = state.preview_buf -- once per buffer (bufhidden=wipe recreates)
+    end
+  end
   if markview_on() then
     -- per-actual-pass, NOT cached/once: this races markview's own ColorScheme
     -- lifecycle (a live theme change must re-derive the twins on the very next

@@ -446,3 +446,35 @@ T.it_when(has_mv, "PORTABILITY: opaque state — the twins still carry obelus's 
     error(err, 0)
   end
 end)
+
+T.it_when(has_mv, "the hover preview gets a markdown TS highlighter — code blocks colour like the chat", function()
+  local ctx = T.fresh({ render = { renderer = "markview" } })
+  local panel = require("obelus.panel")
+  panel._timing.fill_throttle = 0
+  panel._timing.preview_settle = 0
+  local file = ctx.root .. "/f.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  ctx.store.add_turn(c.id, "agent", "```lua\nlocal x = 42\n```")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  panel.preview(c.id)
+  T.ok(
+    T.wait_for(function()
+      local info = panel.render_info()
+      return info.preview ~= nil and info.preview.markview_marks > 0
+    end, 3000),
+    "preview rendered with markview"
+  )
+  local pbuf
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    local b = vim.api.nvim_win_get_buf(w)
+    if vim.api.nvim_win_get_config(w).relative ~= "" and vim.bo[b].filetype ~= "lua" then
+      pbuf = b
+    end
+  end
+  T.ok(pbuf, "preview buffer found")
+  T.ok(vim.treesitter.highlighter.active[pbuf] ~= nil, "a TS highlighter is attached — injections colour the fence")
+  panel.hide_preview()
+end)
