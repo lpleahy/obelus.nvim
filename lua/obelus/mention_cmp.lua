@@ -42,25 +42,28 @@ function M:complete(params, callback)
   end
 
   local root = require("obelus.store").root()
-  local items = {}
-  for i, item in ipairs(mention._items(root)) do
-    items[i] = {
-      label = item.label,
-      kind = item.kind,
-      filterText = item.filterText,
-      textEdit = {
-        range = {
-          start = { line = row0, character = at_col0 + 1 },
-          ["end"] = { line = row0, character = col0 },
+  -- async like the blink adapter (cmp callbacks may fire later too): a cold-cache
+  -- sync answer of zero items would skip the menu on the session's first "@"
+  mention._items_async(root, function(core)
+    local items = {}
+    for i, item in ipairs(core) do
+      items[i] = {
+        label = item.label,
+        kind = item.kind,
+        filterText = item.filterText,
+        textEdit = {
+          range = {
+            start = { line = row0, character = at_col0 + 1 },
+            ["end"] = { line = row0, character = col0 },
+          },
+          newText = mention._escape(item.label),
         },
-        newText = mention._escape(item.label),
-      },
-    }
-  end
-
-  -- same rationale as the blink adapter: path chars break cmp's incremental
-  -- filter, so force a re-query every keystroke rather than trust a stale list.
-  callback({ items = items, isIncomplete = true })
+      }
+    end
+    -- same rationale as the blink adapter: path chars break cmp's incremental
+    -- filter, so force a re-query every keystroke rather than trust a stale list.
+    callback({ items = items, isIncomplete = true })
+  end)
 end
 
 return M

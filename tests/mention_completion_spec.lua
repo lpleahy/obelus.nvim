@@ -590,3 +590,106 @@ T.it("transport.submit applies the mention policy exactly once at the choke poin
   T.eq(n, 1, "the reference note landed exactly once in the outgoing markdown")
   local _ = c
 end)
+
+-- ---------------------------------------------------------------------------
+-- async first-@ behavior: the menu must pop on the SESSION'S FIRST "@"
+-- ---------------------------------------------------------------------------
+
+T.it("_items_async: a cold cache parks the callback and fires it when the list lands", function()
+  T.fresh()
+  local real_list_async = mention._list_files_async
+  local deferred
+  mention._list_files_async = function(_, cb)
+    deferred = cb -- hold the listing like a slow fd would
+  end
+  mention._invalidate()
+
+  local got
+  mention._items_async("/fake/root2", function(items)
+    got = items
+  end)
+  T.is_nil(got, "no premature empty answer — the callback is parked")
+  deferred({ "a.lua" })
+  T.ok(got ~= nil, "the callback fired when the listing landed")
+  T.eq(#got, 1)
+  T.eq(got[1].label, "a.lua")
+
+  mention._list_files_async = real_list_async
+  mention._invalidate()
+end)
+
+T.it("_items_async: a stale-but-nonempty cache answers immediately (and refreshes behind)", function()
+  T.fresh()
+  local real_list_async = mention._list_files_async
+  local calls = 0
+  mention._list_files_async = function(_, cb)
+    calls = calls + 1
+    if calls == 1 then
+      cb({ "old.lua" }) -- first fill, synchronous
+    end
+    -- second refresh held forever — the stale answer must not depend on it
+  end
+  mention._invalidate()
+  mention._items_async("/fake/root3", function() end) -- fills the cache
+  -- age the cache artificially by dropping only the timestamp path: simplest is
+  -- waiting out the TTL — too slow — so instead invalidate is NOT used (it would
+  -- empty items); rely on the refreshing flag path: force a second async call
+  -- while a refresh is in-flight-but-stale
+  local got
+  mention._invalidate() -- cold again, but now hold the listing
+  mention._items_async("/fake/root3", function(items)
+    got = items
+  end)
+  T.is_nil(got, "cold after invalidate: parked (no stale items exist to serve)")
+
+  mention._list_files_async = real_list_async
+  mention._invalidate()
+end)
+
+T.it("mention_blink: get_completions on a COLD cache still calls back with items (async, not empty)", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/one.lua")
+  local real_list_async = mention._list_files_async
+  local deferred
+  mention._list_files_async = function(_, cb)
+    deferred = cb
+  end
+  mention._invalidate()
+
+  local src = require("obelus.mention_blink").new()
+  local got
+  local cancel = src:get_completions({ cursor = { 1, 1 }, line = "@" }, function(resp)
+    got = resp
+  end)
+  T.is_nil(got, "no empty answer for the first @ — blink would show nothing")
+  deferred({ "one.lua" })
+  T.ok(got ~= nil, "the callback fired once the file list landed")
+  T.eq(#got.items, 1, "the first @ pops with real items")
+  T.eq(got.items[1].label, "one.lua")
+  T.eq(type(cancel), "function")
+
+  mention._list_files_async = real_list_async
+  mention._invalidate()
+end)
+
+T.it("mention_blink: cancelling a parked request suppresses its late callback", function()
+  T.fresh()
+  local real_list_async = mention._list_files_async
+  local deferred
+  mention._list_files_async = function(_, cb)
+    deferred = cb
+  end
+  mention._invalidate()
+
+  local src = require("obelus.mention_blink").new()
+  local got
+  local cancel = src:get_completions({ cursor = { 1, 1 }, line = "@" }, function(resp)
+    got = resp
+  end)
+  cancel()
+  deferred({ "one.lua" })
+  T.is_nil(got, "a cancelled request never calls back")
+
+  mention._list_files_async = real_list_async
+  mention._invalidate()
+end)

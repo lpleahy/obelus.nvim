@@ -44,28 +44,39 @@ function M:get_completions(ctx, callback)
   end
 
   local root = require("obelus.store").root()
-  local items = {}
-  for i, item in ipairs(mention._items(root)) do
-    items[i] = {
-      label = item.label,
-      kind = item.kind,
-      filterText = item.filterText,
-      textEdit = {
-        range = {
-          start = { line = row0, character = at_col0 + 1 },
-          ["end"] = { line = row0, character = col0 },
+  local cancelled = false
+  -- ASYNC on purpose: answering a cold cache with zero items made the menu skip
+  -- the session's very first "@" (nothing to show until the next keystroke
+  -- re-queried). Parking blink's callback on the file list means that first "@"
+  -- pops as soon as fd answers — blink sources are async by contract.
+  mention._items_async(root, function(core)
+    if cancelled then
+      return
+    end
+    local items = {}
+    for i, item in ipairs(core) do
+      items[i] = {
+        label = item.label,
+        kind = item.kind,
+        filterText = item.filterText,
+        textEdit = {
+          range = {
+            start = { line = row0, character = at_col0 + 1 },
+            ["end"] = { line = row0, character = col0 },
+          },
+          newText = mention._escape(item.label),
         },
-        newText = mention._escape(item.label),
-      },
-    }
+      }
+    end
+    -- Path characters (., /, -) break blink's own keyword boundary, so its
+    -- incremental re-filter of a stale item list can't be trusted as the prefix
+    -- grows past one of them — force a full re-query on every keystroke instead
+    -- (both flags true). Same trade CodeCompanion's mention source makes.
+    callback({ is_incomplete_forward = true, is_incomplete_backward = true, items = items })
+  end)
+  return function()
+    cancelled = true
   end
-
-  -- Path characters (., /, -) break blink's own keyword boundary, so its
-  -- incremental re-filter of a stale item list can't be trusted as the prefix
-  -- grows past one of them — force a full re-query on every keystroke instead
-  -- (both flags true). Same trade CodeCompanion's mention source makes.
-  callback({ is_incomplete_forward = true, is_incomplete_backward = true, items = items })
-  return function() end -- nothing async in flight to cancel
 end
 
 return M

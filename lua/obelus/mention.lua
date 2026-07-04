@@ -178,6 +178,7 @@ end
 -- picks up the fresh list. Never blocks the keystroke. Test seam: M._invalidate()
 -- drops the cache.
 local items_cache = {} -- root -> { items = CompletionItem[], at = uv.now(), refreshing = bool }
+local items_waiters = {} -- root -> { cb, ... } callbacks parked on the in-flight refresh
 
 local function refresh_items(root)
   local hit = items_cache[root]
@@ -195,6 +196,11 @@ local function refresh_items(root)
       }
     end
     items_cache[root] = { items = items, at = (vim.uv or vim.loop).now(), refreshing = false }
+    local parked = items_waiters[root]
+    items_waiters[root] = nil
+    for _, cb in ipairs(parked or {}) do
+      cb(items)
+    end
   end)
 end
 
@@ -209,6 +215,46 @@ function M._items(root)
   -- may have already landed; real async serves the stale/empty snapshot instead
   local hit2 = items_cache[root]
   return hit2 and hit2.items or {}
+end
+
+-- Async variant for the completion adapters: `cb(items)` fires exactly once —
+-- immediately when the cache can answer (fresh, OR stale-but-nonempty: snappy
+-- menu now, the background refresh lands for the next keystroke), else parked on
+-- the in-flight refresh. This is what makes the menu pop on the VERY FIRST "@"
+-- of a session: the old sync path answered a cold cache with zero items, so
+-- blink showed nothing until the next typed character re-queried.
+function M._items_async(root, cb)
+  local now = (vim.uv or vim.loop).now()
+  local hit = items_cache[root]
+  if hit and not hit.refreshing and (now - hit.at) < ITEMS_TTL_MS then
+    return cb(hit.items)
+  end
+  if hit and #hit.items > 0 then
+    refresh_items(root)
+    return cb(hit.items)
+  end
+  local w = items_waiters[root]
+  if w then
+    w[#w + 1] = cb
+  else
+    items_waiters[root] = { cb }
+  end
+  refresh_items(root)
+  -- a synchronous lister (spec stub) has already flushed the waiters by now
+end
+
+-- Warm the file-list cache for this project — called when an input buffer opens,
+-- so the first "@" almost always answers instantly instead of waiting on fd.
+function M.prewarm()
+  local ok, root = pcall(function()
+    return require("obelus.store").root()
+  end)
+  if ok and root then
+    local hit = items_cache[root]
+    if not (hit and (((vim.uv or vim.loop).now() - hit.at) < ITEMS_TTL_MS)) then
+      refresh_items(root)
+    end
+  end
 end
 
 -- Test seam: force the next M._items call to re-list instead of serving the cache.
@@ -723,6 +769,7 @@ function M.attach(buf)
     -- (no vim.b.completion override: blink only honors it when the user's global
     -- enabled() is ALSO true, and its default already admits our nofile buffers —
     -- a stricter user enabled() can't be overridden from here at all)
+    M.prewarm() -- list the project NOW so the first "@" answers instantly
     return -- the engine's menu owns "@" — binding the picker too would be chaos
   end
   if mention.picker == false then
