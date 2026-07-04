@@ -61,7 +61,11 @@ Skip specific default mappings with `keys.disabled = { "x", "T" }` (a list of su
 In the reply box (or the quick-reply composer), `@` in insert mode mentions a project file — via
 blink.cmp/nvim-cmp when one is installed, else the picker. Set `input.mention = false` to disable
 it entirely, or `input.mention = { completion = "blink" | "cmp" | false }` to force/disable which
-completion engine it uses (`picker = false` disables the picker fallback).
+completion engine it uses (`picker = false` disables the picker fallback). Mentions that name a
+real file highlight in the input and in the rendered chat — the color doubles as live validation.
+What a mention MEANS to the agent is `input.mention.send`: `"reference"` (default) appends one
+note telling it the `@paths` are project-relative files to read itself; `"inline"` embeds each
+mentioned file's contents in the outgoing prompt (capped per file and in total).
 
 ## API
 

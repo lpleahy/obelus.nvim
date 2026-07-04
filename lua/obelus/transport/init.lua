@@ -1,6 +1,7 @@
 local config = require("obelus.config")
 local store = require("obelus.store")
 local format = require("obelus.format")
+local mention = require("obelus.mention")
 
 local M = {}
 
@@ -38,7 +39,19 @@ function M.submit(name, opts)
   end
 
   -- opts.prompt overrides the batch markdown (used for resumed follow-ups).
-  local payload = { comments = comments, markdown = opts.prompt or format.to_markdown(comments), opts = opts }
+  local markdown = opts.prompt or format.to_markdown(comments)
+  -- ONE choke point for every outgoing prompt (chat replies via opts.prompt, batch/
+  -- oneshot submits via format.to_markdown, resumed rounds via batch.lua's own
+  -- opts.prompt) — the @mention policy (input.mention.send: reference note vs
+  -- inlined file contents) is applied exactly once here, transport-agnostic (cli,
+  -- file, sidekick, quickfix, or a test's fake transport all see the same
+  -- markdown), rather than duplicated at each transport's own prompt-suffix site
+  -- (e.g. cli.lua's [Formatting] suffix, appended AFTER this).
+  local suffix = mention.prompt_suffix(markdown)
+  if suffix then
+    markdown = markdown .. suffix
+  end
+  local payload = { comments = comments, markdown = markdown, opts = opts }
   local ok, err = pcall(fn, payload)
   if not ok then
     vim.notify("obelus: transport '" .. name .. "' failed: " .. tostring(err), vim.log.levels.ERROR)

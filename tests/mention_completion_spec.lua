@@ -411,3 +411,182 @@ T.it("mention_cmp: a boundary @ returns items with textEdit ranges + escaped new
   T.eq(spacey.textEdit.range.start, { line = 4, character = 1 })
   T.eq(spacey.textEdit.range["end"], { line = 4, character = #line })
 end)
+
+-- ---------------------------------------------------------------------------
+-- _scan: forward validation over finished text (files must EXIST)
+-- ---------------------------------------------------------------------------
+
+T.it("_scan: valid mentions only — existing file yes, missing file no, mid-word no", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local line = "see @real.lua and @missing.lua and foo@real.lua end"
+  local got = mention._scan(line)
+  T.eq(#got, 1, "only the valid boundary mention matched")
+  T.eq(got[1][3], "real.lua")
+  T.eq(line:sub(got[1][1] + 1, got[1][2]), "@real.lua", "the span covers the whole token")
+end)
+
+T.it("_scan: an escaped-space path validates and unescapes (the \\  pair beats PATH_CHAR's backslash)", function()
+  local ctx = T.fresh()
+  vim.fn.mkdir(ctx.root .. "/dir with space", "p")
+  vim.fn.writefile({ "x" }, ctx.root .. "/dir with space/file.lua")
+  mention._scan_invalidate()
+  local line = "check @dir\\ with\\ space/file.lua please"
+  local got = mention._scan(line)
+  T.eq(#got, 1, "the spacey mention validated")
+  T.eq(got[1][3], "dir with space/file.lua", "the path came back UNescaped")
+  T.eq(line:sub(got[1][1] + 1, got[1][2]), "@dir\\ with\\ space/file.lua")
+end)
+
+T.it("_scan: two mentions on one line, both spans returned in order", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/a.lua")
+  vim.fn.writefile({ "x" }, ctx.root .. "/b.lua")
+  mention._scan_invalidate()
+  local got = mention._scan("@a.lua then @b.lua")
+  T.eq(#got, 2)
+  T.eq(got[1][3], "a.lua")
+  T.eq(got[2][3], "b.lua")
+end)
+
+T.it("_scan: the stat cache serves within the TTL; _scan_invalidate re-checks", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/here.lua")
+  mention._scan_invalidate()
+  T.eq(#mention._scan("@here.lua"), 1, "valid while the file exists")
+  vim.fn.delete(ctx.root .. "/here.lua")
+  T.eq(#mention._scan("@here.lua"), 1, "still valid within the TTL (cached verdict)")
+  mention._scan_invalidate()
+  T.eq(#mention._scan("@here.lua"), 0, "invalid after the cache drops")
+end)
+
+-- ---------------------------------------------------------------------------
+-- input-buffer live highlight
+-- ---------------------------------------------------------------------------
+
+-- same shape as mention_spec.lua's open_input (spec files are separate scopes)
+local function open_reply_input(ctx)
+  local file = ctx.root .. "/f.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "reply box revealed"
+  )
+  local g = panel.geom()
+  return g.input_win, vim.api.nvim_win_get_buf(g.input_win)
+end
+
+T.it("input highlight: valid mentions get ObelusMention extmarks; invalid ones don't", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local win, buf = open_reply_input(ctx)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "@real.lua and @missing.lua" })
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  local ns_id = vim.api.nvim_create_namespace("obelus_mention_hl")
+  local marks = vim.api.nvim_buf_get_extmarks(buf, ns_id, 0, -1, { details = true })
+  T.eq(#marks, 1, "exactly one highlight — the valid mention")
+  T.eq(marks[1][3], 0, "starts at the @")
+  T.eq(marks[1][4].end_col, #"@real.lua", "covers the whole token")
+  T.eq(marks[1][4].hl_group, "ObelusMention")
+  local _ = win
+end)
+
+-- ---------------------------------------------------------------------------
+-- chat-body styling (builtin renderer post-pass)
+-- ---------------------------------------------------------------------------
+
+T.it("thread body: a valid mention gets the per-bubble Mention style; code spans are left alone", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  ctx.store.add_turn(c.id, "agent", "see @real.lua and `@real.lua` ok")
+  local rows = require("obelus.thread").build(ctx.store.get(c.id), 70, { markdown = true, rules = false })
+  local mention_chunks, full = {}, {}
+  for _, r in ipairs(rows) do
+    if r.kind == "content" then
+      for _, ch in ipairs(r.chunks) do
+        full[#full + 1] = ch[1]
+        if ch[2] == "ObelusReplyMention" then
+          mention_chunks[#mention_chunks + 1] = ch[1]
+        end
+      end
+    end
+  end
+  T.eq(mention_chunks, { "@real.lua" }, "exactly the plain-text mention styled — not the code-span one")
+  T.contains(table.concat(full), "see @real.lua and @real.lua ok", "total text byte-identical (splits only)")
+end)
+
+-- ---------------------------------------------------------------------------
+-- prompt_suffix: input.mention.send = "reference" | "inline"
+-- ---------------------------------------------------------------------------
+
+T.it('prompt_suffix: "reference" (default) appends the one-line note; no mentions -> nil', function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local s = mention.prompt_suffix("please check @real.lua")
+  T.ok(s and s:find("[Mentions]", 1, true), "the reference note is present")
+  T.is_nil(mention.prompt_suffix("no mentions here"), "nil without a valid mention")
+  T.is_nil(mention.prompt_suffix("@missing.lua"), "an invalid mention doesn't trigger the note")
+end)
+
+T.it('prompt_suffix: "inline" embeds the file contents, fenced, once per unique path', function()
+  local ctx = T.fresh({ input = { mention = { send = "inline" } } })
+  vim.fn.writefile({ "local marker_line = 42" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local s = mention.prompt_suffix("check @real.lua and again @real.lua")
+  T.ok(s and s:find("[Mentioned files]", 1, true), "the inline section is present")
+  T.contains(s, "local marker_line = 42", "the file's contents are embedded")
+  T.contains(s, "```lua", "fenced with the extension language")
+  local _, n = s:gsub("@real%.lua", "")
+  T.eq(n, 1, "the file appears once despite two mentions")
+end)
+
+T.it('prompt_suffix: "inline" truncates a huge file at the cap and says so', function()
+  local ctx = T.fresh({ input = { mention = { send = "inline" } } })
+  local big = {}
+  for i = 1, 4000 do
+    big[i] = string.format("line %04d %s", i, string.rep("x", 40))
+  end
+  vim.fn.writefile(big, ctx.root .. "/big.lua")
+  mention._scan_invalidate()
+  local s = mention.prompt_suffix("@big.lua")
+  T.ok(s, "suffix produced")
+  T.contains(s, "(truncated)", "truncation is flagged")
+  T.ok(#s < 40 * 1024, "the embedded content respects the per-file cap")
+  T.ok(not s:find("line 4000", 1, true), "the tail was cut")
+end)
+
+T.it('prompt_suffix: "inline" notes directories instead of dumping them', function()
+  local ctx = T.fresh({ input = { mention = { send = "inline" } } })
+  vim.fn.mkdir(ctx.root .. "/somedir", "p")
+  mention._scan_invalidate()
+  local s = mention.prompt_suffix("@somedir")
+  T.ok(s and s:find("directory", 1, true), "a directory mention gets the browse note")
+end)
+
+T.it("transport.submit applies the mention policy exactly once at the choke point", function()
+  local F = require("fake")
+  local ctx = T.fresh({ transport = { dispatch = "fake", default = "fake" } })
+  F.install()
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local c = ctx.store.add(T.comment({ comment = "look at @real.lua" }))
+  require("obelus.transport").submit("fake", {})
+  T.ok(F.payload, "the fake transport got the payload")
+  local _, n = F.payload.markdown:gsub("%[Mentions%]", "")
+  T.eq(n, 1, "the reference note landed exactly once in the outgoing markdown")
+  local _ = c
+end)

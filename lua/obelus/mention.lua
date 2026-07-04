@@ -11,6 +11,7 @@ local M = {}
 local attached = {} -- buf -> true; M.attach never double-binds a buffer
 local scheduled = {} -- buf -> true while a trigger is queued (cleared when it runs)
 local ns = vim.api.nvim_create_namespace("obelus_mention")
+local hl_ns = vim.api.nvim_create_namespace("obelus_mention_hl") -- live VALID-mention highlight, separate from `ns` (the picker's anchor marks) so clearing one never touches the other
 
 local DEFAULT_CAP = 4000
 local LIST_TIMEOUT_MS = 2000
@@ -26,10 +27,17 @@ local PATH_CHAR = "[%w%._/\\%-\128-\255]"
 
 -- "@" starts a word: line start, or preceded by whitespace/"(" . col0 is the
 -- 0-based column "@" is about to land at (BEFORE insertion) — the char just
--- before it is at 1-based index col0 in `line`.
-local function is_boundary(line, col0)
+-- before it is at 1-based index col0 in `line`. `edge_prev` overrides the
+-- col0<=0 "always a boundary" default with a real check against that single
+-- character — thread.lua's mention post-pass scans one md_chunks CHUNK at a
+-- time, so col0==0 there means "start of this chunk", not "start of the line";
+-- it passes the previous chunk's last byte (nil only at the true line start).
+local function is_boundary(line, col0, edge_prev)
   if col0 <= 0 then
-    return true
+    if edge_prev == nil then
+      return true
+    end
+    return edge_prev:match("%s") ~= nil or edge_prev == "("
   end
   local prev = line:sub(col0, col0)
   return prev:match("%s") ~= nil or prev == "("
@@ -229,6 +237,198 @@ function M._at_token(line, cursor_col0)
     return nil
   end
   return at_col0, line:sub(i + 1, cursor_col0)
+end
+
+-- Validation cache: fs_stat is cheap but M._scan reruns on every TextChanged(I)
+-- (per keystroke) and again per render fill — a short TTL avoids re-stat'ing the
+-- same path dozens of times a second while still picking up a file that
+-- appears/disappears within a few seconds. Keyed on (root, path) since the same
+-- relative path can validate differently across projects/roots.
+local STAT_TTL_MS = 5000
+local stat_cache = {} -- "root\0path" -> { ok = bool, at = uv.now() }
+
+local function stat_valid(root, path)
+  local uv = vim.uv or vim.loop
+  local key = root .. "\0" .. path
+  local now = uv.now()
+  local hit = stat_cache[key]
+  if hit and (now - hit.at) < STAT_TTL_MS then
+    return hit.ok
+  end
+  local ok = uv.fs_stat(root .. "/" .. path) ~= nil
+  stat_cache[key] = { ok = ok, at = now }
+  return ok
+end
+
+-- Test seam: drop every cached stat result so the next M._scan re-checks the
+-- filesystem instead of serving a (possibly now-stale) cached verdict.
+function M._scan_invalidate()
+  stat_cache = {}
+end
+
+-- Every VALID @mention in `line`: an "@" at an is_boundary position, followed by a
+-- run of PATH_CHAR bytes where a "\ " pair continues the token (unescaped to a
+-- plain space in the returned path — the reverse of M._escape) — same grammar
+-- M._at_token scans backward for while typing, but this scans forward over
+-- FINISHED text and additionally requires the token to name a real file/dir
+-- under the project root. `edge_prev` is forwarded to is_boundary — nil (the
+-- default) for a real line; thread.lua's per-chunk post-pass passes the
+-- preceding chunk's last byte when scanning a chunk that isn't the line's start.
+-- Returns an array of { start_col0, end_col0_excl, path } (0-based, exclusive
+-- end — a plain vim.api.nvim_buf_set_extmark/string.sub range), earliest first,
+-- with no overlap (a token never contains another "@" — PATH_CHAR excludes it).
+function M._scan(line, edge_prev)
+  local root = require("obelus.store").root()
+  local out = {}
+  local pos = 1
+  while true do
+    local at1 = line:find("@", pos, true)
+    if not at1 then
+      break
+    end
+    pos = at1 + 1
+    local col0 = at1 - 1
+    if is_boundary(line, col0, edge_prev) then
+      local j = at1 + 1
+      local raw = {}
+      while j <= #line do
+        local ch = line:sub(j, j)
+        -- the "\ " pair must be checked FIRST: "\" alone also matches PATH_CHAR,
+        -- which would eat the backslash bare and then break on the space —
+        -- cutting "dir\ with space" down to the never-validating "dir\"
+        if ch == "\\" and line:sub(j + 1, j + 1) == " " then
+          raw[#raw + 1] = " "
+          j = j + 2
+        elseif ch:match(PATH_CHAR) then
+          raw[#raw + 1] = ch
+          j = j + 1
+        else
+          break
+        end
+      end
+      local path = table.concat(raw)
+      if path ~= "" and stat_valid(root, path) then
+        out[#out + 1] = { col0, j - 1, path }
+      end
+    end
+  end
+  return out
+end
+
+-- True if any line of `text` (a full message, possibly multi-line) has at least
+-- one valid mention — used by transport/init.lua to decide whether an outgoing
+-- prompt needs the "@paths are real files" note.
+function M._has_mention(text)
+  if not text or text == "" then
+    return false
+  end
+  for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+    if #M._scan(line) > 0 then
+      return true
+    end
+  end
+  return false
+end
+
+-- Every unique valid mentioned path across `text`, first-appearance order.
+function M._mentioned_paths(text)
+  local seen, out = {}, {}
+  if not text or text == "" then
+    return out
+  end
+  for _, line in ipairs(vim.split(text, "\n", { plain = true })) do
+    for _, m in ipairs(M._scan(line)) do
+      if not seen[m[3]] then
+        seen[m[3]] = true
+        out[#out + 1] = m[3]
+      end
+    end
+  end
+  return out
+end
+
+-- inline-mode caps: a mention is a deliberate ask, so the budget is generous, but
+-- an @'d lockfile or generated blob must not blow the whole prompt
+local INLINE_MAX_FILE = 32 * 1024 -- bytes per file (truncated at the last full line)
+local INLINE_MAX_TOTAL = 128 * 1024 -- bytes across all inlined files (rest fall back to a reference)
+
+local function fence_for(content)
+  local run = 2
+  for ticks in content:gmatch("`+") do
+    run = math.max(run, #ticks)
+  end
+  return string.rep("`", math.max(3, run + 1))
+end
+
+-- One file's inline block: "@path:" + a fenced, possibly-truncated dump; nil body
+-- for directories (browse) and binaries (NUL sniff) — those get a one-line note.
+local function inline_block(root, path)
+  local uv = vim.uv or vim.loop
+  local st = uv.fs_stat(root .. "/" .. path)
+  if st and st.type == "directory" then
+    return "@" .. path .. ": (directory — browse it as needed)", 0
+  end
+  local f = io.open(root .. "/" .. path, "rb")
+  if not f then
+    return nil, 0
+  end
+  local content = f:read(INLINE_MAX_FILE + 1) or ""
+  f:close()
+  if content:find("\0", 1, true) then
+    return "@" .. path .. ": (binary file — skipped)", 0
+  end
+  local truncated = #content > INLINE_MAX_FILE
+  if truncated then
+    content = content:sub(1, INLINE_MAX_FILE)
+    content = content:match("^(.*)\n[^\n]*$") or content -- cut back to the last full line
+  end
+  local lang = path:match("%.([%w_]+)$") or ""
+  local fence = fence_for(content)
+  local head = "@" .. path .. (truncated and " (truncated):" or ":")
+  return head .. "\n" .. fence .. lang .. "\n" .. content .. "\n" .. fence, #content
+end
+
+-- The prompt suffix implementing input.mention.send for an outgoing message:
+--   "reference" (default) — one line telling the agent @paths are project-relative
+--                           files to read (it runs with cwd = the project root)
+--   "inline"              — [Mentioned files] + each unique mentioned file's
+--                           contents, fenced; capped per-file and in total, with
+--                           overflow falling back to the reference note
+-- nil when the text has no valid mentions or mentions are disabled outright.
+function M.prompt_suffix(text)
+  local cfg = require("obelus.config").options.input.mention
+  if cfg == false then
+    return nil
+  end
+  local paths = M._mentioned_paths(text)
+  if #paths == 0 then
+    return nil
+  end
+  local note = '[Mentions] "@path" tokens are file paths relative to the project root — read them for context.'
+  if cfg.send ~= "inline" then
+    return "\n\n" .. note
+  end
+  local root = require("obelus.store").root()
+  local blocks, spent, overflow = {}, 0, {}
+  for _, path in ipairs(paths) do
+    if spent >= INLINE_MAX_TOTAL then
+      overflow[#overflow + 1] = "@" .. path
+    else
+      local block, bytes = inline_block(root, path)
+      if block then
+        blocks[#blocks + 1] = block
+        spent = spent + bytes
+      end
+    end
+  end
+  if #blocks == 0 then
+    return "\n\n" .. note
+  end
+  local out = "\n\n[Mentioned files] contents of @-mentioned project files:\n\n" .. table.concat(blocks, "\n\n")
+  if #overflow > 0 then
+    out = out .. "\n\n(not inlined, read as needed: " .. table.concat(overflow, ", ") .. ")"
+  end
+  return out
 end
 
 -- Fallback backend: vim.ui.select over M._list_files. `callback(relpath|nil)` —
@@ -463,6 +663,26 @@ local function resolve_engine(mention)
   return nil
 end
 
+-- Re-highlight every VALID mention in `buf` (ObelusMention over each "@path"
+-- span, row-wise). Clears + rebuilds the whole namespace on every call — input
+-- buffers are a handful of lines, so a full rescan per TextChanged(I) is cheap
+-- (M._scan's stat cache absorbs the repeat fs_stat calls across keystrokes).
+local function rescan_mentions(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i, line in ipairs(lines) do
+    for _, m in ipairs(M._scan(line)) do
+      pcall(vim.api.nvim_buf_set_extmark, buf, hl_ns, i - 1, m[1], {
+        end_col = m[2],
+        hl_group = "ObelusMention",
+      })
+    end
+  end
+end
+
 -- Bind the insert-mode "@" mapping to `buf` (idempotent — never double-attaches).
 -- No-op when config.input.mention is false. An <expr> mapping: "@" is ALWAYS
 -- returned (so it's inserted like any normal char, mid-word "@"s included — the
@@ -486,6 +706,17 @@ function M.attach(buf)
       scheduled[buf] = nil
     end,
   })
+
+  -- live VALID-mention highlight — independent of the engine/picker branch below
+  -- (blink/cmp own completion, but nobody else styles finished "@path" text).
+  -- No BufWipeout teardown needed: hl_ns extmarks die with the buffer.
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = buf,
+    callback = function()
+      rescan_mentions(buf)
+    end,
+  })
+  rescan_mentions(buf) -- once immediately: a restored draft may already have mentions
 
   local engine = resolve_engine(mention)
   if engine then

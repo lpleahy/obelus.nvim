@@ -158,6 +158,12 @@ M.defaults = {
     --                 back to the picker if that plugin isn't present), or
     --                 false to never use a completion engine. When an engine
     --                 IS active it owns "@" — the picker keymap is not bound.
+    --   send       — what an @mention MEANS to the agent when the message is
+    --                 sent: "reference" (default) appends one note telling it
+    --                 the @paths are project-relative files to read itself;
+    --                 "inline" embeds each mentioned file's contents in the
+    --                 prompt (capped per file and in total — an @'d lockfile
+    --                 can't blow the context).
     mention = true,
   },
 
@@ -177,7 +183,7 @@ M.defaults = {
 ---@field bands obelus.Config.Render.Bands
 
 -- input.mention's expanded shape once normalized from the true|false|table sugar.
-local MENTION_DEFAULTS = { picker = true, completion = "auto" }
+local MENTION_DEFAULTS = { picker = true, completion = "auto", send = "reference" }
 
 ---@class obelus.Config.Render.Bands
 ---@field enabled boolean
@@ -445,6 +451,7 @@ local function validate(o)
       { "auto", "blink", "cmp", false },
       MENTION_DEFAULTS.completion
     )
+    enum(o.input.mention, "send", "input.mention.send", { "reference", "inline" }, MENTION_DEFAULTS.send)
   end
   enum(o.render.bands, "style", "render.bands.style", { "popup", "inline" }, M.defaults.render.bands.style)
   enum(o.render.bands, "mode", "render.bands.mode", { "focus", "all" }, M.defaults.render.bands.mode)

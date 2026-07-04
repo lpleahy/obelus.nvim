@@ -1,5 +1,6 @@
 local format = require("obelus.format")
 local config = require("obelus.config")
+local mention = require("obelus.mention")
 
 -- the left accent bar glyph (tunable: render.bar, e.g. "▌"/"█" for thicker)
 local function barchar()
@@ -145,6 +146,11 @@ function M.setup_highlights()
   set("ObelusReplyStrike", { fg = meta, strikethrough = true })
   set("ObelusThreadLink", { fg = brand, underline = true })
   set("ObelusReplyLink", { fg = brand, underline = true })
+  -- valid @mention spans (thread.lua's md_chunks post-pass): brand fg (same accent
+  -- as links/tags) on the turn's own bubble bg — bg follows band/reply exactly like
+  -- Bold above, so it drops to NONE in transparent mode too.
+  set("ObelusThreadMention", { fg = brand, bg = band, bold = true })
+  set("ObelusReplyMention", { fg = brand, bg = reply, bold = true })
   set("ObelusThreadCodeLabel", { fg = meta, bg = codeb })
   set("ObelusReplyCodeLabel", { fg = meta, bg = rcodeb })
   -- neutral-bg dividers for the sidebar (drawn as virt_lines, so the tint can't
@@ -174,6 +180,9 @@ function M.setup_highlights()
   set("ObelusInputBorder", { fg = brand, bg = inbg, bold = true })
   set("ObelusInputBar", { fg = brand, bg = inbg }) -- the input's left statuscolumn bar
   set("ObelusInputHeader", { fg = brand, bg = inbg, bold = true }) -- the "reply"/"you" title
+  -- live VALID @mention highlight in an input buffer (mention.lua's rescan_mentions):
+  -- brand fg only, no bg — the input box's own bg (inbg above) already shows through
+  set("ObelusMention", { fg = brand, bold = true })
   -- optional Visual-selection override for the chat windows (render.colors.selection).
   -- Remapped onto the chat window via chat_winhl so it doesn't touch Visual elsewhere.
   if cc.selection ~= nil then
@@ -362,6 +371,49 @@ local function md_chunks(line, base, S)
   end
   if #out == 0 then
     out = { { line, base } }
+  end
+  return out
+end
+
+-- POST-PASS over one md_chunks() call's output: re-styles valid @mention slices
+-- (S.mention) inside chunks whose hl is exactly `base` — i.e. plain unstyled text
+-- only; a chunk already carrying S.code/bold/italic/strike/link is left alone byte
+-- for byte, so a mention inside `code spans` or **bold** stays styled as that, never
+-- re-tagged as a mention. Splits a matching chunk into up to 3 pieces (before /
+-- mention / after) but never changes the concatenated text — every input byte is
+-- re-emitted in exactly one output chunk, which is what keeps clip_chunks/wrap's
+-- width math (computed on the ORIGINAL md_chunks output elsewhere) still valid
+-- here: this only ever SPLITS a chunk, never trims or pads it.
+-- `prev_char` is the last byte of whatever text preceded THIS chunk list in the
+-- source line (nil when this is genuinely the line's own start) — needed because
+-- is_boundary for a mention at column 0 of chunk N must see the last character of
+-- chunk N-1, not fall back to "line start" just because it's chunk-relative column 0.
+local function style_mentions(chunks, base, S)
+  if not S.mention then
+    return chunks
+  end
+  local out, prev_char = {}, nil
+  for _, ch in ipairs(chunks) do
+    local text, hl = ch[1], ch[2]
+    if hl ~= base or not text:find("@", 1, true) then
+      out[#out + 1] = ch
+    else
+      local pos = 1
+      for _, m in ipairs(mention._scan(text, prev_char)) do
+        local s, e = m[1] + 1, m[2] -- 1-based inclusive slice of `text`
+        if s > pos then
+          out[#out + 1] = { text:sub(pos, s - 1), hl }
+        end
+        out[#out + 1] = { text:sub(s, e), S.mention }
+        pos = e + 1
+      end
+      if pos <= #text then
+        out[#out + 1] = { text:sub(pos), hl }
+      end
+    end
+    if #text > 0 then
+      prev_char = text:sub(-1)
+    end
   end
   return out
 end
@@ -1085,7 +1137,8 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
   local strike = agent and "ObelusReplyStrike" or "ObelusThreadStrike"
   local link = agent and "ObelusReplyLink" or "ObelusThreadLink"
   local code_label_hl = agent and "ObelusReplyCodeLabel" or "ObelusThreadCodeLabel"
-  local S = { code = code, bold = bold, italic = italic, strike = strike, link = link }
+  local mention_hl = agent and "ObelusReplyMention" or "ObelusThreadMention"
+  local S = { code = code, bold = bold, italic = italic, strike = strike, link = link, mention = mention_hl }
   local fence = nil -- backtick count of the OPEN fence (nil = not in a code block)
   local code_lang, code_buf = "", {} -- buffered block + its language, for treesitter
   local function flush_code()
@@ -1205,6 +1258,12 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
       end
       for pi, l in ipairs(pieces) do
         local chunks = md and md_chunks(l, lhl, S) or { { l, lhl } }
+        -- builtin renderer only (md == true); markview owns styling in the other
+        -- mode and can't be told about @ separately. Guard on "@" present before
+        -- ever calling into style_mentions/M._scan — most lines have none.
+        if md and l:find("@", 1, true) then
+          chunks = style_mentions(chunks, lhl, S)
+        end
         if lead_chunk and pi == 1 then
           local merged = { lead_chunk }
           for _, ch in ipairs(chunks) do
