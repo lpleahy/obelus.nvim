@@ -58,6 +58,12 @@ M.defaults = {
     --   "auto"   — re-evaluate every pass; the box always takes the roomier side
     --              (the original behavior — may flip sides as content grows).
     popup_anchor = "sticky",
+    -- ONE width base for the chat popup AND the hover preview (nil = auto: each
+    -- surface picks its own comfortable width, so hover->reply can change width).
+    --   >= 1 fixed columns | 0..1 fraction of the editor | nil auto.
+    -- Content still grows the chat popup beyond the base when a wide table/line
+    -- needs it — this sets where the box STARTS, not a hard cap.
+    popup_width = nil,
     -- How the docked reply box behaves as you scroll the chat output:
     --   "pinned" — floats at the bottom of the view at all times (type while you read
     --              back through history). Its accent bar dims while you're scrolled up
@@ -453,6 +459,13 @@ local function validate(o)
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
   enum(o.render, "popup_anchor", "render.popup_anchor", { "sticky", "auto" }, M.defaults.render.popup_anchor)
+  if o.render.popup_width ~= nil and (type(o.render.popup_width) ~= "number" or o.render.popup_width <= 0) then
+    vim.notify_once(
+      "obelus: render.popup_width must be a positive number (columns, or a 0..1 fraction) — using auto",
+      vim.log.levels.WARN
+    )
+    o.render.popup_width = nil
+  end
   boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
   if o.input.mention ~= false then
     boolean(o.input.mention, "picker", "input.mention.picker", MENTION_DEFAULTS.picker)

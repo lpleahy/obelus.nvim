@@ -431,3 +431,49 @@ T.it('popup_anchor = "auto": the side re-evaluates and flips to the roomier side
   )
   require("obelus.panel").close()
 end)
+
+T.it("render.popup_width: one base for the chat popup AND the hover preview", function()
+  local saved = vim.o.columns
+  vim.o.columns = 150
+  local ctx = T.fresh({ render = { popup_width = 84 } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  local c = ctx.store.add(T.comment({ comment = "short" }))
+  ctx.store.add_turn(c.id, "agent", "brief")
+  require("obelus.panel").open_thread(c.id, true)
+  local opened = T.wait_for(function()
+    local g = require("obelus.panel").geom()
+    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+  end)
+  if not opened then
+    vim.o.columns = saved
+  end
+  T.ok(opened, "popup opened")
+  local g = require("obelus.panel").geom()
+  local w = vim.api.nvim_win_get_width(g.win)
+  vim.o.columns = saved
+  T.eq(w, 84, "the chat popup uses the configured base width")
+  require("obelus.panel").close()
+end)
+
+T.it("render.popup_width: a fraction resolves against the editor width", function()
+  local saved = vim.o.columns
+  vim.o.columns = 150
+  local ctx = T.fresh({ render = { popup_width = 0.5 } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  local c = ctx.store.add(T.comment({ comment = "short" }))
+  ctx.store.add_turn(c.id, "agent", "brief")
+  require("obelus.panel").open_thread(c.id, true)
+  local opened = T.wait_for(function()
+    local g = require("obelus.panel").geom()
+    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+  end)
+  if not opened then
+    vim.o.columns = saved
+  end
+  T.ok(opened, "popup opened")
+  local g = require("obelus.panel").geom()
+  local w = vim.api.nvim_win_get_width(g.win)
+  vim.o.columns = saved
+  T.eq(w, 75, "0.5 of a 150-column editor")
+  require("obelus.panel").close()
+end)

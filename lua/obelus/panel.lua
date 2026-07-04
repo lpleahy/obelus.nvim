@@ -225,10 +225,23 @@ local M = {}
 
 local FALLBACK_WIDTH = 74 -- window width fallback when no live win is available yet
 
--- Rooted-float width: a comfortable width capped to the editor width, as a FRACTION
--- of columns — 0.8 for the modal chat popup (default), 0.7 for the narrower hover
--- preview (callers pass the fraction explicitly).
+-- Rooted-float width. render.popup_width, when set, is the ONE base for BOTH the
+-- modal chat popup and the hover preview (they otherwise use different auto
+-- fractions, so hovering then replying reads as a width jump):
+--   >= 1  — fixed column count
+--   0..1  — fraction of the editor width
+--   nil   — auto (the original per-surface behavior): clamp(columns*frac, 100, 120)
+--           with frac 0.8 for the chat popup, 0.7 for the hover preview.
+-- Content can still GROW the chat popup past the base (fit_width) so a wide
+-- table/line isn't clipped — the knob sets where the box STARTS, not a hard cap.
 local function popup_width(frac)
+  local pw = (require("obelus.config").options.render or {}).popup_width
+  if type(pw) == "number" and pw > 0 then
+    if pw < 1 then
+      return math.max(40, math.floor(vim.o.columns * pw))
+    end
+    return math.max(40, math.floor(pw))
+  end
   return math.max(100, math.min(120, math.floor(vim.o.columns * (frac or 0.8))))
 end
 

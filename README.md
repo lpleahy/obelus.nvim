@@ -70,6 +70,9 @@ mentioned file's contents in the outgoing prompt (capped per file and in total).
 The rooted chat popup picks the roomier side of the commented lines and, by default, STAYS
 there for the thread's lifetime (`render.popup_anchor = "sticky"`) — replying grows the box in
 place instead of teleporting it across the selection. `"auto"` restores per-pass re-evaluation.
+`render.popup_width` (columns, or a 0..1 fraction of the editor) gives the chat popup and the
+hover preview ONE shared base width, so hovering then replying doesn't change the box width;
+nil (default) keeps each surface's own auto width. Wide content still grows the box as needed.
 
 ## API
 
