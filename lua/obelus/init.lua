@@ -346,6 +346,10 @@ local function commands()
   cmd("ObelusHints", function()
     M.toggle_hints()
   end, { desc = "obelus: toggle keybind hint footers" })
+
+  cmd("ObelusPrompt", function()
+    require("obelus.log").open_prompt()
+  end, { desc = "obelus: show the last prompt sent to the agent (verbatim)" })
 end
 
 -- Declarative keymap spec: one row per default mapping (lhs = keys.prefix .. suffix).

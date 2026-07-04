@@ -550,6 +550,7 @@ T.it('prompt_suffix: "inline" embeds the file contents, fenced, once per unique 
   T.ok(s and s:find("[Mentioned files]", 1, true), "the inline section is present")
   T.contains(s, "local marker_line = 42", "the file's contents are embedded")
   T.contains(s, "```lua", "fenced with the extension language")
+  T.contains(s, "local marker_line = 42\n```", "no dangling blank line before the closing fence")
   local _, n = s:gsub("@real%.lua", "")
   T.eq(n, 1, "the file appears once despite two mentions")
 end)
@@ -692,4 +693,32 @@ T.it("mention_blink: cancelling a parked request suppresses its late callback", 
 
   mention._list_files_async = real_list_async
   mention._invalidate()
+end)
+
+T.it(":ObelusPrompt — the cli transport records the exact final prompt, [Mentions] note included", function()
+  local ctx = T.fresh({ transport = { dispatch = "cli", cli = { cmd = { "claude", "-p" } } } })
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local real_system = vim.system
+  local captured
+  vim.system = function(cmd, opts)
+    captured = cmd
+    return {
+      kill = function() end,
+      wait = function()
+        return { code = 0, stdout = "" }
+      end,
+      pid = 1,
+    }
+  end
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  require("obelus").chat_send(c.id, "look at @real.lua please", "send")
+  vim.system = real_system
+  T.ok(captured, "the cli transport spawned")
+  local recorded = require("obelus.log").prompt()
+  T.ok(recorded, "the final prompt was recorded")
+  T.eq(recorded, captured[#captured], "recorded prompt IS the argv prompt — verbatim")
+  T.contains(recorded, "[Mentions]", "the mention note is visible in the inspection")
+  T.contains(recorded, "[Formatting]", "the formatting suffix too")
+  T.eq(vim.fn.exists(":ObelusPrompt"), 2, "the :ObelusPrompt command exists")
 end)

@@ -87,6 +87,7 @@ local function run_oneshot(payload)
   else
     table.insert(cmd, prompt)
   end
+  require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
   for _, cm in ipairs(payload.comments or {}) do
     cancelled[cm.id] = nil
@@ -250,6 +251,7 @@ local function run_stream(payload)
   else
     table.insert(cmd, prompt)
   end
+  require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
   cancelled[target.id] = nil
   store.stream_start(target.id)

@@ -38,6 +38,45 @@ function M.append(entry)
   vim.bo[b].modifiable = false
 end
 
+-- The last FINAL prompt the cli transport handed to the agent process (chat
+-- reply or batch), exactly as sent — [Mentions]/[Mentioned files]/[Formatting]
+-- suffixes included. Session-scoped; :ObelusPrompt shows it.
+local last_prompt = nil
+
+function M.set_prompt(p)
+  last_prompt = p
+end
+
+function M.prompt()
+  return last_prompt
+end
+
+function M.open_prompt()
+  if not last_prompt then
+    vim.notify("obelus: no prompt sent yet this session", vim.log.levels.INFO)
+    return
+  end
+  local b = vim.api.nvim_create_buf(false, true)
+  vim.bo[b].filetype = "markdown"
+  vim.bo[b].bufhidden = "wipe"
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, vim.split(last_prompt, "\n", { plain = true }))
+  vim.bo[b].modifiable = false
+  local width = math.min(100, math.floor(vim.o.columns * 0.8))
+  local height = math.floor(vim.o.lines * 0.8)
+  vim.api.nvim_open_win(b, true, {
+    relative = "editor",
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
+    width = width,
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    title = " last prompt sent ",
+    title_pos = "center",
+  })
+  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = b, silent = true })
+end
+
 function M.open()
   local b = ensure_buf()
   local width = math.min(100, math.floor(vim.o.columns * 0.8))

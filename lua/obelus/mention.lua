@@ -431,6 +431,7 @@ local function inline_block(root, path)
   local lang = path:match("%.([%w_]+)$") or ""
   local fence = fence_for(content)
   local head = "@" .. path .. (truncated and " (truncated):" or ":")
+  content = content:gsub("\n$", "") -- files end with \n; avoid a blank line before the fence
   return head .. "\n" .. fence .. lang .. "\n" .. content .. "\n" .. fence, #content
 end
 
