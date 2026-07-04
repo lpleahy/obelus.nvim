@@ -111,6 +111,35 @@ T.it("_items: two calls within the TTL run the lister once; _invalidate forces a
   mention._invalidate()
 end)
 
+T.it("_items: includes one item per existing thread, appended after the file items", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "why is this here?" }))
+  local meta = ctx.store.meta_thread()
+  local real_list_async = mention._list_files_async
+  mention._list_files_async = function(_, cb)
+    cb({ "a.lua" })
+  end
+  mention._invalidate()
+
+  local items = mention._items(ctx.root)
+  local thread_item, meta_item
+  for _, it in ipairs(items) do
+    if it.label == "thread:" .. c.id then
+      thread_item = it
+    elseif it.label == "thread:" .. meta.id then
+      meta_item = it
+    end
+  end
+  T.ok(thread_item, "a completion item exists for the real thread")
+  T.eq(thread_item.kind, 23, "kind = Event, distinct from File (17)")
+  T.contains(thread_item.filterText, "why is this here?", "filterText carries the comment text (fuzzy target)")
+  T.contains(thread_item.filterText, "thread:" .. c.id)
+  T.is_nil(meta_item, "the meta (project) thread never appears in the picker")
+
+  mention._list_files_async = real_list_async
+  mention._invalidate()
+end)
+
 -- ---------------------------------------------------------------------------
 -- Engine resolution + lazy registration (package.loaded fakes; no real
 -- blink.cmp/nvim-cmp on rtp in this test env)
@@ -461,6 +490,16 @@ T.it("_scan: the stat cache serves within the TTL; _scan_invalidate re-checks", 
   T.eq(#mention._scan("@here.lua"), 0, "invalid after the cache drops")
 end)
 
+T.it("_scan: @thread:<id> is valid for a real thread id, invalid for garbage (bypasses fs_stat entirely)", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  mention._scan_invalidate()
+  local line = "see @thread:" .. c.id .. " and @thread:does-not-exist"
+  local got = mention._scan(line)
+  T.eq(#got, 1, "only the real thread id validated")
+  T.eq(got[1][3], "thread:" .. c.id, "the returned path is the WHOLE thread:<id> token")
+end)
+
 -- ---------------------------------------------------------------------------
 -- input-buffer live highlight
 -- ---------------------------------------------------------------------------
@@ -576,6 +615,48 @@ T.it('prompt_suffix: "inline" notes directories instead of dumping them', functi
   mention._scan_invalidate()
   local s = mention.prompt_suffix("@somedir")
   T.ok(s and s:find("directory", 1, true), "a directory mention gets the browse note")
+end)
+
+-- ---------------------------------------------------------------------------
+-- prompt_suffix: "@thread:<id>" mentions — ALWAYS expand in full, independent of
+-- input.mention.send (that knob governs FILE mentions only)
+-- ---------------------------------------------------------------------------
+
+T.it("prompt_suffix: a mentioned RESOLVED thread expands fully under [Mentioned threads]", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "fix the off-by-one error" }))
+  ctx.store.add_turn(c.id, "agent", "fixed, see the new bounds check")
+  ctx.store.resolve(c.id)
+  local s = mention.prompt_suffix("pull that back in: @thread:" .. c.id)
+  T.ok(s, "a suffix was produced")
+  T.contains(s, "[Mentioned threads]")
+  T.contains(s, "fix the off-by-one error", "the original comment is included in full")
+  T.contains(s, "fixed, see the new bounds check", "the agent's turn is included in full")
+end)
+
+T.it("prompt_suffix: works from ANY chat, not just the meta thread's — pending thread too", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "still open, not resolved" }))
+  local s = mention.prompt_suffix("see @thread:" .. c.id)
+  T.contains(s, "[Mentioned threads]")
+  T.contains(s, "still open, not resolved")
+end)
+
+T.it("prompt_suffix: @thread:<meta-id> is skipped — the project thread is never expandable", function()
+  local ctx = T.fresh()
+  local meta = ctx.store.meta_thread()
+  T.is_nil(mention.prompt_suffix("look at @thread:" .. meta.id), "nothing to expand, nothing to reference either")
+end)
+
+T.it("prompt_suffix: a thread mention plus a file mention both appear (independent sections)", function()
+  local ctx = T.fresh()
+  vim.fn.writefile({ "x" }, ctx.root .. "/real.lua")
+  mention._scan_invalidate()
+  local c = ctx.store.add(T.comment({ comment = "context for this" }))
+  local s = mention.prompt_suffix("see @thread:" .. c.id .. " and @real.lua")
+  T.contains(s, "[Mentioned threads]")
+  T.contains(s, "context for this")
+  T.contains(s, "[Mentions]", "the file mention still gets its own (default reference) note")
 end)
 
 T.it("transport.submit applies the mention policy exactly once at the choke point", function()
@@ -767,4 +848,40 @@ T.it('send = "inline": starting a thread embeds the commented file, not just the
   T.ok(F.payload, "submitted")
   T.contains(F.payload.markdown, "[Mentioned files]", "inline section present")
   T.contains(F.payload.markdown, "local hidden_part = 99", "the WHOLE file is embedded, beyond the selection")
+end)
+
+T.it("meta first send: briefing @thread summaries do NOT self-expand; a USER-typed one does", function()
+  local F = require("fake")
+  local ctx = T.fresh({ transport = { dispatch = "fake" } })
+  F.install()
+  local done = ctx.store.add(T.comment({ comment = "old fixed issue" }))
+  ctx.store.add_turn(done.id, "agent", string.rep("long resolved conversation text ", 40))
+  ctx.store.resolve(done.id)
+  local meta = ctx.store.meta_thread()
+  require("obelus").chat_send(meta.id, "just an overview please", "send")
+  T.ok(F.payload, "dispatched")
+  T.contains(F.payload.markdown, "@thread:" .. done.id, "the one-line summary is present")
+  T.ok(not F.payload.markdown:find("[Mentioned threads]", 1, true), "the summary did NOT self-expand")
+  T.ok(not F.payload.markdown:find("long resolved conversation text", 1, true), "resolved body stayed out")
+
+  -- but the USER explicitly mentioning the resolved thread pulls it back in full
+  F.finish(true) -- settle the first stream: busy() blocks a send while it runs
+  F.payload = nil
+  meta.session_id = "sess-meta"
+  require("obelus").chat_send(meta.id, "tell me about @thread:" .. done.id, "send")
+  T.ok(F.payload, "second send dispatched")
+  T.contains(F.payload.markdown, "[Mentioned threads]", "user-typed thread mention expands")
+  T.contains(F.payload.markdown, "long resolved conversation text", "in full")
+end)
+
+T.it("_scan: a line-suffixed file reference (@path:12) falls back to the valid path", function()
+  local ctx = T.fresh()
+  vim.fn.mkdir(ctx.root .. "/lua", "p")
+  vim.fn.writefile({ "x" }, ctx.root .. "/lua/x.lua")
+  mention._scan_invalidate()
+  local line = "see @lua/x.lua:12 for the bug"
+  local got = mention._scan(line)
+  T.eq(#got, 1, "the mention survives the :12 suffix")
+  T.eq(got[1][3], "lua/x.lua", "path excludes the line suffix")
+  T.eq(line:sub(got[1][1] + 1, got[1][2]), "@lua/x.lua", "the span ends before the colon")
 end)

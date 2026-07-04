@@ -102,6 +102,16 @@ function M.panel()
   require("obelus.panel").toggle()
 end
 
+---Get-or-create the project thread (a meta-level chat with context over EVERY
+---review thread — see |obelus-project-thread|) and open it, in the current
+---engagement modality, same as |obelus.reply_here()| does for an ordinary
+---thread: "sidebar" docks it in the split, "inline" pops a centred float (it has
+---no file location to root a popup against, unlike a normal thread's popup).
+function M.project()
+  local c = store.meta_thread()
+  require("obelus.panel").open_thread(c.id, config.mode() ~= "sidebar")
+end
+
 -- Open the sidebar: if the cursor is on a comment, open that thread's chat in the
 -- sidebar; otherwise open the threads list (the navigator). So <prefix>o is one key
 -- that always opens the sidebar, whether or not you're on a thread.
@@ -305,6 +315,10 @@ local function commands()
     M.panel()
   end, { desc = "obelus: toggle the review threads sidebar" })
 
+  cmd("ObelusProject", function()
+    M.project()
+  end, { desc = "obelus: open the project thread (get-or-create)" })
+
   cmd("ObelusResolve", function()
     M.resolve()
   end, { desc = "obelus: resolve comment at cursor" })
@@ -489,6 +503,14 @@ local MAPSPEC = {
       M.open_chat()
     end,
     desc = "obelus: open full thread (scrollable)",
+  },
+  {
+    suffix = "a",
+    modes = "n",
+    rhs = function()
+      M.project()
+    end,
+    desc = "obelus: project thread",
   },
   {
     suffix = "h",

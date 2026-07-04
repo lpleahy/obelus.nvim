@@ -14,6 +14,7 @@
 :ObelusLoad	obelus.txt	/*:ObelusLoad*
 :ObelusMode	obelus.txt	/*:ObelusMode*
 :ObelusPanel	obelus.txt	/*:ObelusPanel*
+:ObelusProject	obelus.txt	/*:ObelusProject*
 :ObelusPrompt	obelus.txt	/*:ObelusPrompt*
 :ObelusQuickReply	obelus.txt	/*:ObelusQuickReply*
 :ObelusRenderInfo	obelus.txt	/*:ObelusRenderInfo*
@@ -36,7 +37,9 @@ obelus-config-input	obelus.txt	/*obelus-config-input*
 obelus-config-input.mention	obelus.txt	/*obelus-config-input.mention*
 obelus-config-keys	obelus.txt	/*obelus-config-keys*
 obelus-config-keys.band_scroll	obelus.txt	/*obelus-config-keys.band_scroll*
+obelus-config-keys.chat	obelus.txt	/*obelus-config-keys.chat*
 obelus-config-keys.disabled	obelus.txt	/*obelus-config-keys.disabled*
+obelus-config-keys.overrides	obelus.txt	/*obelus-config-keys.overrides*
 obelus-config-keys.prefix	obelus.txt	/*obelus-config-keys.prefix*
 obelus-config-mode	obelus.txt	/*obelus-config-mode*
 obelus-config-persist	obelus.txt	/*obelus-config-persist*
@@ -70,6 +73,7 @@ obelus-debug	obelus.txt	/*obelus-debug*
 obelus-introduction	obelus.txt	/*obelus-introduction*
 obelus-keymaps	obelus.txt	/*obelus-keymaps*
 obelus-mentions	obelus.txt	/*obelus-mentions*
+obelus-project-thread	obelus.txt	/*obelus-project-thread*
 obelus-renderers	obelus.txt	/*obelus-renderers*
 obelus-setup	obelus.txt	/*obelus-setup*
 obelus-transports	obelus.txt	/*obelus-transports*
@@ -88,6 +92,7 @@ obelus.edit()	obelus.txt	/*obelus.edit()*
 obelus.list()	obelus.txt	/*obelus.list()*
 obelus.open_chat()	obelus.txt	/*obelus.open_chat()*
 obelus.panel()	obelus.txt	/*obelus.panel()*
+obelus.project()	obelus.txt	/*obelus.project()*
 obelus.quick_reply()	obelus.txt	/*obelus.quick_reply()*
 obelus.reopen()	obelus.txt	/*obelus.reopen()*
 obelus.reply_here()	obelus.txt	/*obelus.reply_here()*

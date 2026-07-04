@@ -266,8 +266,13 @@ local function base_width_for(comment)
 end
 
 -- Shared rooted-float title: file + range label, or the generic fallback when
--- there's no live comment (centred fallback / a stale or deleted thread id).
+-- there's no live comment (centred fallback / a stale or deleted thread id). The
+-- project (meta) thread has no file/range worth showing (its "file" is the
+-- project root) — a fixed title instead.
 local function float_title(c)
+  if c and c.meta then
+    return " ◆ project thread "
+  end
   return c and (" ◆ " .. format.relpath(c.file) .. "  " .. format.range_label(c) .. " ") or " ◆ obelus review "
 end
 
@@ -411,6 +416,15 @@ end
 
 -- list mode ----------------------------------------------------------------
 
+-- Every real (non-meta) thread — the project thread is pinned separately (its own
+-- row, above every per-file section) and never belongs to a file grouping or the
+-- open/needs/resolved counts (see build_list below).
+local function real_comments()
+  return vim.tbl_filter(function(c)
+    return not c.meta
+  end, store.all())
+end
+
 local function build_list()
   local lines, map, decos = {}, {}, {}
   local function push(text, id, deco)
@@ -423,7 +437,7 @@ local function build_list()
     end
   end
 
-  local all = store.all()
+  local all = real_comments()
   local counts = { open = 0, needs_response = 0, resolved = 0 }
   for _, c in ipairs(all) do
     counts[status_of(c)] = (counts[status_of(c)] or 0) + 1
@@ -440,6 +454,21 @@ local function build_list()
     push(keys, nil, { segs = { { 0, #keys, "ObelusChrome" } } })
   end
   push("")
+
+  -- the project thread: pinned FIRST, above every per-file section — but only
+  -- when it EXISTS (get_meta, no create): auto-creating on every list render
+  -- planted duplicate meta records across concurrent nvim instances just for
+  -- opening the sidebar. <prefix>a / :ObelusProject creates it deliberately.
+  -- <CR> on the row opens the chat like any other thread (see `nav` below,
+  -- which special-cases it: no source line to jump to).
+  do
+    local meta = store.get_meta()
+    if meta then
+      local text = "  ◆  project thread"
+      push(text, meta.id, { segs = { { 0, #text, "ObelusChrome" } } })
+      push("")
+    end
+  end
 
   -- only this project's files (a comment whose file lives outside the project root —
   -- e.g. a scratch /tmp file — shouldn't clutter the list)
@@ -598,7 +627,11 @@ local function build_chat(id, opts)
 
   -- the float shows file+range in its border title; only the split needs the header line
   if not is_float then
-    push(string.format(" ◆ %s  %s  [%s]", format.relpath(c.file), format.range_label(c), status_of(c)))
+    if c.meta then
+      push(string.format(" ◆ project thread  [%s]", status_of(c)))
+    else
+      push(string.format(" ◆ %s  %s  [%s]", format.relpath(c.file), format.range_label(c), status_of(c)))
+    end
   end
   if not read_only and hints() then
     local back = is_float and "q close" or "<BS> back"
@@ -1708,15 +1741,28 @@ function M.back()
 end
 
 -- Jump to the file buffer holding a thread (inline mode: the list is a navigator).
+-- The project (meta) thread has no source location — its "file" is the project
+-- root, a directory — so there's nothing to `:edit`; no-op with a notice instead.
 function M.jump_to(id)
   local c = store.get(id)
   if not c then
     return
   end
+  if c.meta then
+    return vim.notify("obelus: the project thread has no source location", vim.log.levels.INFO)
+  end
   nav_util.goto_source(c, { avoid = state.win })
 end
 
+-- The project thread has no source location to root a floating popup at (see
+-- open_thread) or jump to — it always opens as a normal thread chat, regardless of
+-- the active engagement modality (which only decides "popup vs sidebar" for
+-- threads that actually HAVE a file/range to root against).
 local function nav(id)
+  local c = store.get(id)
+  if c and c.meta then
+    return M.open_thread(id)
+  end
   if require("obelus.config").mode() == "inline" then
     M.jump_to(id)
   else
@@ -1728,6 +1774,9 @@ function M.jump()
   local c = store.get(state.thread or cid())
   if not c then
     return
+  end
+  if c.meta then
+    return vim.notify("obelus: the project thread has no source location", vim.log.levels.INFO)
   end
   local float = state.is_float
   nav_util.goto_source(c, { avoid = state.win, warn_orphan = true })

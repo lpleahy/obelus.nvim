@@ -102,3 +102,44 @@ T.it("open_thread (builtin) opens the chat with a docked reply box", function()
   panel.refresh() -- must not error on a settled thread
   panel.close()
 end)
+
+T.it("panel list: the project thread is pinned as the FIRST row; <CR> on it opens its chat", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0 -- a fresh open right after a prior
+  -- test's fill() must not get coalesce-skipped by the shared module-level timestamp
+  -- a real per-file thread too, so the pinned row is verifiably ABOVE it, not just
+  -- the only row in an otherwise-empty list
+  ctx.store.add(T.comment({ file = ctx.root .. "/f.lua", comment = "a real thread" }))
+  local meta = ctx.store.meta_thread()
+  local panel = require("obelus.panel")
+  panel.open()
+  vim.cmd("redraw")
+  local g = panel.geom()
+  T.eq(g.mode, "list")
+  local lines = vim.api.nvim_buf_get_lines(g.buf, 0, -1, false)
+  local meta_row
+  for i, l in ipairs(lines) do
+    if l:find("project thread", 1, true) then
+      meta_row = i
+      break
+    end
+  end
+  T.ok(meta_row, "a 'project thread' row exists in the list")
+  local file_row
+  for i, l in ipairs(lines) do
+    if l:find("a real thread", 1, true) then
+      file_row = i
+      break
+    end
+  end
+  T.ok(file_row, "the real thread's row exists too")
+  T.ok(meta_row < file_row, "the project thread row comes BEFORE any per-file thread row")
+
+  vim.api.nvim_win_set_cursor(g.win, { meta_row, 0 })
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
+  vim.cmd("redraw")
+  local g2 = panel.geom()
+  T.eq(g2.mode, "chat", "<CR> on the pinned row opened chat mode")
+  T.eq(g2.thread, meta.id, "the chat opened IS the project thread")
+  panel.close()
+end)

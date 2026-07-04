@@ -99,6 +99,14 @@ end
 
 ---Place (or update) the extmark for a single comment in `bufnr`.
 function M.place(bufnr, c)
+  -- the project (meta) thread's "file" is the project root, a DIRECTORY — it has
+  -- no line to annotate. store.by_file(file) already never matches it in the
+  -- normal render_buffer/render_bands passes (a directory path never equals a
+  -- real buffer's abspath), but guard here too in case something calls M.place
+  -- directly with it.
+  if c.meta then
+    return
+  end
   if not display_enabled(bufnr) then
     return
   end

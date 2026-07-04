@@ -14,8 +14,9 @@ CONTENTS                                                          *obelus*
   6. Mentions (@files) ............................ |obelus-mentions|
   7. Renderers ..................................... |obelus-renderers|
   8. Transports .................................... |obelus-transports|
-  9. API ........................................... |obelus-api|
- 10. Debugging ..................................... |obelus-debug|
+  9. Project thread ............................... |obelus-project-thread|
+ 10. API ........................................... |obelus-api|
+ 11. Debugging ..................................... |obelus-debug|
 
 ==============================================================================
 1. INTRODUCTION                                        *obelus-introduction*
@@ -457,6 +458,7 @@ out of the group below in a which-key popup).
     m          Toggle inline <-> sidebar engagement mode
     ?          Toggle keybind hint footers
     o          Open the full thread at cursor (scrollable chat)
+    a          Open/create the project thread (|obelus-project-thread|)
     h          Show/hide resolved threads
     r          Reply to the thread at cursor (docked box or popup)
     f          Quick reply via the small inline compose float
@@ -537,6 +539,8 @@ Every command is one line; `()` marks a cross-reference for more detail.
     Toggle thread display style (popup <-> inline band).
 :ObelusPanel                                                  *:ObelusPanel*
     Toggle the review threads sidebar.
+:ObelusProject                                              *:ObelusProject*
+    Open the project thread, creating it if needed (|obelus-project-thread|).
 :ObelusResolve                                              *:ObelusResolve*
     Resolve the comment at cursor.
 :ObelusReopen                                                *:ObelusReopen*
@@ -714,7 +718,58 @@ Session/batch continuation ~
     automatically.
 
 ==============================================================================
-9. API                                                            *obelus-api*
+9. PROJECT THREAD                                  *obelus-project-thread*
+
+ONE meta-level chat with context over EVERY review thread in the project —
+about the review as a whole, not one file/range. Get-or-create it and open
+it with `<prefix>a` / |:ObelusProject| / |obelus.project()|; it opens in the
+current engagement mode, same as any other thread would (|obelus.reply_here|)
+— "sidebar" docks it in the split, "inline" pops a centred float (it has no
+file location to root a popup against). It shows first in the threads list
+(|:ObelusPanel|), pinned above every per-file thread and labelled "◆ project
+thread"; `<CR>` opens it exactly like any other row. It never gets an
+in-file annotation, band, or hover popup (its "file" is the project root, a
+directory, not a line anywhere) and it is always excluded from batching, the
+review list/quickfix listing, and the "N pending" counts — it is its own
+thing.
+
+Starting the conversation ~
+    The FIRST message you send (no session captured yet) is prefixed with a
+    briefing of the project's OTHER threads (`require("obelus.format").
+    meta_context()`): every open/needs-response thread in full — its
+    comment, code, and conversation so far — and every RESOLVED thread
+    collapsed to one summary line under a "Resolved (summaries —
+    @thread:<id> to pull one back in full)" heading. Every reply after that
+    resumes the same agent session, like any other thread, sending only your
+    new text — the session already has the history.
+
+@thread:<id> mentions ~
+    Reply inputs everywhere — not just the project thread — additionally
+    accept "@thread:<id>" mentions (":" is a path character for this purpose
+    alone). A valid one names any real thread id; it highlights like any
+    other valid mention and completes in the "@" picker menu (label
+    `thread:<id>`, fuzzy-matched on the thread's file, range, and comment
+    text too, so you can find one by what it's ABOUT). Sending a message
+    that mentions one expands it, in its own "[Mentioned threads]" section,
+    to that thread's FULL serialization — comment, code, and every
+    conversation turn — whether it's open or resolved. This is how you pull
+    a resolved thread's one-line summary back into full context, from ANY
+    chat, not just the project thread's. The project thread's own id is
+    never expandable this way (nothing to pull about itself).
+
+Fan-out (acting on individual threads from the project chat) ~
+    The project thread's streamed reply is itself just the meta-conversation
+    — to actually act on an individual thread (reply to it, resolve it, ask
+    it a question) the agent uses the SAME write-back protocol a batch
+    dispatch uses (|obelus-transports|), except the ids it may touch are
+    EVERY real thread in the project, not only the ones quoted in this
+    message. The protocol block is ALWAYS injected for the project thread's
+    sends — unlike an ordinary chat reply, which only gets it when
+    `transport.chat_actions` is on — since acting on other threads is the
+    entire point of this chat.
+
+==============================================================================
+10. API                                                           *obelus-api*
 
 The public surface of `require("obelus")` (some functions re-export from
 `require("obelus.review")`, which the module returned by `require("obelus")`
@@ -733,6 +788,9 @@ list({backend?})                                              *obelus.list()*
     Open the review list ("buffer" | "quickfix" | "split").
 panel()                                                      *obelus.panel()*
     Toggle the review threads sidebar/popup.
+project()                                                  *obelus.project()*
+    Get-or-create the project thread and open it in the current engagement
+    modality (|obelus-project-thread|).
 open_chat({id?})                                          *obelus.open_chat()*
     Open the sidebar for a thread (cursor thread, or `id`); with nothing
     under the cursor, opens the navigator list instead.
@@ -788,7 +846,7 @@ clear()                                                      *obelus.clear()*
     Clear all comments.
 
 ==============================================================================
-10. DEBUGGING                                                 *obelus-debug*
+11. DEBUGGING                                                 *obelus-debug*
 
 |:ObelusPrompt|      Shows the exact last prompt handed to the agent
                      process for the "cli" transport (including the

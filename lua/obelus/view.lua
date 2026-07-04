@@ -7,9 +7,18 @@ local M = {}
 
 local state = { buf = nil, line_map = {} }
 
+-- Every real (non-meta) thread — the project thread never belongs in a per-file
+-- listing: its "file" is the project root, a directory, not an annotation target.
+-- Shared by M.quickfix and build() below.
+local function real_comments()
+  return vim.tbl_filter(function(c)
+    return not c.meta
+  end, store.all())
+end
+
 function M.quickfix()
   local items = {}
-  for _, c in ipairs(store.all()) do
+  for _, c in ipairs(real_comments()) do
     table.insert(items, {
       filename = c.file,
       lnum = c.range.sl,
@@ -30,7 +39,7 @@ local function build()
     end
   end
 
-  local all = store.all()
+  local all = real_comments()
   push("# AI Review — " .. #all .. " comment(s)")
   push("")
   push("Keys: <CR> jump · e edit · dd delete · S submit · r refresh · q close")

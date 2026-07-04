@@ -81,6 +81,16 @@ T.it("place charwise: precise char span with end_col + ObelusRangeText", functio
   T.eq(m.d.hl_group, "ObelusRangeText")
 end)
 
+-- 2.5 THE PROJECT (META) THREAD NEVER GETS AN IN-FILE BAND ---------------------
+
+T.it("place: never places anything for the meta record, even called directly", function()
+  local ctx = T.fresh()
+  local buf, _ = open_file(sample_lines())
+  local meta = ctx.store.meta_thread()
+  render.place(buf, meta)
+  T.eq(#extmarks(buf, ns), 0, "no extmark landed for the meta record")
+end)
+
 -- 3. RESOLVED HIDDEN -----------------------------------------------------------
 
 T.it("resolved comments show only a checkmark sign until toggle_resolved shows them", function()

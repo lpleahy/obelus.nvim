@@ -311,3 +311,91 @@ T.it("preview: the stream's final text lands without interaction (forced finish 
     "the finalized reply text painted into the preview without any interaction"
   )
 end)
+
+-- ---------------------------------------------------------------------------
+-- 8. the project (meta) thread: briefing + write-back fan-out + resumed sends
+-- ---------------------------------------------------------------------------
+
+T.it(
+  "meta send: first chat_send briefs the project + the user text; actions_comments fans out to real ids only",
+  function()
+    local ctx, F = fresh_stream_ctx()
+    local pending = ctx.store.add(T.comment({ comment = "please review this pending thing" }))
+    local resolved = ctx.store.add(T.comment({ comment = "already fixed" }))
+    ctx.store.resolve(resolved.id)
+    local meta = ctx.store.meta_thread()
+
+    require("obelus").chat_send(meta.id, "what's the state of the review?", "send")
+
+    T.ok(F.payload, "the meta thread dispatched through the fake transport")
+    T.contains(F.payload.markdown, "please review this pending thing", "the pending thread's text is in the briefing")
+    T.contains(F.payload.markdown, "@thread:" .. resolved.id, "the resolved thread appears as a summary line")
+    T.contains(F.payload.markdown, "what's the state of the review?", "the user's own text follows the briefing")
+
+    local ids = {}
+    for _, cm in ipairs(F.payload.opts.actions_comments) do
+      ids[cm.id] = true
+    end
+    T.ok(ids[pending.id], "the pending thread's id is in the fan-out list")
+    T.ok(ids[resolved.id], "the resolved thread's id is in the fan-out list too")
+    T.is_nil(ids[meta.id], "the meta thread's OWN id is never in the fan-out list")
+
+    F.finish(true, "sess-meta-1")
+  end
+)
+
+T.it("meta send: a resumed send (session_id set) sends only the new text", function()
+  local ctx, F = fresh_stream_ctx()
+  ctx.store.add(T.comment({ comment = "some other thread" }))
+  local meta = ctx.store.meta_thread()
+  meta.session_id = "sess-meta-already" -- as a completed dispatch would have recorded
+
+  require("obelus").chat_send(meta.id, "follow-up question", "send")
+
+  T.ok(F.payload, "dispatched")
+  T.eq(F.payload.opts.resume, "sess-meta-already")
+  T.eq(F.payload.markdown, "follow-up question", "no re-briefing on a resumed send")
+  F.finish(true, "sess-meta-already")
+end)
+
+-- cli transport (real, vim.system stubbed — same idiom as mention_completion_spec's
+-- ":ObelusPrompt" test): the ACTUAL Review protocol block cli.lua injects, gated on
+-- opts.actions_comments regardless of transport.chat_actions (default false).
+T.it(
+  "meta send: cli actions gating — actions_comments present forces the Review protocol, listing real ids only",
+  function()
+    local ctx = T.fresh({ transport = { dispatch = "cli", cli = { cmd = { "claude", "-p" } } } })
+    local c1 = ctx.store.add(T.comment({ comment = "one" }))
+    local c2 = ctx.store.add(T.comment({ comment = "two" }))
+    local meta = ctx.store.meta_thread()
+
+    local real_system = vim.system
+    local captured
+    vim.system = function(cmd, _opts)
+      captured = cmd
+      return {
+        kill = function() end,
+        wait = function()
+          return { code = 0, stdout = "" }
+        end,
+        pid = 1,
+      }
+    end
+    require("obelus").chat_send(meta.id, "status please", "send")
+    vim.system = real_system
+
+    T.ok(captured, "the cli transport spawned")
+    local prompt = require("obelus.log").prompt()
+    T.contains(
+      prompt,
+      "Review protocol",
+      "the write-back protocol block is present (chat_actions is false by default — actions_comments overrides it)"
+    )
+    T.contains(prompt, c1.id, "the first real thread's id is listed")
+    T.contains(prompt, c2.id, "the second real thread's id is listed")
+    T.ok(
+      not prompt:find("- " .. meta.id .. "  ", 1, true),
+      "the meta thread's OWN id is not among the LISTED comments (only real ids are)"
+    )
+  end
+)

@@ -38,6 +38,7 @@ also has an `:Obelus*` command.
 | `ol` / `oq` | Open the review list (buffer / quickfix) |
 | `op` | Toggle the threads sidebar |
 | `oo` | Open the thread at the cursor as a chat |
+| `oa` | Open/create the project thread |
 | `or` / `of` | Reply to the thread (docked box / quick float) |
 | `oR` / `oh` | Toggle resolved / show-hide resolved |
 | `od` | Delete the comment at cursor |
@@ -67,6 +68,12 @@ What a mention MEANS to the agent is `input.mention.send`: `"reference"` (defaul
 note telling it the `@paths` are project-relative files to read itself; `"inline"` embeds each
 mentioned file's contents in the outgoing prompt (capped per file and in total).
 
+`oa` / `:ObelusProject` opens the project thread: one meta-level chat with context over every
+other thread, not just one file/range. Its first message is briefed with every open thread in
+full and every resolved one as a one-line summary; `@thread:<id>` mentions (in any chat) pull a
+thread's full history back in, and the agent can reply/resolve/ask individual threads from there
+via the same write-back protocol a batch dispatch uses.
+
 Popup geometry is one knob: `render.preview_matches_chat`. Off (default), the boxes adapt —
 every pass re-picks the roomier side of the commented lines and each surface sizes its own
 comfortable width. On, the hover preview and the chat popup share ONE geometry (the chat's
@@ -84,6 +91,7 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | `toggle(scope?)` | Toggle annotation display (`"global"` or the current buffer) |
 | `list(backend?)` | Open the review list (`"buffer"` \| `"quickfix"` \| `"split"`) |
 | `panel()` | Toggle the threads sidebar/popup |
+| `project()` | Get-or-create the project thread and open it |
 | `open_chat(id?)` | Open the sidebar for a thread (or the navigator list) |
 | `reply_here()` | Reply to the thread at cursor in the active modality |
 | `quick_reply(id?)` | Reply via the small inline compose float |

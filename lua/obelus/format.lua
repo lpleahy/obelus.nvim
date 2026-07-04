@@ -58,4 +58,60 @@ function M.to_markdown(comments, opts)
   return table.concat(parts, "\n")
 end
 
+---Full serialization of a thread: comment_md's header/code/feedback block PLUS
+---every conversation turn AFTER the first (author-labelled You:/Agent:, terse) —
+---the first turn is already shown via comment_md's "Feedback:" line, so it isn't
+---repeated. Used by M.meta_context (every pending thread, in full) and by
+---mention.prompt_suffix's "@thread:<id>" expansion (any thread, resolved or not —
+---this is how a resolved thread's one-line summary gets pulled back in full).
+function M.thread_full(c)
+  local out = M.comment_md(c)
+  local turns = store.turns(c)
+  local lines = {}
+  for i = 2, #turns do
+    local t = turns[i]
+    local label = t.author == "agent" and "Agent" or "You"
+    lines[#lines + 1] = "**" .. label .. ":** " .. (t.text or "")
+    lines[#lines + 1] = ""
+  end
+  if #lines > 0 then
+    out = out .. table.concat(lines, "\n")
+  end
+  return out
+end
+
+---The project thread's briefing (obelus.project() / review.do_respond's `c.meta`
+---branch): every OTHER thread in the project, PENDING/unresolved in full
+---(M.thread_full — comment + conversation so far), RESOLVED collapsed to one
+---summary line under a heading (pull one back in full with "@thread:<id>" — see
+---mention.prompt_suffix). The meta record itself is never included.
+function M.meta_context()
+  local parts = { "# Project thread — review status briefing", "" }
+  local pending_parts, resolved_lines = {}, {}
+  for _, c in ipairs(store.all()) do
+    if not c.meta then
+      if c.status == "resolved" then
+        local first = vim.split(c.comment or "", "\n")[1] or ""
+        resolved_lines[#resolved_lines + 1] =
+          string.format("- @thread:%s %s %s: %s", c.id, M.relpath(c.file), M.range_label(c), first)
+      else
+        pending_parts[#pending_parts + 1] = M.thread_full(c)
+      end
+    end
+  end
+  if #pending_parts > 0 then
+    vim.list_extend(parts, pending_parts)
+  else
+    parts[#parts + 1] = "(no open threads)"
+    parts[#parts + 1] = ""
+  end
+  if #resolved_lines > 0 then
+    parts[#parts + 1] = "## Resolved (summaries — @thread:<id> to pull one back in full)"
+    parts[#parts + 1] = ""
+    vim.list_extend(parts, resolved_lines)
+    parts[#parts + 1] = ""
+  end
+  return table.concat(parts, "\n")
+end
+
 return M

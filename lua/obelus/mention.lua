@@ -22,8 +22,11 @@ local ITEMS_TTL_MS = 10000 -- engines re-query per keystroke; don't re-run fd ev
 -- without \128-\255 a single é/CJK char in a filename would stop the backward
 -- token scan dead at its continuation byte, permanently closing the menu for that
 -- mention) — matched against relative file paths, so no spaces here (a space
--- always ends a token; see M._escape for how a picked space survives).
-local PATH_CHAR = "[%w%._/\\%-\128-\255]"
+-- always ends a token; see M._escape for how a picked space survives). ":" is
+-- also allowed — needed for "@thread:<id>" tokens (see M._scan); harmless for a
+-- real file path (colons are rare/invalid in one anyway), and the boundary rule
+-- (is_boundary) still guards an email like foo@bar.com from ever triggering.
+local PATH_CHAR = "[%w%._/\\%-:\128-\255]"
 
 -- "@" starts a word: line start, or preceded by whitespace/"(" . col0 is the
 -- 0-based column "@" is about to land at (BEFORE insertion) — the char just
@@ -180,6 +183,55 @@ end
 local items_cache = {} -- root -> { items = CompletionItem[], at = uv.now(), refreshing = bool }
 local items_waiters = {} -- root -> { cb, ... } callbacks parked on the in-flight refresh
 
+-- One completion item per EXISTING thread — "@thread:<id>" mentions (M._scan
+-- validates them, M.prompt_suffix expands a mentioned one to its full context).
+-- label is what lands after "@" (thread:<id>, same shape a file path's label is —
+-- both adapters splice `item.label` straight into textEdit.newText); filterText is
+-- the rich fuzzy target (file/range/comment text, so you can find a thread by what
+-- it's ABOUT, not just its opaque id); kind = 23 (LSP CompletionItemKind.Event) so
+-- an engine's icon distinguishes it from a File (17) item. Computed fresh on every
+-- call (no cache, unlike the file listing) — thread state (new/replied/resolved/
+-- deleted) changes far more often than ITEMS_TTL_MS would tolerate, and this is
+-- pure in-memory iteration, no I/O. The meta (project) thread itself is excluded:
+-- mentioning it does nothing (M.prompt_suffix skips it), so it has no business
+-- cluttering the picker. `root` must be the ACTIVE store's project (store.root())
+-- — every real caller (M.prewarm, the picker, both completion adapters) always
+-- passes exactly that, so this only ever excludes threads when it's asked about a
+-- DIFFERENT project's file listing (a spec probing an arbitrary root, or a stale
+-- cache entry left over from a project that's since been switched away from).
+local function thread_items(root)
+  local store = require("obelus.store")
+  if root ~= store.root() then
+    return {}
+  end
+  local format = require("obelus.format")
+  local out = {}
+  for _, c in ipairs(store.all()) do
+    if not c.meta then
+      local first = (vim.split(c.comment or "", "\n")[1] or ""):sub(1, 40)
+      out[#out + 1] = {
+        label = "thread:" .. c.id,
+        kind = 23,
+        filterText = string.format("%s %s %s thread:%s", format.relpath(c.file), format.range_label(c), first, c.id),
+      }
+    end
+  end
+  return out
+end
+
+-- file items (as cached/listed) + a fresh thread item per existing thread, as a
+-- NEW list — never mutates `files` in place, since that table is the shared cache.
+local function combine_items(files, root)
+  local out = {}
+  for i, f in ipairs(files) do
+    out[i] = f
+  end
+  for _, t in ipairs(thread_items(root)) do
+    out[#out + 1] = t
+  end
+  return out
+end
+
 local function refresh_items(root)
   local hit = items_cache[root]
   if hit and hit.refreshing then
@@ -199,7 +251,7 @@ local function refresh_items(root)
     local parked = items_waiters[root]
     items_waiters[root] = nil
     for _, cb in ipairs(parked or {}) do
-      cb(items)
+      cb(combine_items(items, root))
     end
   end)
 end
@@ -208,13 +260,13 @@ function M._items(root)
   local now = (vim.uv or vim.loop).now()
   local hit = items_cache[root]
   if hit and not hit.refreshing and (now - hit.at) < ITEMS_TTL_MS then
-    return hit.items
+    return combine_items(hit.items, root)
   end
   refresh_items(root)
   -- re-read: a synchronous lister stub (specs) — or a genuinely instant refresh —
   -- may have already landed; real async serves the stale/empty snapshot instead
   local hit2 = items_cache[root]
-  return hit2 and hit2.items or {}
+  return combine_items(hit2 and hit2.items or {}, root)
 end
 
 -- Async variant for the completion adapters: `cb(items)` fires exactly once —
@@ -227,11 +279,11 @@ function M._items_async(root, cb)
   local now = (vim.uv or vim.loop).now()
   local hit = items_cache[root]
   if hit and not hit.refreshing and (now - hit.at) < ITEMS_TTL_MS then
-    return cb(hit.items)
+    return cb(combine_items(hit.items, root))
   end
   if hit and #hit.items > 0 then
     refresh_items(root)
-    return cb(hit.items)
+    return cb(combine_items(hit.items, root))
   end
   local w = items_waiters[root]
   if w then
@@ -337,6 +389,7 @@ function M._scan(line, edge_prev)
     if is_boundary(line, col0, edge_prev) then
       local j = at1 + 1
       local raw = {}
+      local first_colon -- raw byte pos + unescaped length when the first ":" was eaten
       while j <= #line do
         local ch = line:sub(j, j)
         -- the "\ " pair must be checked FIRST: "\" alone also matches PATH_CHAR,
@@ -346,6 +399,9 @@ function M._scan(line, edge_prev)
           raw[#raw + 1] = " "
           j = j + 2
         elseif ch:match(PATH_CHAR) then
+          if ch == ":" and not first_colon then
+            first_colon = { at = j, len = #raw } -- token state BEFORE this colon
+          end
           raw[#raw + 1] = ch
           j = j + 1
         else
@@ -353,8 +409,23 @@ function M._scan(line, edge_prev)
         end
       end
       local path = table.concat(raw)
-      if path ~= "" and stat_valid(root, path) then
+      -- "thread:<id>" is a SEPARATE mention grammar (see M._items/M.prompt_suffix):
+      -- valid iff a comment with that exact id exists — bypasses the fs_stat check
+      -- entirely (a thread id never names a real file). The whole "thread:<id>"
+      -- token is the returned path, same as a file path is.
+      local tid = path:match("^thread:(.+)$")
+      local valid = tid and (require("obelus.store").get(tid) ~= nil) or (path ~= "" and stat_valid(root, path))
+      if path ~= "" and valid then
         out[#out + 1] = { col0, j - 1, path }
+      elseif first_colon and first_colon.len > 0 and not tid then
+        -- ":" joined PATH_CHAR for thread tokens, which swallowed line-suffixed
+        -- references like "@lua/foo.lua:12" whole and invalidated them (the file
+        -- exists, "lua/foo.lua:12" doesn't). Fall back to the token UP TO the
+        -- first colon — the common grep/LSP "path:line" paste keeps its mention.
+        local base = table.concat(raw, "", 1, first_colon.len)
+        if stat_valid(root, base) then
+          out[#out + 1] = { col0, first_colon.at - 1, base }
+        end
       end
     end
   end
@@ -435,13 +506,38 @@ local function inline_block(root, path)
   return head .. "\n" .. fence .. lang .. "\n" .. content .. "\n" .. fence, #content
 end
 
+-- "@thread:<id>" mentions ALWAYS expand to that thread's full serialization
+-- (format.thread_full: comment_md + every conversation turn) — regardless of
+-- input.mention.send, which governs FILE mentions only. This is how a resolved
+-- thread's one-line summary in format.meta_context() gets pulled back in full,
+-- from ANY chat, not just the project thread's. The meta (project) record itself
+-- is never expandable this way (nothing to pull about itself) — skipped silently.
+-- nil when none of `ids` names a real, non-meta thread.
+local function thread_mentions_block(ids)
+  local store = require("obelus.store")
+  local format = require("obelus.format")
+  local blocks = {}
+  for _, id in ipairs(ids) do
+    local c = store.get(id)
+    if c and not c.meta then
+      blocks[#blocks + 1] = format.thread_full(c)
+    end
+  end
+  if #blocks == 0 then
+    return nil
+  end
+  return "\n\n[Mentioned threads] full context for @thread:<id> mentions:\n\n" .. table.concat(blocks, "\n\n")
+end
+
 -- The prompt suffix implementing input.mention.send for an outgoing message:
 --   "reference" (default) — one line telling the agent @paths are project-relative
 --                           files to read (it runs with cwd = the project root)
 --   "inline"              — [Mentioned files] + each unique mentioned file's
 --                           contents, fenced; capped per-file and in total, with
 --                           overflow falling back to the reference note
--- nil when the text has no valid mentions or mentions are disabled outright.
+-- PLUS, independently of that knob: a "[Mentioned threads]" block for every
+-- "@thread:<id>" mention (see thread_mentions_block above).
+-- nil when the text has no valid mentions at all, or mentions are disabled outright.
 function M.prompt_suffix(text)
   local cfg = require("obelus.config").options.input.mention
   if cfg == false then
@@ -451,13 +547,27 @@ function M.prompt_suffix(text)
   if #paths == 0 then
     return nil
   end
+  local file_paths, thread_ids = {}, {}
+  for _, p in ipairs(paths) do
+    local tid = p:match("^thread:(.+)$")
+    if tid then
+      thread_ids[#thread_ids + 1] = tid
+    else
+      file_paths[#file_paths + 1] = p
+    end
+  end
+  local out = thread_mentions_block(thread_ids) or ""
+
+  if #file_paths == 0 then
+    return out ~= "" and out or nil
+  end
   local note = '[Mentions] "@path" tokens are file paths relative to the project root — read them for context.'
   if cfg.send ~= "inline" then
-    return "\n\n" .. note
+    return out .. "\n\n" .. note
   end
   local root = require("obelus.store").root()
   local blocks, spent, overflow = {}, 0, {}
-  for _, path in ipairs(paths) do
+  for _, path in ipairs(file_paths) do
     if spent >= INLINE_MAX_TOTAL then
       overflow[#overflow + 1] = "@" .. path
     else
@@ -469,13 +579,13 @@ function M.prompt_suffix(text)
     end
   end
   if #blocks == 0 then
-    return "\n\n" .. note
+    return out .. "\n\n" .. note
   end
-  local out = "\n\n[Mentioned files] contents of @-mentioned project files:\n\n" .. table.concat(blocks, "\n\n")
+  local inlined = "\n\n[Mentioned files] contents of @-mentioned project files:\n\n" .. table.concat(blocks, "\n\n")
   if #overflow > 0 then
-    out = out .. "\n\n(not inlined, read as needed: " .. table.concat(overflow, ", ") .. ")"
+    inlined = inlined .. "\n\n(not inlined, read as needed: " .. table.concat(overflow, ", ") .. ")"
   end
-  return out
+  return out .. inlined
 end
 
 -- Fallback backend: vim.ui.select over M._list_files. `callback(relpath|nil)` —

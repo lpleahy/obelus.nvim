@@ -229,6 +229,50 @@ T.it("load() strips a legacy batch_id field from an old jsonl line (migration)",
   T.is_nil(S.get("1-1").batch_id, "load() migrates away a stale batch_id field")
 end)
 
+-- the project (meta) thread ---------------------------------------------------
+
+T.it("meta_thread: get-or-create is idempotent — one record, same id every call", function()
+  local S = T.fresh().store
+  local a = S.meta_thread()
+  T.ok(a.meta, "meta = true")
+  T.eq(a.file, S.root(), "file is the project root")
+  local b = S.meta_thread()
+  T.eq(b.id, a.id, "a second call returns the SAME record")
+  local metas = vim.tbl_filter(function(c)
+    return c.meta
+  end, S.all())
+  T.eq(#metas, 1, "exactly one meta record exists, even after two get-or-create calls")
+end)
+
+T.it("meta_thread: excluded from pending, even when its 'status' would otherwise qualify", function()
+  local S = T.fresh().store
+  local meta = S.meta_thread()
+  T.eq(meta.status, "open", "a freshly created meta record looks pending by status alone")
+  local pending_ids = {}
+  for _, c in ipairs(S.pending()) do
+    pending_ids[c.id] = true
+  end
+  T.is_nil(pending_ids[meta.id], "the meta record never shows up in store.pending()")
+end)
+
+T.it("meta_thread: persists to disk and reloads with meta = true, same id", function()
+  local ctx = T.fresh({ persist = { auto = true } })
+  local S = ctx.store
+  local meta = S.meta_thread()
+  S.save()
+  S.load()
+  local reloaded = S.get(meta.id)
+  T.ok(reloaded, "the meta record survives a reload under its original id")
+  T.eq(reloaded.meta, true)
+  -- and get-or-create after a reload still finds it — no duplicate created
+  local again = S.meta_thread()
+  T.eq(again.id, meta.id)
+  local metas = vim.tbl_filter(function(c)
+    return c.meta
+  end, S.all())
+  T.eq(#metas, 1)
+end)
+
 T.it("tags: tag_comment, tags(), pending_by_tag, sticky active_tag", function()
   local S = T.fresh().store
   local c = S.add(T.comment({ comment = "q" }))
@@ -244,4 +288,51 @@ T.it("tags: tag_comment, tags(), pending_by_tag, sticky active_tag", function()
   local c2 = S.add(T.comment({ comment = "q2" }))
   T.eq(c2.tag, "grp")
   S.set_active_tag(nil)
+end)
+
+T.it("get_meta never creates; the sidebar pin only shows an EXISTING project thread", function()
+  local ctx = T.fresh()
+  T.is_nil(ctx.store.get_meta(), "no meta record until deliberately created")
+  local panel = require("obelus.panel")
+  panel.open(false)
+  T.ok(
+    T.wait_for(function()
+      return panel.geom() ~= nil
+    end),
+    "list opened"
+  )
+  T.is_nil(ctx.store.get_meta(), "opening the sidebar did not plant a meta record")
+  panel.close()
+  local meta = ctx.store.meta_thread()
+  T.ok(meta and meta.meta, "explicit creation works")
+end)
+
+T.it("load() heals duplicate meta records — keeps the one with the most conversation", function()
+  local ctx = T.fresh({ persist = { auto = true } })
+  local keep = ctx.store.meta_thread()
+  ctx.store.add_turn(keep.id, "you", "the real conversation")
+  ctx.store.save()
+  -- plant a rival meta record straight into the jsonl, as a concurrent instance would
+  local path = ctx.store.store_path()
+  local lines = vim.fn.readfile(path)
+  lines[#lines + 1] = vim.json.encode({
+    meta = true,
+    id = "9999999999-1",
+    file = ctx.store.root(),
+    range = { sl = 1, el = 1 },
+    kind = "line",
+    selected_text = {},
+    comment = "project thread",
+    status = "open",
+  })
+  vim.fn.writefile(lines, path)
+  ctx.store.load()
+  local metas = 0
+  for _, c in ipairs(ctx.store.all()) do
+    if c.meta then
+      metas = metas + 1
+    end
+  end
+  T.eq(metas, 1, "exactly one meta record after load")
+  T.eq(ctx.store.get_meta().id, keep.id, "the one with the conversation won")
 end)

@@ -21,9 +21,9 @@ end
 
 -- Permissive: an "@" followed by any run of path characters, so cmp's own
 -- keyword boundary doesn't cut the query short at "." or "/" (cmp compiles this
--- as a Vim regex via vim.regex).
+-- as a Vim regex via vim.regex). ":" is included too, for "@thread:<id>" mentions.
 function M:get_keyword_pattern()
-  return [[\%(@\)\%([[:keyword:]./\\_-]\)*]]
+  return [[\%(@\)\%([[:keyword:]./\\_:-]\)*]]
 end
 
 -- params.context is cmp.Context (lua/cmp/context.lua): cursor_before_line is the

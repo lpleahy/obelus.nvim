@@ -74,6 +74,52 @@ function M.get(id)
   end
 end
 
+-- The project thread: ONE persisted meta record (`meta = true`) holding the
+-- project-level conversation (see obelus.project() / review.do_respond's `c.meta`
+-- branch) — a chat about the review as a WHOLE, not one file/range. `file` is the
+-- project root (a directory, never a real annotation target) so it naturally never
+-- matches store.by_file/render.place's per-buffer lookups; get-or-create is
+-- idempotent (first call creates + persists it, every later call — this session or
+-- a reloaded one — returns the SAME record). Built by hand rather than through
+-- M.add: the meta thread is deliberately never tagged (M.add's sticky-tag
+-- inheritance is for real, batchable threads) and never batched/pending (see
+-- M.pending's `c.meta` guard below).
+-- The existing meta record, or nil — NEVER creates. Surfaces that merely DISPLAY
+-- the project thread (the sidebar's pinned row) use this: creating on every list
+-- render meant two nvim instances on one project each planted their own meta
+-- record just by opening the sidebar (last save then clobbered the other).
+-- Creation is reserved for the deliberate action: obelus.project() / <prefix>a.
+function M.get_meta()
+  for _, c in ipairs(M.comments) do
+    if c.meta then
+      return c
+    end
+  end
+end
+
+function M.meta_thread()
+  local existing = M.get_meta()
+  if existing then
+    return existing
+  end
+  local rec = {
+    meta = true,
+    file = M.root(),
+    range = { sl = 1, el = 1 },
+    kind = "line",
+    selected_text = {},
+    comment = "project thread",
+    id = M.next_id(),
+    created_at = os.time(),
+    status = "open",
+  }
+  table.insert(M.comments, rec)
+  if opts().persist.auto then
+    M.save_soon()
+  end
+  return rec
+end
+
 function M.update(id, fields)
   local c = M.get(id)
   if c then
@@ -243,7 +289,7 @@ end
 -- and saved (drafted) replies alike.
 function M.pending()
   return vim.tbl_filter(function(c)
-    if c.status == "resolved" or c.dispatching then
+    if c.meta or c.status == "resolved" or c.dispatching then
       return false
     end
     local t = M.turns(c)
@@ -523,6 +569,9 @@ function M.tag_comment(id, tag)
   if not c then
     return
   end
+  if c.meta then
+    return -- the project thread is never batch-curated; a tag on it would be a phantom
+  end
   c.tag = (tag and tag ~= "") and tag or nil
   if opts().persist.auto then
     M.save_soon()
@@ -704,7 +753,30 @@ function M.load()
           rec.extmark_id = nil
           rec._stream_turn = nil -- migration: strip if an older build ever leaked one
           rec.batch_id = nil -- migration: membership is owned solely by batch.comment_ids now
-          table.insert(M.comments, rec)
+          -- HEAL duplicate meta records (planted by concurrent instances before the
+          -- pin-no-create fix, or by a lost race between two saves): keep whichever
+          -- has the most conversation (turns, then a session), drop the rest.
+          if rec.meta then
+            local existing = M.get_meta()
+            if existing then
+              local function weight(r)
+                return #(r.turns or {}) * 2 + (r.session_id and 1 or 0)
+              end
+              if weight(rec) > weight(existing) then
+                for i, cc in ipairs(M.comments) do
+                  if cc == existing then
+                    table.remove(M.comments, i)
+                    break
+                  end
+                end
+                table.insert(M.comments, rec)
+              end
+              rec = nil
+            end
+          end
+          if rec then
+            table.insert(M.comments, rec)
+          end
         end
       end
     end

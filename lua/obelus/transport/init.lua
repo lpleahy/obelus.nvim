@@ -47,7 +47,11 @@ function M.submit(name, opts)
   -- file, sidekick, quickfix, or a test's fake transport all see the same
   -- markdown), rather than duplicated at each transport's own prompt-suffix site
   -- (e.g. cli.lua's [Formatting] suffix, appended AFTER this).
-  local suffix = mention.prompt_suffix(markdown)
+  -- opts.mention_text scopes the mention policy to the USER-AUTHORED portion of
+  -- the prompt: the meta briefing embeds "@thread:<id>" one-line summaries for
+  -- resolved threads BY DESIGN, and scanning the whole markdown would full-expand
+  -- every one of them right back (a >20x prompt blowup that defeats the summary).
+  local suffix = mention.prompt_suffix(opts.mention_text or markdown)
   if suffix then
     markdown = markdown .. suffix
   end

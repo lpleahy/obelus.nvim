@@ -216,6 +216,15 @@ end)
 ---@return boolean
 M.busy = jobs.busy
 
+-- The project thread's own framing, prepended (after the briefing) on its FIRST
+-- send — distinct from actions.instructions' JSON write-back SCHEMA, which the
+-- transport appends separately (see the `actions_comments` fan-out below): this is
+-- just what tells the agent it's talking about the whole project, not one thread.
+local META_PREAMBLE = "You are the project-level reviewer for this codebase: you may read any file to answer."
+  .. " Your streamed reply here IS the project-level conversation. To act on an INDIVIDUAL review thread below"
+  .. " (reply to it, resolve it, or ask it a question) you MUST use the write-back protocol — keyed by that"
+  .. " thread's comment id — rather than just describing the change in prose."
+
 -- Add a follow-up user turn and continue the agent conversation (--resume).
 -- mode: "send" (default → cli.models.send) | "fast" (→ cli.models.fast, falling back to send)
 local function do_respond(c, text, mode)
@@ -234,22 +243,43 @@ local function do_respond(c, text, mode)
   -- into a thread that was never dispatched). Sending only `text` would reach the
   -- model with ZERO file/selection context — prepend the serialized comment,
   -- which also carries the @path so the mention send policy applies to it.
+  -- The project (meta) thread is the SAME idea at project scope: prepend the
+  -- whole-project briefing (every other thread, full or summarized) instead of one
+  -- comment's own markdown.
   local prompt = text
   if not c.session_id then
-    prompt = require("obelus.format").comment_md(c) .. "\n" .. text
+    if c.meta then
+      prompt = require("obelus.format").meta_context() .. "\n\n" .. META_PREAMBLE .. "\n\n" .. text
+    else
+      prompt = require("obelus.format").comment_md(c) .. "\n" .. text
+    end
+  end
+  local submit_opts = {
+    comments = { c },
+    resume = c.session_id,
+    prompt = prompt,
+    stream = true, -- replies stream live into the thread
+    model = model, -- per send-mode model (nil = the cmd / account default)
+  }
+  if c.meta then
+    -- fan-out: the write-back protocol must cover every REAL thread (not just the
+    -- meta record itself, which cli.lua's run_stream would otherwise scope
+    -- `allowed` to) — this is how the project chat can reply/resolve/needs_response
+    -- on any thread in the project, not only the one it's nominally "about".
+    submit_opts.actions_comments = vim.tbl_filter(function(x)
+      return not x.meta
+    end, store.all())
+    -- the mention policy must see ONLY the user's text: the briefing's resolved
+    -- summaries are @thread tokens on purpose and must NOT self-expand (see
+    -- transport/init.lua's choke point)
+    submit_opts.mention_text = text
   end
   -- transport.submit pcalls the backend and RETURNS FALSE on failure (unknown
   -- transport name, backend threw) — and this pcall is belt-and-braces for anything
   -- thrown before that catch. Either way the send never started: unstick the panel's
   -- streaming bridge (on_send above armed it) or the chat stays in plain-text
   -- streaming mode with a spinner nothing will ever clear.
-  local ok, ret = pcall(require("obelus.transport").submit, config.options.transport.dispatch or "cli", {
-    comments = { c },
-    resume = c.session_id,
-    prompt = prompt,
-    stream = true, -- replies stream live into the thread
-    model = model, -- per send-mode model (nil = the cmd / account default)
-  })
+  local ok, ret = pcall(require("obelus.transport").submit, config.options.transport.dispatch or "cli", submit_opts)
   if not ok or ret == false then
     store.abort(c.id)
     pcall(function()

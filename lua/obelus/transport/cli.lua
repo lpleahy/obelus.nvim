@@ -232,10 +232,15 @@ local function run_stream(payload)
   -- actions protocol by default. It makes the agent write a keyed actions-file reply
   -- + a short "Done — wrote the reply" summary that truncated the real streamed
   -- response. Opt in with transport.chat_actions = true if you want triage in chat.
-  local use_actions = config.options.transport.chat_actions == true
+  -- opts.actions_comments (the project/meta thread's fan-out — review.do_respond)
+  -- overrides that: it's ALWAYS on then, and the protocol lists (and `allowed`
+  -- below permits) every id in that list rather than just `target` — acting on
+  -- OTHER threads from the project chat is the entire point of that send.
+  local actions_comments = payload.opts and payload.opts.actions_comments
+  local use_actions = actions_comments ~= nil or config.options.transport.chat_actions == true
   local prompt = payload.markdown
   if use_actions then
-    prompt = prompt .. "\n\n" .. actions.instructions(payload.comments, target.id)
+    prompt = prompt .. "\n\n" .. actions.instructions(actions_comments or payload.comments, target.id)
   end
   -- keep replies clean for the in-editor markdown renderer (markview): zero-width
   -- spaces show up literally as <200b> and break fenced-code/table parsing
@@ -289,7 +294,14 @@ local function run_stream(payload)
       -- thread on "thinking…"; then finish the spinner (pcall: never let it strand)
       store.stream_finish(target.id, acc, session, ok)
       if use_actions then
-        actions.apply(target.id, { [target.id] = true })
+        local allowed = { [target.id] = true }
+        if actions_comments then
+          allowed = {}
+          for _, cm in ipairs(actions_comments) do
+            allowed[cm.id] = true
+          end
+        end
+        actions.apply(target.id, allowed)
       end
       pcall(progress.finish, job, ok, acc)
       require("obelus.review").refresh()
