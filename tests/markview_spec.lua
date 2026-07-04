@@ -478,3 +478,12 @@ T.it_when(has_mv, "the hover preview gets a markdown TS highlighter — code blo
   T.ok(vim.treesitter.highlighter.active[pbuf] ~= nil, "a TS highlighter is attached — injections colour the fence")
   panel.hide_preview()
 end)
+
+T.it_when(has_mv, "Obelus_MarkviewCode never gains a fallback fg — fence token colours show through", function()
+  T.fresh({ render = { renderer = "markview" } })
+  require("obelus.thread").markview_harmonize()
+  local hl = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false }) or {}
+  -- the code-block REGION group must stay bg-only: any fg here washes every
+  -- token in every fence that colour (the "all my code blocks are grey" bug)
+  T.is_nil(hl.fg, "no fg on the region group")
+end)

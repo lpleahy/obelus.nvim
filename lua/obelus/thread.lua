@@ -261,7 +261,13 @@ function M.markview_harmonize()
   -- (e.g. per-token injected-language) highlighting on top of it — never overrides
   -- real syntax colour, just prevents "no fg and no bg at all".
   local meta_fallback = color("Comment", "fg") or 0x6c7086
-  set("Obelus_MarkviewCode", { bg = code_bg, fg = color("MarkviewCode", "fg") or meta_fallback })
+  -- BG-ONLY, deliberately: this is markview's whole code-block REGION highlight.
+  -- Giving it ANY fallback fg paints EVERY token in every fence that colour —
+  -- the treesitter injection colours underneath never show through (a shipped
+  -- regression: "all my code blocks are grey"). Token fgs come from the markdown
+  -- TS highlighter; this group only supplies the recessed box. `fg` passes
+  -- through ONLY if markview's own group defines one (it normally doesn't).
+  set("Obelus_MarkviewCode", { bg = code_bg, fg = color("MarkviewCode", "fg") })
   set("Obelus_MarkviewCodeInfo", { bg = code_bg, fg = color("Comment", "fg") })
   set("Obelus_MarkviewCodeFg", { fg = code_bg }) -- the code box border; fg must equal code bg (nil = none)
   -- the code-block language LABEL (transparent mode uses this via code_blocks.label_hl). Give it the

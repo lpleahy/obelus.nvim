@@ -313,6 +313,14 @@ end
 -- threads. Owns the repaint so transports never reach into the UI layer.
 function M.refresh()
   require("obelus.render").render_all()
+  -- the panel surfaces too — an OPEN hover preview otherwise keeps showing the
+  -- batch's transient progress turn (the model's raw working narration) after
+  -- the writeback replaced it, until some unrelated event forces a fill
+  pcall(function()
+    local panel = require("obelus.panel")
+    panel.refresh()
+    panel.refresh_preview(true)
+  end)
 end
 
 return M
