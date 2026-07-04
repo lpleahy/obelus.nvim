@@ -281,3 +281,21 @@ T.it("_rows_to_chat: a builtin table's rows land as ordinary body segs, not a pe
   T.ok(#border_entry.deco.segs > 0, "the border row carries a real seg (body content), not an empty entry")
   T.is_nil(border_entry.deco.rule, "the border row itself isn't also carrying a pending divider")
 end)
+
+T.it("chat winhighlight dims NonText — smoothscroll's <<< marker renders as chrome, not stray text", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  ctx.store.add_turn(c.id, "agent", "hello")
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  local g = panel.geom()
+  T.contains(vim.wo[g.win].winhighlight, "NonText:ObelusChrome")
+  panel.close()
+end)

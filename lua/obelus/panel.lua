@@ -149,6 +149,11 @@ local function chat_winhl(base)
   if base ~= "" then
     parts[#parts + 1] = base
   end
+  -- 'smoothscroll' draws a NonText "<<<" over the top line whenever the seated-
+  -- at-bottom view starts mid-wrapped-line (i.e. almost always once history is
+  -- taller than the window). Keep the affordance but in the dim chrome colour —
+  -- theme-bright NonText reads as stray text glued to the first message.
+  parts[#parts + 1] = "NonText:ObelusChrome"
   if markview_on() then
     parts[#parts + 1] = require("obelus.thread").markview_winhl()
   end
