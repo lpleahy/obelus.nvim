@@ -67,6 +67,10 @@ What a mention MEANS to the agent is `input.mention.send`: `"reference"` (defaul
 note telling it the `@paths` are project-relative files to read itself; `"inline"` embeds each
 mentioned file's contents in the outgoing prompt (capped per file and in total).
 
+The rooted chat popup picks the roomier side of the commented lines and, by default, STAYS
+there for the thread's lifetime (`render.popup_anchor = "sticky"`) — replying grows the box in
+place instead of teleporting it across the selection. `"auto"` restores per-pass re-evaluation.
+
 ## API
 
 The public surface of `require("obelus")` (also see `require("obelus.review")`, which

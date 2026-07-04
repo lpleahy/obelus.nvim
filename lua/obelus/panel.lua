@@ -170,7 +170,11 @@ end
 -- ABOVE the first line — whichever side has more viewport room. Shared by the modal
 -- popup and the non-modal hover preview. Returns a wcfg for nvim_open_win /
 -- nvim_win_set_config.
-local function rooted_wincfg(root, base_w, base_h, title, min_h)
+-- `force_side` ("below"|"above", optional) pins the side regardless of the room
+-- comparison — the modal popup's STICKY anchoring (render.popup_anchor): the side
+-- is chosen once per thread and held, so a reply growing the box can't teleport
+-- it across the selection mid-conversation. Returns wcfg AND the side used.
+local function rooted_wincfg(root, base_w, base_h, title, min_h, force_side)
   min_h = min_h or 6
   local info = vim.fn.getwininfo(root.win)[1] or {}
   local wh = info.height or vim.api.nvim_win_get_height(root.win)
@@ -189,18 +193,22 @@ local function rooted_wincfg(root, base_w, base_h, title, min_h)
     title = title,
     title_pos = "left",
   }
+  local side = force_side
+  if side ~= "below" and side ~= "above" then
+    side = (below >= above) and "below" or "above"
+  end
   -- leave a 2-row gap to the window edge so the float (and its docked input) never
   -- sit flush against the very bottom/top — easier to read and to tell apart
-  if below >= above then -- more room below: hang under the LAST selected line
+  if side == "below" then -- hang under the LAST selected line
     wcfg.bufpos = { el0, 0 }
     wcfg.anchor, wcfg.row, wcfg.col = "NW", 1, 0
     wcfg.height = math.max(min_h, math.min(base_h, below - 3))
-  else -- more room above: rise from one row clear of the FIRST selected line
+  else -- rise from one row clear of the FIRST selected line
     wcfg.bufpos = { sl0, 0 }
     wcfg.anchor, wcfg.row, wcfg.col = "SW", -1, 0
     wcfg.height = math.max(min_h, math.min(base_h, above - 3))
   end
-  return wcfg
+  return wcfg, side
 end
 
 -- The review sidebar. Two modes in one right-hand split:
@@ -259,12 +267,18 @@ end
 local function seat_bottom(win, buf, opts)
   opts = opts or {}
   local last = vim.api.nvim_buf_line_count(buf)
+  -- the markview-geometry redraw runs BEFORE entering win_call: a redraw inside
+  -- paints one frame with the terminal cursor temporarily parked in the chat
+  -- window (win_call switches current window) — the orange "ghost cursor"
+  -- glimmer users see mid-stream. Out here it paints with the REAL cursor, and
+  -- it still computes markview's conceal geometry for the seat (redraw is
+  -- global — it repaints the chat window regardless of which window is current).
+  if opts.redraw then
+    pcall(vim.cmd, "redraw")
+  end
   pcall(vim.api.nvim_win_call, win, function()
     vim.wo.scrolloff = 0 -- so zb seats the last line at the very bottom (under the box)
     pcall(vim.api.nvim_win_set_cursor, win, { last, 0 })
-    if opts.redraw then
-      pcall(vim.cmd, "redraw")
-    end
     vim.cmd("normal! zb")
     if opts.content_row then
       pcall(vim.api.nvim_win_set_cursor, win, { opts.content_row, 0 })
@@ -849,7 +863,16 @@ local function fit_rooted(force)
   end
   local wcfg
   if state.root and vim.api.nvim_win_is_valid(state.root.win) then
-    wcfg = rooted_wincfg(state.root, base_w, base_h, title)
+    -- STICKY side (default): decided on the first placement of this thread, then
+    -- held — a reply/stream growing the box can't flip it across the selection
+    -- ("teleporting"). render.popup_anchor = "auto" restores the every-pass
+    -- room-comparison (the box always takes the roomier side, may flip).
+    local sticky = (require("obelus.config").options.render.popup_anchor or "sticky") ~= "auto"
+    local side
+    wcfg, side = rooted_wincfg(state.root, base_w, base_h, title, nil, sticky and state._anchor_side or nil)
+    if sticky then
+      state._anchor_side = side
+    end
   else
     -- no rooted anchor (centred fallback — e.g. opened off the source buffer, or a
     -- symlinked project path): still content-size and GROW with streaming, capped to
@@ -1489,6 +1512,7 @@ function M.open_thread(id, as_float)
   state.scroll_once = true -- one jump to the bottom on open
   state.follow = true -- start following the latest until the user scrolls up
   state._fillsig, state._inputsig, state._rootfit, state._lastfill = nil, nil, nil, nil -- fresh thread
+  state._anchor_side = nil -- sticky popup side re-decides for the new thread
   -- Create the docked reply box BEFORE the chat fill. fill() seats the chat (scroll to
   -- bottom) and then repositions the reply box against that SETTLED layout — but only if the
   -- box already exists. Opening it AFTER render_all left the first open positioned by
@@ -1840,6 +1864,7 @@ function M.close()
     pcall(vim.api.nvim_win_close, state.win, true)
   end
   state.win, state.buf, state.is_float = nil, nil, nil
+  state._anchor_side = nil
   -- the thread's inline band returns now the popup is gone
   pcall(function()
     require("obelus.render").render_all()

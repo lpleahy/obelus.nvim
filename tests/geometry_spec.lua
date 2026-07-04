@@ -354,3 +354,80 @@ T.it("coalesce: unchanged content does not rewrite the buffer; a real change doe
   panel.refresh_preview()
   T.ok(n > n1, "a real content change rewrites the buffer")
 end)
+
+-- ---------------------------------------------------------------------------
+-- sticky popup anchoring (render.popup_anchor)
+-- ---------------------------------------------------------------------------
+
+-- Open a rooted popup on a comment placed near the TOP of a tall file (room is
+-- below -> side "below"), then scroll the code window so the selection sits near
+-- the BOTTOM (room flips to above). Sticky must hold "below"; auto must flip.
+local function open_rooted_near_top(ctx)
+  require("obelus.panel")._timing.fill_throttle = 0 -- the flip nudge must actually fill
+  local file = ctx.root .. "/g.lua"
+  local lines = {}
+  for i = 1, 200 do
+    lines[i] = "local l" .. i .. " = " .. i
+  end
+  vim.fn.writefile(lines, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  -- mid-file line: BOTH sides have scroll headroom, so zt/zb genuinely flip
+  -- which side of the viewport the selection sits on
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 100, el = 100 } }))
+  vim.api.nvim_win_set_cursor(0, { 100, 0 })
+  vim.cmd("normal! zt") -- selection at the viewport top: max room below
+  local cwin = vim.api.nvim_get_current_win()
+  require("obelus.panel").open_thread(c.id, true) -- rooted popup
+  T.ok(
+    T.wait_for(function()
+      local g = require("obelus.panel").geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "popup opened"
+  )
+  return c, cwin
+end
+
+local function popup_anchor_now()
+  local g = require("obelus.panel").geom()
+  return vim.api.nvim_win_get_config(g.win).anchor
+end
+
+local function flip_room_and_refill(ctx, c, cwin)
+  -- scroll the CODE window so the selection is near the viewport bottom: the
+  -- room comparison now favours "above"
+  vim.api.nvim_win_call(cwin, function()
+    vim.api.nvim_win_set_cursor(cwin, { 100, 0 })
+    vim.cmd("normal! zb")
+  end)
+  -- fills are signature-coalesced: identical content skips fit_rooted entirely.
+  -- Nudge the content like a real reply would, so the re-fit actually runs.
+  ctx.store.add_turn(c.id, "you", "another message that changes the fill signature")
+  require("obelus.panel").refresh()
+  vim.cmd("redraw")
+end
+
+T.it('popup_anchor = "sticky" (default): the side is held when the roomier side flips', function()
+  local ctx = T.fresh()
+  local c, cwin = open_rooted_near_top(ctx)
+  T.eq(popup_anchor_now(), "NW", "opened hanging below (room was below)")
+  flip_room_and_refill(ctx, c, cwin)
+  vim.wait(100)
+  T.eq(popup_anchor_now(), "NW", "sticky: still below — no teleport")
+  require("obelus.panel").close()
+end)
+
+T.it('popup_anchor = "auto": the side re-evaluates and flips to the roomier side', function()
+  local ctx = T.fresh({ render = { popup_anchor = "auto" } })
+  local c, cwin = open_rooted_near_top(ctx)
+  T.eq(popup_anchor_now(), "NW", "opened hanging below")
+  flip_room_and_refill(ctx, c, cwin)
+  T.ok(
+    T.wait_for(function()
+      return popup_anchor_now() == "SW"
+    end, 2000),
+    "auto: flipped above (roomier side)"
+  )
+  require("obelus.panel").close()
+end)

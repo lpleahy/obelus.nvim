@@ -51,6 +51,13 @@ M.defaults = {
     -- for all of them. Off = cleaner (the keys still work). Toggle live with
     -- <prefix>? / :ObelusHints / obelus.toggle_hints().
     hints = false,
+    -- Where the rooted chat POPUP hangs relative to the commented lines:
+    --   "sticky" — the side (above/below the selection) is chosen once when the
+    --              thread opens and HELD: replying/streaming grows the box in
+    --              place instead of teleporting it across the selection.
+    --   "auto"   — re-evaluate every pass; the box always takes the roomier side
+    --              (the original behavior — may flip sides as content grows).
+    popup_anchor = "sticky",
     -- How the docked reply box behaves as you scroll the chat output:
     --   "pinned" — floats at the bottom of the view at all times (type while you read
     --              back through history). Its accent bar dims while you're scrolled up
@@ -445,6 +452,7 @@ local function validate(o)
     true -- nil == auto: legal, not a typo
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
+  enum(o.render, "popup_anchor", "render.popup_anchor", { "sticky", "auto" }, M.defaults.render.popup_anchor)
   boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
   if o.input.mention ~= false then
     boolean(o.input.mention, "picker", "input.mention.picker", MENTION_DEFAULTS.picker)
