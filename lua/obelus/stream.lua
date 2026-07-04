@@ -28,16 +28,32 @@ function M.parse_line(line)
     return { kind = "delta", text = e.event.delta.text or "" }
   end
 
-  -- whole assistant text block (when partial messages are off)
+  -- a NEW text block opening: the boundary between two pieces of prose the agent
+  -- wrote as separate messages/blocks (e.g. "let me check X" → tools run → the
+  -- real answer). The collector turns this into a paragraph break — without it
+  -- the two butt together mid-sentence ("…before reporting.I read through it").
+  if
+    e.type == "stream_event"
+    and e.event
+    and e.event.type == "content_block_start"
+    and e.event.content_block
+    and e.event.content_block.type == "text"
+  then
+    return { kind = "block_start" }
+  end
+
+  -- whole assistant text block (when partial messages are off). Multiple text
+  -- blocks in one message (prose around tool_use) join with a blank line, same
+  -- reason as block_start above.
   if e.type == "assistant" and e.message and type(e.message.content) == "table" then
     local parts = {}
     for _, b in ipairs(e.message.content) do
-      if b.type == "text" and b.text then
+      if b.type == "text" and b.text and b.text ~= "" then
         parts[#parts + 1] = b.text
       end
     end
     if #parts > 0 then
-      return { kind = "message", text = table.concat(parts) }
+      return { kind = "message", text = table.concat(parts, "\n\n") }
     end
     return nil
   end
@@ -60,6 +76,7 @@ end
 -- can't parse — never real reply text.
 function M.collector(on_update)
   local linebuf, acc, got_delta, session = "", "", false, nil
+  local pending_sep = false -- a new text block opened; separate it from prior prose
   local C = {}
 
   function C.feed(data)
@@ -78,14 +95,30 @@ function M.collector(on_update)
       if ev then
         if ev.kind == "session" then
           session = ev.session
+        elseif ev.kind == "block_start" then
+          -- LAZY separator: applied only when the new block actually produces a
+          -- delta, so an empty text block can't leave a trailing blank paragraph
+          pending_sep = acc ~= ""
         elseif ev.kind == "delta" then
+          if pending_sep then
+            pending_sep = false
+            if not acc:match("\n%s*$") then
+              acc = acc .. "\n\n"
+            end
+          end
           acc = acc .. (ev.text or "")
           got_delta = true
           if on_update then
             on_update(acc)
           end
         elseif ev.kind == "message" and not got_delta then
-          acc = acc .. (ev.text or "")
+          -- distinct assistant MESSAGES (prose → tools → more prose) join with a
+          -- blank line, never butted together mid-sentence
+          if acc ~= "" and ev.text and ev.text ~= "" then
+            acc = acc .. "\n\n" .. ev.text
+          else
+            acc = acc .. (ev.text or "")
+          end
           if on_update then
             on_update(acc)
           end

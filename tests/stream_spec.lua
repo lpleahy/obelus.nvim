@@ -36,13 +36,15 @@ T.it("parse_line: content_block_delta text_delta yields a delta", function()
   T.eq(ev, { kind = "delta", text = "Hel" })
 end)
 
-T.it("parse_line: assistant message with multiple text blocks concatenates", function()
+T.it("parse_line: assistant message with multiple text blocks joins them with a blank line", function()
+  -- separate text blocks are separate pieces of prose (tool_use sat between
+  -- them) — butting them together produced "…before reporting.I read through…"
   local raw = vim.json.encode({
     type = "assistant",
-    message = { content = { { type = "text", text = "Hello " }, { type = "text", text = "world" } } },
+    message = { content = { { type = "text", text = "Hello" }, { type = "text", text = "world" } } },
   })
   local ev = M.parse_line(raw)
-  T.eq(ev, { kind = "message", text = "Hello world" })
+  T.eq(ev, { kind = "message", text = "Hello\n\nworld" })
 end)
 
 T.it("parse_line: result event carries session and is_error", function()
@@ -97,11 +99,31 @@ end)
 
 -- collector: message-only fallback ---------------------------------------
 
-T.it("collector: with no deltas, assistant message events accumulate", function()
+T.it("collector: with no deltas, assistant messages accumulate as separate paragraphs", function()
   local c = M.collector()
-  c.feed(line(message("hi ")))
+  c.feed(line(message("hi")))
   c.feed(line(message("there")))
-  T.eq(c.text(), "hi there")
+  T.eq(c.text(), "hi\n\nthere")
+end)
+
+T.it("collector: a new text block between delta runs becomes a paragraph break", function()
+  local block_start =
+    { type = "stream_event", event = { type = "content_block_start", content_block = { type = "text" } } }
+  local c = M.collector()
+  c.feed(line(block_start)) -- the FIRST block: no leading separator
+  c.feed(line(delta("Let me check one thing before reporting.")))
+  c.feed(line(block_start)) -- tools ran; the agent starts a new message
+  c.feed(line(delta("I read through it.")))
+  T.eq(c.text(), "Let me check one thing before reporting.\n\nI read through it.")
+end)
+
+T.it("collector: an empty text block leaves no trailing separator (lazy)", function()
+  local block_start =
+    { type = "stream_event", event = { type = "content_block_start", content_block = { type = "text" } } }
+  local c = M.collector()
+  c.feed(line(delta("done.")))
+  c.feed(line(block_start)) -- opens but never produces a delta
+  T.eq(c.text(), "done.", "no dangling blank paragraph")
 end)
 
 T.it("collector: a result DOES replace acc when no deltas ever arrived", function()
