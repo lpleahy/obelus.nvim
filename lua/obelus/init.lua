@@ -656,6 +656,12 @@ local function autocmds()
     callback = function(a)
       render.render_buffer(a.buf)
       render.render_bands(a.buf)
+      -- entering a buffer doesn't imply a CursorMoved: opening a file with the
+      -- cursor landing straight on a commented line (jumps, session restore)
+      -- must show its band/hover without a wiggle
+      if a.buf == vim.api.nvim_get_current_buf() then
+        pcall(render.on_cursor)
+      end
     end,
   })
   -- on cursor move AND on (re)entering a window, refresh the band/hover preview for
@@ -842,6 +848,13 @@ function M.setup(opts)
     did_setup = true
   end
   render.render_all()
+  -- the plugin loads AFTER the session's first cursor placement (VeryLazy) — no
+  -- CursorMoved/WinEnter will fire until the user moves, so a cursor already
+  -- sitting on a commented line would show no band/hover until wiggled off+on.
+  -- One deferred evaluation covers the startup position.
+  vim.schedule(function()
+    pcall(render.on_cursor)
+  end)
   return M
 end
 

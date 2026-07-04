@@ -235,13 +235,6 @@ local FALLBACK_WIDTH = 74 -- window width fallback when no live win is available
 -- Content can still GROW the chat popup past the base (fit_width) so a wide
 -- table/line isn't clipped — the knob sets where the box STARTS, not a hard cap.
 local function popup_width(frac)
-  local pw = (require("obelus.config").options.render or {}).popup_width
-  if type(pw) == "number" and pw > 0 then
-    if pw < 1 then
-      return math.max(40, math.floor(vim.o.columns * pw))
-    end
-    return math.max(40, math.floor(pw))
-  end
   return math.max(100, math.min(120, math.floor(vim.o.columns * (frac or 0.8))))
 end
 
@@ -885,7 +878,7 @@ local function fit_rooted(force)
     -- came first — then held for the session (per-thread map), so hover -> reply ->
     -- reopen never flips the box across the selection. render.popup_anchor = "auto"
     -- restores the every-pass room-comparison (may flip to the roomier side).
-    local sticky = (require("obelus.config").options.render.popup_anchor or "sticky") ~= "auto"
+    local sticky = (require("obelus.config").options.render or {}).preview_matches_chat == true
     local side
     wcfg, side =
       rooted_wincfg(state.root, base_w, base_h, title, nil, sticky and state._anchor_sides[state.thread] or nil)
@@ -2067,16 +2060,14 @@ local function preview_base_width()
 end
 
 local function preview_side()
-  local r = require("obelus.config").options.render or {}
-  if preview_matching() and (r.popup_anchor or "sticky") ~= "auto" and state.preview_thread then
+  if preview_matching() and state.preview_thread then
     return state._anchor_sides[state.preview_thread]
   end
   return nil
 end
 
 local function remember_preview_side(side)
-  local r = require("obelus.config").options.render or {}
-  if preview_matching() and (r.popup_anchor or "sticky") ~= "auto" and state.preview_thread then
+  if preview_matching() and state.preview_thread then
     state._anchor_sides[state.preview_thread] = side
   end
 end

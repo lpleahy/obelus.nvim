@@ -67,15 +67,11 @@ What a mention MEANS to the agent is `input.mention.send`: `"reference"` (defaul
 note telling it the `@paths` are project-relative files to read itself; `"inline"` embeds each
 mentioned file's contents in the outgoing prompt (capped per file and in total).
 
-The rooted chat popup picks the roomier side of the commented lines and, by default, STAYS
-there for the thread's lifetime (`render.popup_anchor = "sticky"`) — replying grows the box in
-place instead of teleporting it across the selection. `"auto"` restores per-pass re-evaluation.
-`render.popup_width` (columns, or a 0..1 fraction of the editor) gives the chat popup and the
-hover preview ONE shared base width, so hovering then replying doesn't change the box width;
-nil (default) keeps each surface's own auto width. Wide content still grows the box as needed.
-`render.preview_matches_chat = true` goes further: the hover uses the chat's exact width recipe
-(base + grow-to-content) and shares the per-thread sticky side, so replying to a hovered thread
-just adds the input box — no resize, no jump.
+Popup geometry is one knob: `render.preview_matches_chat`. Off (default), the boxes adapt —
+every pass re-picks the roomier side of the commented lines and each surface sizes its own
+comfortable width. On, the hover preview and the chat popup share ONE geometry (the chat's
+width recipe and a per-thread anchor side held once decided), so replying to a hovered thread
+just adds the input box — no resize, no jumping across the selection.
 
 ## API
 

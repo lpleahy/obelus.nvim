@@ -51,23 +51,13 @@ M.defaults = {
     -- for all of them. Off = cleaner (the keys still work). Toggle live with
     -- <prefix>? / :ObelusHints / obelus.toggle_hints().
     hints = false,
-    -- Where the rooted chat POPUP hangs relative to the commented lines:
-    --   "sticky" — the side (above/below the selection) is chosen once when the
-    --              thread opens and HELD: replying/streaming grows the box in
-    --              place instead of teleporting it across the selection.
-    --   "auto"   — re-evaluate every pass; the box always takes the roomier side
-    --              (the original behavior — may flip sides as content grows).
-    popup_anchor = "sticky",
-    -- ONE width base for the chat popup AND the hover preview (nil = auto: each
-    -- surface picks its own comfortable width, so hover->reply can change width).
-    --   >= 1 fixed columns | 0..1 fraction of the editor | nil auto.
-    -- Content still grows the chat popup beyond the base when a wide table/line
-    -- needs it — this sets where the box STARTS, not a hard cap.
-    popup_width = nil,
-    -- Opt-in geometry parity: the hover preview uses the CHAT popup's width
-    -- recipe (same base + same grow-to-content) and shares the per-thread sticky
-    -- anchor side — so replying to a hovered thread adds the input box without
-    -- the box changing width or jumping across the selection.
+    -- THE one popup-geometry knob. false (default): the original adaptive
+    -- behavior — every pass re-picks the roomier side of the selection, and each
+    -- surface sizes its own comfortable width. true: the hover preview and the
+    -- chat popup share ONE geometry — the chat's width recipe (auto base +
+    -- grow-to-content) and a per-thread anchor side decided on first placement
+    -- and HELD — so replying to a hovered thread just adds the input box: no
+    -- resize, no jumping across the selection.
     preview_matches_chat = false,
     -- How the docked reply box behaves as you scroll the chat output:
     --   "pinned" — floats at the bottom of the view at all times (type while you read
@@ -412,6 +402,13 @@ local function warn_removed(opts, merged)
   local r = type(opts.render) == "table" and opts.render or nil
   local mr = merged.render
   warn_and_clear(r, mr, "thread", "render.thread is removed — its keys merged into render.bands")
+  warn_and_clear(
+    r,
+    mr,
+    "popup_anchor",
+    "render.popup_anchor is removed — render.preview_matches_chat is the one knob"
+  )
+  warn_and_clear(r, mr, "popup_width", "render.popup_width is removed — render.preview_matches_chat is the one knob")
   warn_and_clear(r, mr, "markview", 'render.markview is removed — use render.renderer = "markview"|"builtin"')
   warn_and_clear(r, mr, "signs", "render.signs is removed — moved into render.annotations.signs")
   warn_and_clear(r, mr, "sign_text", "render.sign_text is removed — moved into render.annotations.sign")
@@ -463,15 +460,7 @@ local function validate(o)
     true -- nil == auto: legal, not a typo
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
-  enum(o.render, "popup_anchor", "render.popup_anchor", { "sticky", "auto" }, M.defaults.render.popup_anchor)
   boolean(o.render, "preview_matches_chat", "render.preview_matches_chat", M.defaults.render.preview_matches_chat)
-  if o.render.popup_width ~= nil and (type(o.render.popup_width) ~= "number" or o.render.popup_width <= 0) then
-    vim.notify_once(
-      "obelus: render.popup_width must be a positive number (columns, or a 0..1 fraction) — using auto",
-      vim.log.levels.WARN
-    )
-    o.render.popup_width = nil
-  end
   boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
   if o.input.mention ~= false then
     boolean(o.input.mention, "picker", "input.mention.picker", MENTION_DEFAULTS.picker)

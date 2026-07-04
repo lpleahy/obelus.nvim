@@ -408,18 +408,18 @@ local function flip_room_and_refill(ctx, c, cwin)
   vim.cmd("redraw")
 end
 
-T.it('popup_anchor = "sticky" (default): the side is held when the roomier side flips', function()
-  local ctx = T.fresh()
+T.it("preview_matches_chat = true: the side is held when the roomier side flips (no teleport)", function()
+  local ctx = T.fresh({ render = { preview_matches_chat = true } })
   local c, cwin = open_rooted_near_top(ctx)
   T.eq(popup_anchor_now(), "NW", "opened hanging below (room was below)")
   flip_room_and_refill(ctx, c, cwin)
   vim.wait(100)
-  T.eq(popup_anchor_now(), "NW", "sticky: still below — no teleport")
+  T.eq(popup_anchor_now(), "NW", "held: still below — no teleport")
   require("obelus.panel").close()
 end)
 
-T.it('popup_anchor = "auto": the side re-evaluates and flips to the roomier side', function()
-  local ctx = T.fresh({ render = { popup_anchor = "auto" } })
+T.it("default (knob off): the side re-evaluates and flips to the roomier side (original behavior)", function()
+  local ctx = T.fresh()
   local c, cwin = open_rooted_near_top(ctx)
   T.eq(popup_anchor_now(), "NW", "opened hanging below")
   flip_room_and_refill(ctx, c, cwin)
@@ -429,52 +429,6 @@ T.it('popup_anchor = "auto": the side re-evaluates and flips to the roomier side
     end, 2000),
     "auto: flipped above (roomier side)"
   )
-  require("obelus.panel").close()
-end)
-
-T.it("render.popup_width: one base for the chat popup AND the hover preview", function()
-  local saved = vim.o.columns
-  vim.o.columns = 150
-  local ctx = T.fresh({ render = { popup_width = 84 } })
-  require("obelus.panel")._timing.fill_throttle = 0
-  local c = ctx.store.add(T.comment({ comment = "short" }))
-  ctx.store.add_turn(c.id, "agent", "brief")
-  require("obelus.panel").open_thread(c.id, true)
-  local opened = T.wait_for(function()
-    local g = require("obelus.panel").geom()
-    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
-  end)
-  if not opened then
-    vim.o.columns = saved
-  end
-  T.ok(opened, "popup opened")
-  local g = require("obelus.panel").geom()
-  local w = vim.api.nvim_win_get_width(g.win)
-  vim.o.columns = saved
-  T.eq(w, 84, "the chat popup uses the configured base width")
-  require("obelus.panel").close()
-end)
-
-T.it("render.popup_width: a fraction resolves against the editor width", function()
-  local saved = vim.o.columns
-  vim.o.columns = 150
-  local ctx = T.fresh({ render = { popup_width = 0.5 } })
-  require("obelus.panel")._timing.fill_throttle = 0
-  local c = ctx.store.add(T.comment({ comment = "short" }))
-  ctx.store.add_turn(c.id, "agent", "brief")
-  require("obelus.panel").open_thread(c.id, true)
-  local opened = T.wait_for(function()
-    local g = require("obelus.panel").geom()
-    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
-  end)
-  if not opened then
-    vim.o.columns = saved
-  end
-  T.ok(opened, "popup opened")
-  local g = require("obelus.panel").geom()
-  local w = vim.api.nvim_win_get_width(g.win)
-  vim.o.columns = saved
-  T.eq(w, 75, "0.5 of a 150-column editor")
   require("obelus.panel").close()
 end)
 
@@ -520,7 +474,7 @@ end)
 T.it("preview_matches_chat: the hover width uses the chat recipe (base + content growth)", function()
   local saved = vim.o.columns
   vim.o.columns = 150
-  local ctx = T.fresh({ render = { preview_matches_chat = true, popup_width = 84 } })
+  local ctx = T.fresh({ render = { preview_matches_chat = true } })
   require("obelus.panel")._timing.fill_throttle = 0
   require("obelus.panel")._timing.preview_settle = 0
   local file = ctx.root .. "/h2.lua"
@@ -541,5 +495,34 @@ T.it("preview_matches_chat: the hover width uses the chat recipe (base + content
   end
   panel.hide_preview()
   vim.o.columns = saved
-  T.eq(pw, 84, "hover uses the shared chat base width, not the narrower 0.7 fraction")
+  -- the CHAT's auto base at 150 cols: clamp(150*0.8, 100, 120) = 120; the old
+  -- preview base would have been clamp(150*0.7, 100, 120) = 105
+  T.eq(pw, 120, "hover uses the chat's own auto width recipe")
+end)
+
+T.it("default (knob off): the hover keeps its own narrower auto width", function()
+  local saved = vim.o.columns
+  vim.o.columns = 150
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  require("obelus.panel")._timing.preview_settle = 0
+  local file = ctx.root .. "/h3.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  ctx.store.add_turn(c.id, "agent", "short")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.preview(c.id)
+  vim.wait(300)
+  local pw
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= "" then
+      pw = vim.api.nvim_win_get_width(w)
+    end
+  end
+  panel.hide_preview()
+  vim.o.columns = saved
+  T.eq(pw, 105, "the original 0.7-fraction preview width")
 end)
