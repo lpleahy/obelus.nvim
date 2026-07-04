@@ -73,6 +73,9 @@ place instead of teleporting it across the selection. `"auto"` restores per-pass
 `render.popup_width` (columns, or a 0..1 fraction of the editor) gives the chat popup and the
 hover preview ONE shared base width, so hovering then replying doesn't change the box width;
 nil (default) keeps each surface's own auto width. Wide content still grows the box as needed.
+`render.preview_matches_chat = true` goes further: the hover uses the chat's exact width recipe
+(base + grow-to-content) and shares the per-thread sticky side, so replying to a hovered thread
+just adds the input box — no resize, no jump.
 
 ## API
 

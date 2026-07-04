@@ -477,3 +477,69 @@ T.it("render.popup_width: a fraction resolves against the editor width", functio
   T.eq(w, 75, "0.5 of a 150-column editor")
   require("obelus.panel").close()
 end)
+
+T.it("preview_matches_chat: hover decides the side; the modal reuses it (no flip on reply)", function()
+  local ctx = T.fresh({ render = { preview_matches_chat = true } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  require("obelus.panel")._timing.preview_settle = 0
+  local file = ctx.root .. "/h.lua"
+  local lines = {}
+  for i = 1, 200 do
+    lines[i] = "local h" .. i .. " = " .. i
+  end
+  vim.fn.writefile(lines, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 100, el = 100 } }))
+  ctx.store.add_turn(c.id, "agent", "hello there")
+  vim.api.nvim_win_set_cursor(0, { 100, 0 })
+  vim.cmd("normal! zt") -- room below -> hover decides "below"
+  local cwin = vim.api.nvim_get_current_win()
+  local panel = require("obelus.panel")
+  panel.preview(c.id)
+  vim.wait(200)
+  panel.hide_preview()
+  -- flip the room BEFORE the modal ever opens: auto would choose "above" now
+  vim.api.nvim_win_call(cwin, function()
+    vim.api.nvim_win_set_cursor(cwin, { 100, 0 })
+    vim.cmd("normal! zb")
+  end)
+  panel.open_thread(c.id, true)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "modal opened"
+  )
+  local g = panel.geom()
+  T.eq(vim.api.nvim_win_get_config(g.win).anchor, "NW", "the modal reused the side the HOVER decided")
+  panel.close()
+end)
+
+T.it("preview_matches_chat: the hover width uses the chat recipe (base + content growth)", function()
+  local saved = vim.o.columns
+  vim.o.columns = 150
+  local ctx = T.fresh({ render = { preview_matches_chat = true, popup_width = 84 } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  require("obelus.panel")._timing.preview_settle = 0
+  local file = ctx.root .. "/h2.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  ctx.store.add_turn(c.id, "agent", "short")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.preview(c.id)
+  vim.wait(300)
+  local pw
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= "" then
+      pw = vim.api.nvim_win_get_width(w)
+    end
+  end
+  panel.hide_preview()
+  vim.o.columns = saved
+  T.eq(pw, 84, "hover uses the shared chat base width, not the narrower 0.7 fraction")
+end)

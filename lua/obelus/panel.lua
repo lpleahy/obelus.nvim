@@ -347,6 +347,7 @@ local ICON_HL = { open = "ObelusThreadBarN", needs_response = "ObelusInputBorder
 local ORDER = { needs_response = 1, open = 2, resolved = 3 }
 
 local state = {
+  _anchor_sides = {}, -- thread id -> "below"|"above" (sticky side, shared by preview + modal)
   win = nil,
   buf = nil,
   mode = "list", -- "list" | "chat"
@@ -879,15 +880,17 @@ local function fit_rooted(force)
   end
   local wcfg
   if state.root and vim.api.nvim_win_is_valid(state.root.win) then
-    -- STICKY side (default): decided on the first placement of this thread, then
-    -- held — a reply/stream growing the box can't flip it across the selection
-    -- ("teleporting"). render.popup_anchor = "auto" restores the every-pass
-    -- room-comparison (the box always takes the roomier side, may flip).
+    -- STICKY side (default): decided the FIRST time this thread is placed — by
+    -- the hover preview (when render.preview_matches_chat) or the modal, whichever
+    -- came first — then held for the session (per-thread map), so hover -> reply ->
+    -- reopen never flips the box across the selection. render.popup_anchor = "auto"
+    -- restores the every-pass room-comparison (may flip to the roomier side).
     local sticky = (require("obelus.config").options.render.popup_anchor or "sticky") ~= "auto"
     local side
-    wcfg, side = rooted_wincfg(state.root, base_w, base_h, title, nil, sticky and state._anchor_side or nil)
-    if sticky then
-      state._anchor_side = side
+    wcfg, side =
+      rooted_wincfg(state.root, base_w, base_h, title, nil, sticky and state._anchor_sides[state.thread] or nil)
+    if sticky and state.thread then
+      state._anchor_sides[state.thread] = side
     end
   else
     -- no rooted anchor (centred fallback — e.g. opened off the source buffer, or a
@@ -1611,7 +1614,8 @@ function M.open_thread(id, as_float)
   state.scroll_once = true -- one jump to the bottom on open
   state.follow = true -- start following the latest until the user scrolls up
   state._fillsig, state._inputsig, state._rootfit, state._lastfill = nil, nil, nil, nil -- fresh thread
-  state._anchor_side = nil -- sticky popup side re-decides for the new thread
+  -- (the sticky anchor side is a per-thread MAP now — a re-open reuses the side
+  -- this thread was first placed on; a different thread decides its own)
   -- Create the docked reply box BEFORE the chat fill. fill() seats the chat (scroll to
   -- bottom) and then repositions the reply box against that SETTLED layout — but only if the
   -- box already exists. Opening it AFTER render_all left the first open positioned by
@@ -1963,7 +1967,6 @@ function M.close()
     pcall(vim.api.nvim_win_close, state.win, true)
   end
   state.win, state.buf, state.is_float = nil, nil, nil
-  state._anchor_side = nil
   -- the thread's inline band returns now the popup is gone
   pcall(function()
     require("obelus.render").render_all()
@@ -2042,6 +2045,42 @@ end
 -- never be dropped by a stale throttle window or a coalesce against the PREVIOUS
 -- comment's content. M.refresh_preview() (the stream-tick path) passes nothing, so
 -- it's fully throttled/coalesced.
+-- Opt-in geometry parity (render.preview_matches_chat): the hover preview uses
+-- the CHAT popup's width recipe (same base + same grow-to-content) and shares the
+-- per-thread sticky anchor side, so <prefix>or turns a hover into the chat without
+-- the box changing width or jumping across the selection (the input rows appear
+-- below; with the side held "below" the content itself doesn't move). Off (the
+-- default): the preview keeps its own narrower base and per-hover side.
+local function preview_matching()
+  return (require("obelus.config").options.render or {}).preview_matches_chat == true
+end
+
+local function preview_base_width()
+  if preview_matching() and state.preview_buf and vim.api.nvim_buf_is_valid(state.preview_buf) then
+    local content_w = 0
+    for _, l in ipairs(vim.api.nvim_buf_get_lines(state.preview_buf, 0, -1, false)) do
+      content_w = math.max(content_w, vim.fn.strdisplaywidth(l))
+    end
+    return fit_width(popup_width(), content_w + 4, math.max(40, vim.o.columns - 4))
+  end
+  return popup_width(0.7)
+end
+
+local function preview_side()
+  local r = require("obelus.config").options.render or {}
+  if preview_matching() and (r.popup_anchor or "sticky") ~= "auto" and state.preview_thread then
+    return state._anchor_sides[state.preview_thread]
+  end
+  return nil
+end
+
+local function remember_preview_side(side)
+  local r = require("obelus.config").options.render or {}
+  if preview_matching() and (r.popup_anchor or "sticky") ~= "auto" and state.preview_thread then
+    state._anchor_sides[state.preview_thread] = side
+  end
+end
+
 local function fill_preview(force)
   if not (state.preview_buf and vim.api.nvim_buf_is_valid(state.preview_buf)) then
     return
@@ -2143,7 +2182,8 @@ local function fill_preview(force)
     local base_h = (okth and th and th.all) or vim.api.nvim_buf_line_count(state.preview_buf)
     base_h = math.max(1, math.min(base_h, math.max(3, math.floor(vim.o.lines * 0.8))))
     local title = float_title(store.get(state.preview_thread))
-    local wcfg = rooted_wincfg(state.preview_root, popup_width(0.7), base_h, title, 1)
+    local wcfg, pside = rooted_wincfg(state.preview_root, preview_base_width(), base_h, title, 1, preview_side())
+    remember_preview_side(pside)
     wcfg.focusable = false
     wcfg.zindex = 40
     pcall(vim.api.nvim_win_set_config, w, wcfg)
@@ -2215,9 +2255,10 @@ function M.preview(id)
     state.preview_buf = buf
   end
   local lines = build_chat(id, { is_float = true, read_only = true, width = FALLBACK_WIDTH })
-  local W = popup_width(0.7)
+  local W = preview_base_width()
   local H = math.min(math.max(#lines, 3), math.max(6, math.floor(vim.o.lines * 0.8)))
-  local wcfg = rooted_wincfg(state.preview_root, W, H, float_title(c), 1)
+  local wcfg, oside = rooted_wincfg(state.preview_root, W, H, float_title(c), 1, preview_side())
+  remember_preview_side(oside)
   wcfg.focusable = false -- read-only preview: window-nav skips it, cursor stays in code
   wcfg.zindex = 40 -- below the modal input (60); above normal content
   if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
