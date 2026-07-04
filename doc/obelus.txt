@@ -1,0 +1,749 @@
+*obelus.txt*     Local-first AI code review, in the buffer, no PR required
+
+==============================================================================
+CONTENTS                                                          *obelus*
+
+  1. Introduction ................................ |obelus-introduction|
+  2. Setup ........................................ |obelus-setup|
+  3. Configuration ................................ |obelus-config|
+     3.1 render .................................. |obelus-config-render|
+     3.2 input .................................... |obelus-config-input|
+     3.3 transport ................................ |obelus-config-transport|
+  4. Keymaps ...................................... |obelus-keymaps|
+  5. Commands ..................................... |obelus-commands|
+  6. Mentions (@files) ............................ |obelus-mentions|
+  7. Renderers ..................................... |obelus-renderers|
+  8. Transports .................................... |obelus-transports|
+  9. API ........................................... |obelus-api|
+ 10. Debugging ..................................... |obelus-debug|
+
+==============================================================================
+1. INTRODUCTION                                        *obelus-introduction*
+
+obelus is local-first code review for Neovim. Select any region of any
+file, attach a comment, collect a batch of comments across files, and send
+the batch to an AI agent — no pull request, no diff, no git requirement, no
+copy-paste. Threads live at their code location (inline bands or a hover
+popup) or in a threads sidebar; either way they are just as much a chat as
+a review: reply, and the agent replies back in the same thread.
+
+Built-in transports: |obelus-transports| ("sidekick", "cli", "file",
+"quickfix", or your own via `require("obelus.transport").register()`).
+
+==============================================================================
+2. SETUP                                                     *obelus-setup*
+
+lazy.nvim: >lua
+    { "lpleahy/obelus", main = "obelus", opts = {} }
+<
+Any other manager: call `setup()` yourself. >lua
+    require("obelus").setup({
+      -- see |obelus-config| for every key
+    })
+<
+`setup()` is idempotent: commands, default keymaps, and autocmds are
+registered on the FIRST call only; every call (re)builds the effective
+config and repaints every open surface. Calling it again (e.g. a plugin
+manager reload) is therefore safe and does not duplicate mappings, and it
+never reverts a live session toggle (renderer, mode, band style,
+show-resolved, hints — set via |obelus-commands| like |:ObelusMode| or
+|:ObelusRenderer| rather than `setup()`, they intentionally outlive it).
+
+==============================================================================
+3. CONFIGURATION                                             *obelus-config*
+
+Full defaults live in lua/obelus/config.lua; this section documents every
+key in `require("obelus.config").defaults`. Anything you don't set keeps
+its default; a bad value (wrong type, not in the enum) warns once via
+|:messages| and falls back to the default rather than erroring.
+
+------------------------------------------------------------------------------
+context                                                *obelus-config-context*
+    Default: `{ before = 3, after = 3 }`
+    Lines of surrounding context captured with every comment (no git/diff
+    dependency) — `before`/`after` line counts around the commented range.
+
+mode                                                      *obelus-config-mode*
+    Default: `"inline"`     Enum: `"inline"` | `"sidebar"`
+    Engagement modality, toggled live with |:ObelusMode| / `<prefix>m`:
+      "inline"  — chat happens in the file via inline bands; the sidebar
+                  is a read-only navigator.
+      "sidebar" — chat lives in the threads sidebar/popup.
+
+persist                                                *obelus-config-persist*
+    Default: `{ backend = "data", path = ".ai/review.jsonl", auto = true }`
+      backend — "data" (out-of-repo: `stdpath("data")/obelus/<sha256 of the
+                 project root>.jsonl`, keyed per-project) | "jsonl" (an
+                 in-repo file at `persist.path`, relative to the project
+                 root).
+      path    — used only when `backend == "jsonl"`.
+      auto    — save on every mutation; load automatically on `setup()`.
+
+root                                                      *obelus-config-root*
+    Default: a function returning the nearest ancestor directory containing
+    `.git`/`.hg`/`.svn` (searched upward from `getcwd()`), falling back to
+    the cwd itself. Threads are scoped to this project key regardless of
+    where you `:cd`. Pass your own function, or a plain string (normalized
+    to a function internally), to override discovery.
+
+view                                                      *obelus-config-view*
+    Default: `{ default = "buffer" }`
+    Enum: `"buffer"` | `"quickfix"` | `"split"`
+    Backend used by |obelus.list()| / |:ObelusList| when no argument is given.
+
+------------------------------------------------------------------------------
+3.1 render                                              *obelus-config-render*
+
+`render.enabled` gates the whole feature; every other `render.*` key tunes
+in-file annotations, inline thread bands, chat popup geometry, and the
+theme-driven colors the chat surfaces blend from.
+
+render.enabled                                  *obelus-config-render.enabled*
+    Default: `true`
+    Master switch for in-file rendering (annotations + bands). Toggle live
+    per-buffer/global with |obelus.toggle()| / `<prefix>t` / `<prefix>T`.
+
+render.annotations                          *obelus-config-render.annotations*
+    In-file gutter/eol decorations marking a comment's range.
+      signs           (true)              — gutter sign on every range line.
+      sign             ("▌")              — the gutter sign glyph.
+      sign_hl          ("DiagnosticInfo") — gutter sign highlight group.
+      preview         (true)              — eol first-line preview text
+                                             (inline mode, bands OFF only).
+      preview_hl       ("Comment")        — eol preview highlight group.
+      preview_prefix   ("  ▌ ")           — eol preview glyph/prefix.
+      resolved_sign    ("✓")              — gutter sign for a HIDDEN
+                                             resolved comment.
+      show_resolved   (false)             — hide resolved threads (just
+                                             the gutter sign); `<prefix>h`
+                                             toggles it.
+
+render.winblend                                *obelus-config-render.winblend*
+    Default: `0`
+    `0` = opaque floats; `>0` (e.g. `12`) makes the popup/input/compose
+    floats see-through (passed straight through to 'winblend').
+
+render.transparent                          *obelus-config-render.transparent*
+    Default: `false`
+    Drop bubble backgrounds (`NONE`) everywhere, keeping bars/dividers/
+    text — for transparent-background setups where a tinted bubble bg
+    looks wrong.
+
+render.bar                                          *obelus-config-render.bar*
+    Default: `"▎"`  (1 cell)
+    Left accent bar glyph on chat surfaces; e.g. `"▌"` or `"█"` for a
+    thicker/bolder bar.
+
+render.hints                                      *obelus-config-render.hints*
+    Default: `false`
+    ONE switch for the keybind hint footers shown in every chat surface: the
+    sidebar/popup keybind line, the docked reply box's footer, and the
+    quick-reply composer's footer. Off is cleaner; the keys still work
+    either way. Toggle live with `<prefix>?` / |:ObelusHints| /
+    |obelus.toggle_hints()|. (A legacy `{ chat = ..., compose = ... }`
+    table is still accepted and coerced to a boolean — `true` if either
+    was true — with a one-time deprecation warning.)
+
+render.preview_matches_chat        *obelus-config-render.preview_matches_chat*
+    Default: `false`
+    THE one popup-geometry knob.
+      false — adaptive (the original behavior): every pass re-picks the
+              roomier side of the selection, and each surface (hover
+              preview, chat popup) sizes its own comfortable width
+              independently.
+      true  — the hover preview and the chat popup share ONE geometry (the
+              chat's width recipe: auto base + grow-to-content) and a
+              per-thread anchor side decided on first placement and HELD —
+              so replying to a hovered thread just adds the input box, with
+              no resize and no jump across the selection.
+
+render.reply_dock                            *obelus-config-render.reply_dock*
+    Default: `"pinned"`     Enum: `"pinned"` | `"serial"`
+    How the docked reply box behaves as you scroll the chat output:
+      "pinned" — floats at the bottom of the view at all times (type while
+                 scrolling back through history); its accent bar dims while
+                 you're scrolled up and brightens once seated at the bottom.
+      "serial" — sits after the last message and scrolls off-screen with
+                 the chat; reappears when you scroll back to the bottom.
+
+render.renderer                                *obelus-config-render.renderer*
+    Default: `nil` (auto)
+    Enum: `"markview"` | `"builtin"` | `"treesitter"` | nil
+    Markdown renderer for sidebar/popup turn bodies (inside obelus's own
+    bars/dividers/headers — see |obelus-renderers|). `nil` = auto: markview
+    if installed, else builtin. Toggle/cycle live with |:ObelusRenderer|.
+
+render.bands                                      *obelus-config-render.bands*
+    Inline thread bands: how a comment's conversation shows at its spot in
+    the buffer — a native, collapsible review view, either a rooted hover
+    popup or a `virt_lines` band that pushes code down. Set `render.bands =
+    false` as shorthand for `{ enabled = false }` (the other sub-keys stay
+    at their defaults so re-enabling is a one-key change).
+      enabled     (true)     — on by default for buffers with comments.
+      mode        ("focus")  — "focus" (expand the comment under the cursor
+                                + pinned) | "all" (expand every thread).
+      separator   (true)     — blank line above each inline band so
+                                adjacent threads don't visually merge.
+      style       ("popup")  — "popup" (a rooted hover float on the focused
+                                comment — overlays, scrollable) | "inline"
+                                (a virt_lines band that pushes code down).
+                                Toggle with `<prefix>B` / |:ObelusBandStyle|.
+      markdown    (true)     — light inline-markdown styling of the body.
+      rules       (true)     — horizontal rule bars delineating the band.
+      max_width   (nil)      — cap band width; nil = full window text width.
+      max_height  (0.6)      — cap band height: a line count (>=1), a
+                                fraction of the window (0<n<1), or nil for
+                                60%. Long threads paginate in place — scroll
+                                with `<prefix>J`/`<prefix>K` or the
+                                |obelus-config-keys| `band_scroll` binds.
+
+render.colors                                    *obelus-config-render.colors*
+    Source highlight groups the thread tints blend from (all theme-driven —
+    see |obelus-renderers| for how these interact with markview).
+      you          ("DiagnosticInfo") — accent for your turns.
+      agent        ("DiagnosticOk")   — accent for agent turns.
+      meta         ("Comment")        — metadata (range, timestamps).
+      mention      (nil)              — valid @mention accent (input box +
+                                         chat bodies). nil = the theme's
+                                         warn/orange (`DiagnosticWarn`),
+                                         chosen to collide with none of the
+                                         other surface tints.
+      tint         (0.08)              — background blend strength (0 =
+                                         none); kept subtle.
+      rule         (0.75)              — divider brightness: blend toward
+                                         the turn color (0..1, 1 = full).
+      inline_code  (nil)               — markview inline `code` background
+                                         inside the bubble: nil = none (fg
+                                         only, no dark box); true = a subtle
+                                         recessed box blended from the
+                                         editor bg; an hl group name or
+                                         0xRRGGBB = an explicit background.
+      selection    (nil)               — Visual-selection highlight INSIDE
+                                         obelus chat windows (a theme's
+                                         Visual can clash with tinted
+                                         bubbles): nil leaves the theme's
+                                         Visual; an hl group name or
+                                         0xRRGGBB overrides it just in the
+                                         chat/popup.
+
+------------------------------------------------------------------------------
+3.2 input                                                *obelus-config-input*
+
+input.mention                                    *obelus-config-input.mention*
+    Default: `true`     Type: `false` | `true` | `table`
+    Governs "@" in an obelus input buffer (the docked reply box, the
+    quick-reply composer). `false` disables it entirely. `true` is sugar
+    for the table below with every field at its default. A table overrides
+    individual fields, merged over the defaults (`{ completion = "cmp" }`
+    still implies `picker = true`).
+      picker      (true)         — fall back to a file picker (fzf-lua if
+                                    installed, else `vim.ui.select`) when no
+                                    completion engine is active.
+      completion  ("auto")       — "auto" (blink.cmp if installed, else
+                                    nvim-cmp, else neither), "blink"/"cmp"
+                                    to force one (warns once + falls back to
+                                    the picker if that plugin isn't
+                                    present), or `false` to never use a
+                                    completion engine. When an engine IS
+                                    active it owns "@" — the picker keymap
+                                    is not bound alongside it.
+      send        ("reference")  — what an @mention MEANS to the agent when
+                                    the message is sent; see
+                                    |obelus-mentions|.
+    See |obelus-mentions| for the full trigger/engine/highlighting/send
+    behavior.
+
+------------------------------------------------------------------------------
+3.3 transport                                        *obelus-config-transport*
+
+Pluggable AI backends — see |obelus-transports| for the full contract.
+
+transport.default                            *obelus-config-transport.default*
+    Default: `"sidekick"`
+    Transport used by |:ObelusSubmit| (the batch submit) when no explicit
+    name is given.
+
+transport.dispatch                          *obelus-config-transport.dispatch*
+    Default: `"cli"`
+    Transport used for a single-comment background dispatch
+    (|:ObelusDispatch|) and for chat replies (|obelus.respond()| /
+    |obelus.chat_send()|).
+
+transport.sidekick                          *obelus-config-transport.sidekick*
+    Default: `{ name = "crush", focus = true }`
+    Options for the built-in "sidekick" transport (hands the batch to a
+    running CLI agent via sidekick.nvim). `name` selects the sidekick CLI
+    tool; `focus` jumps focus to it after sending.
+
+transport.cli                                    *obelus-config-transport.cli*
+    Options for the built-in "cli" transport (a headless agent process,
+    e.g. `claude -p` or `codex exec`, run in the project root).
+      cmd     (`{ "claude", "-p" }`) — the headless command; the prompt is
+               appended as the final arg (or piped on stdin — see `stdin`
+               below). obelus always sets `--output-format`
+               itself (and appends `--model`/`--resume` as needed) —
+               don't bake `--output-format` or `--model` into `cmd`.
+      stdin   (false) — `true` pipes the prompt on stdin instead of
+               appending it as a final arg.
+      models  (`{ send = nil, fast = nil, batch = nil }`) — per send-mode
+               `--model` overrides (nil = whatever `cmd`/the account
+               defaults to):
+                 send  — normal chat reply (<CR> in the reply box) — your
+                         "harder" model.
+                 fast  — "send fast" (<M-CR> in the reply box) — a
+                         quicker/cheaper model.
+                 batch — the batch submit (`<prefix>s`) — falls back to
+                         `send` when nil.
+
+transport.batch                                *obelus-config-transport.batch*
+    Continuable batch conversations: send several related comments to ONE
+    agent and keep talking to it across rounds with shared context (see
+    |obelus-transports| for the session-continuation contract).
+      enabled    (true)      — `<prefix>s` creates a continuable Batch
+                                (instead of a one-shot send).
+      transport  ("cli")     — the session-capable backend that captures +
+                                resumes the shared session (only "cli" can
+                                today).
+      mode       ("session") — "session" (`--resume` the shared session) |
+                                "stateless" (re-serialize the working set
+                                every round instead of resuming).
+      object     (false)     — reserved for Phase 2 (surfacing the Batch as
+                                a first-class meta-thread in the sidebar);
+                                not implemented yet — setting it true only
+                                emits a one-time warning.
+      prompt     ("diff")    — per-round prompt: "diff" (delta-only, via the
+                                resumed session) | "full" (re-serialize the
+                                whole working set every round).
+
+transport.file                                  *obelus-config-transport.file*
+    Default: `{ path = ".ai/review.md" }`
+    Options for the built-in "file" transport, which writes the batch
+    markdown to this path (relative to the project root) instead of
+    dispatching it anywhere — for an agent skill or a file-mediated review
+    loop to pick up.
+
+transport.clear_on_submit            *obelus-config-transport.clear_on_submit*
+    Default: `false`
+    After a (non-batch) submit: `false` marks the comments "sent" and
+    leaves them in the store; `true` deletes them outright. A batch submit
+    is NEVER cleared regardless of this setting — its members must persist
+    so the batch can keep talking to the same agent across rounds.
+
+transport.notify                              *obelus-config-transport.notify*
+    Default: `false`
+    Toast when a background agent run finishes/fails. Off by default —
+    |:ObelusJobs| always has the full log regardless.
+
+transport.actions                            *obelus-config-transport.actions*
+    Default: `true`
+    Enable the agent write-back protocol for dispatch/batch submits (inject
+    instructions to write a per-job `.ai/review-actions-<key>.json`, then
+    apply it after the run finishes). See |obelus-transports|.
+
+transport.chat_actions                  *obelus-config-transport.chat_actions*
+    Default: `false`
+    Use that same triage protocol for interactive CHAT replies too. Off by
+    default — in a live conversation it makes the agent write a terse
+    actions-file summary that would replace its real streamed reply.
+
+------------------------------------------------------------------------------
+progress                                              *obelus-config-progress*
+    Default: `{ display = "auto" }`
+    Enum: `"auto"` | `"inline"` | `"corner"` | `"statusline"` | `"off"`
+    Background-job spinner display:
+      auto       — an inline spinner on each working thread's line when its
+                   buffer is open, else a corner float. (Same as "inline"
+                   plus the corner fallback.)
+      inline     — spinner on the worked thread's line only.
+      corner     — always a top-right float counting running jobs.
+      statusline — nothing floats; read
+                   `require("obelus.progress").statusline()` from your own
+                   statusline.
+      off        — no spinner UI at all.
+
+------------------------------------------------------------------------------
+keys                                                      *obelus-config-keys*
+    Default keymap wiring. Every default mapping shares one prefix; see the
+    full table in |obelus-keymaps|.
+
+keys.prefix                                        *obelus-config-keys.prefix*
+    Default: `"<leader>o"`
+    Base of every default mapping (`keys.prefix .. suffix`). Set `keys =
+    false` (the whole table, not just this key) to skip registering any
+    default mappings at all.
+
+keys.disabled                                    *obelus-config-keys.disabled*
+    Default: `{}`
+    A list of suffixes to skip, e.g. `{ "x", "T" }` to skip the "clear all"
+    and "toggle global" maps specifically, while keeping the rest.
+
+keys.band_scroll                              *obelus-config-keys.band_scroll*
+    Default: `{ down = "<A-d>", up = "<A-u>" }`
+    Hold Alt + d/u to scroll a long inline band in place (half-page). Set
+    `band_scroll = false` to disable both, or add `line_down`/`line_up`
+    (e.g. `"<A-j>"`/`"<A-k>"`) for single-line scrolling, if those keys are
+    free for you. `<prefix>J`/`<prefix>K` scroll the same way regardless of
+    this table.
+
+==============================================================================
+4. KEYMAPS                                                  *obelus-keymaps*
+
+All default mappings are `keys.prefix .. suffix`, normal mode unless noted;
+each has a matching `:Obelus*` command (|obelus-commands|). Skip specific
+ones with `keys.disabled = { <suffix>, ... }`; skip all of them with `keys
+= false`.
+
+    Suffix ~   Action ~
+    c  (n)     Comment the current line
+    c  (x)     Comment the visual selection
+    t          Toggle annotations (buffer)
+    T          Toggle annotations (global)
+    l          Open the review list
+    q          Open the review list as quickfix
+    j          Open the background-job output log
+    b          Toggle inline comment bands
+    B          Toggle band display style (popup <-> inline)
+    p          Toggle the threads sidebar
+    R          Toggle resolved at cursor
+    z          Pin/collapse the band at cursor
+    J          Scroll the thread at cursor down (half-page)
+    K          Scroll the thread at cursor up (half-page)
+    m          Toggle inline <-> sidebar engagement mode
+    ?          Toggle keybind hint footers
+    o          Open the full thread at cursor (scrollable chat)
+    h          Show/hide resolved threads
+    r          Reply to the thread at cursor (docked box or popup)
+    f          Quick reply via the small inline compose float
+    d          Delete the comment at cursor
+    s          Submit pending comments, or continue the open batch (auto)
+    S          Force a NEW batch, even if one is already open
+    D          Dispatch the thread at cursor to a background agent
+    g          Tag/untag the thread at cursor (curates batch membership)
+    G          Toggle sticky tagging mode (new threads inherit the tag)
+    C          Cancel the in-flight dispatch at cursor
+    x          Clear ALL comments
+
+Plus, independent of the prefix (|obelus-config-keys.band_scroll|):
+`<A-d>`/`<A-u>` scroll a long inline band in place (half-page); disable or
+remap via `keys.band_scroll`.
+
+==============================================================================
+5. COMMANDS                                                *obelus-commands*
+
+Every command is one line; `()` marks a cross-reference for more detail.
+
+:[range]ObelusComment                                      *:ObelusComment*
+    Comment the current line, or the range/visual selection.
+:ObelusToggle [global]                                       *:ObelusToggle*
+    Toggle annotations (buffer, or globally with "global").
+:ObelusList [buffer / quickfix / split]                        *:ObelusList*
+    Open the review list (|obelus-config-view|).
+:ObelusEdit                                                    *:ObelusEdit*
+    Edit the raw comment text at cursor.
+:ObelusDelete                                                *:ObelusDelete*
+    Delete the comment at cursor.
+:ObelusSubmit [transport]                                    *:ObelusSubmit*
+    Submit the batch (|obelus-transports|); a name forces one-shot.
+:ObelusContinue [text]                                      *:ObelusContinue*
+    Continue the open batch conversation (next round).
+:ObelusRenderer [markview / builtin / treesitter / auto]    *:ObelusRenderer*
+    Set/cycle the chat renderer (|obelus-renderers|).
+:ObelusTag [name]                                                *:ObelusTag*
+    Tag/untag the thread at cursor; no argument prompts.
+:ObelusTagMode [name]                                        *:ObelusTagMode*
+    Toggle sticky tagging mode (new threads inherit the tag).
+:ObelusDispatch                                            *:ObelusDispatch*
+    Dispatch the comment at cursor to a background agent.
+:ObelusCancel                                                *:ObelusCancel*
+    Cancel the in-flight dispatch at cursor.
+:ObelusClear                                                  *:ObelusClear*
+    Clear all comments (kills any live jobs first).
+:ObelusSave                                                    *:ObelusSave*
+    Save reviews to disk now.
+:ObelusLoad                                                    *:ObelusLoad*
+    Reload reviews from disk and repaint.
+:ObelusJobs                                                    *:ObelusJobs*
+    Open the background-job output log (|obelus-debug|).
+:ObelusBands                                                  *:ObelusBands*
+    Toggle inline comment bands in this buffer.
+:ObelusBandStyle                                          *:ObelusBandStyle*
+    Toggle thread display style (popup <-> inline band).
+:ObelusPanel                                                  *:ObelusPanel*
+    Toggle the review threads sidebar.
+:ObelusResolve                                              *:ObelusResolve*
+    Resolve the comment at cursor.
+:ObelusReopen                                                *:ObelusReopen*
+    Reopen the comment at cursor.
+:ObelusRespond                                              *:ObelusRespond*
+    Respond to the thread at cursor (prompts for text).
+:ObelusQuickReply                                        *:ObelusQuickReply*
+    Quick reply to the thread at cursor (inline float).
+:ObelusChat                                                    *:ObelusChat*
+    Open the thread chat sidebar for the comment at cursor.
+:ObelusToggleResolved                                *:ObelusToggleResolved*
+    Show/hide resolved comments.
+:ObelusMode [inline / sidebar]                                *:ObelusMode*
+    Set, or with no argument toggle, the engagement mode.
+:ObelusHints                                                  *:ObelusHints*
+    Toggle keybind hint footers (|obelus-config-render.hints|).
+:ObelusPrompt                                                *:ObelusPrompt*
+    Show the last prompt sent to the agent, verbatim (|obelus-debug|).
+:ObelusRenderInfo                                        *:ObelusRenderInfo*
+    Dump the renderer decision inputs for the chat/preview (|obelus-debug|).
+
+==============================================================================
+6. MENTIONS (@files)                                       *obelus-mentions*
+
+Reply inputs (the docked reply box, the quick-reply composer — filetype
+`obelus_reply`) support "@" file mentions, governed by
+|obelus-config-input.mention|.
+
+Trigger ~
+    "@" starts a mention at a WORD BOUNDARY: line start, or preceded by
+    whitespace or "(" — so `foo@bar` (mid-word) never triggers, but `see
+    (@foo.lua`, `@foo.lua`, and `x @foo.lua` all do. The token after "@"
+    runs over path characters (word chars, `.`, `/`, `\`, `-`, `_`, and any
+    non-ASCII byte) until a space or another non-path character ends it.
+
+Engines ~
+    With `input.mention.completion` allowing it (the default `"auto"`):
+    blink.cmp's own completion menu is used if installed, else nvim-cmp's,
+    scoped to the `obelus_reply` filetype only. Whichever engine is active
+    OWNS "@" entirely — the picker keymap below is not bound alongside it.
+    With neither installed (or `completion = false`), typing "@" at a
+    boundary opens a file picker rooted at the project (fzf-lua's `files`
+    picker if installed, else `vim.ui.select` over a plain sorted file
+    list) and inserts the picked path, project-relative, right after the
+    "@" (spaces escaped as `\ ` so it reads as one token). The project file
+    list is built via `fd` -> `rg --files` -> `git ls-files` -> a capped
+    filesystem walk (whichever answers first), cached briefly and
+    prewarmed when an input buffer opens so the very first "@" of a
+    session answers instantly.
+
+Validity highlighting ~
+    Every "@path" naming a REAL file or directory under the project root
+    highlights live (`ObelusMention`, accent from
+    |obelus-config-render.colors| `mention`) in both the input buffer and
+    the rendered chat — the color doubles as validation; a typo'd or
+    nonexistent path is left unstyled.
+
+Send policy — `input.mention.send` ~
+    What an @mention MEANS to the agent once the message is sent:
+      "reference" (default) — appends one note to the outgoing prompt
+                   telling the agent the "@path" tokens are project-relative
+                   files it can read itself (it runs with `cwd` set to the
+                   project root).
+      "inline"   — embeds each UNIQUE mentioned file's contents directly in
+                   the prompt, fenced, instead of just naming it. Capped at
+                   32KB per file (truncated to the last full line) and
+                   128KB across all mentioned files combined — files beyond
+                   the total cap fall back to a plain reference note so a
+                   handful of large/generated @'d files can't blow the
+                   whole prompt. Directories get a one-line "(directory —
+                   browse it as needed)" note; binaries (NUL-sniffed) get
+                   "(binary file — skipped)".
+    This applies exactly once per outgoing prompt, at the transport choke
+    point (|obelus-transports|) — every transport (cli, file, sidekick, a
+    custom one) sees the same resulting markdown.
+
+==============================================================================
+7. RENDERERS                                              *obelus-renderers*
+
+`render.renderer` (|obelus-config-render.renderer|) selects how sidebar/
+popup turn BODIES render inside obelus's own chrome (bars, dividers,
+headers, which obelus always draws itself):
+    "markview"    — markview.nvim renders tables/code/links (prettiest;
+                    needs the plugin installed).
+    "builtin"     — obelus's own light in-house styling; no dependency,
+                    and always a clean bubble background.
+    "treesitter"  — raw Markdown text with treesitter syntax highlighting
+                    (real lines, no conceal).
+    nil ("auto")  — markview if installed, else builtin.
+
+A `:ObelusRenderer markview` request downgrades to "builtin" automatically
+when markview.nvim isn't actually on the runtimepath, so a stale/bad
+config setting never leaves the chat unrendered.
+
+While a reply is STREAMING, every mode shows the plain in-house (builtin)
+markdown regardless of the configured renderer — this avoids a
+flash/reflow as markview's async render or treesitter's parse catches up
+mid-stream — then swaps to the configured renderer once the turn finishes.
+
+Toggle/cycle live with |:ObelusRenderer| `[markview / builtin / treesitter]`
+(no argument cycles through the three) or |obelus.set_renderer()|; the
+choice is a session override (`config.ui.renderer`) that survives a
+`setup()` re-run. |:ObelusRenderInfo| dumps the live decision inputs (which
+mode resolved, markview extmark counts, treesitter parser/highlighter
+state) for debugging a renderer that looks wrong — see |obelus-debug|.
+
+==============================================================================
+8. TRANSPORTS                                            *obelus-transports*
+
+A transport is a plain function receiving one `payload` table and doing
+whatever it wants with it (spawn a process, write a file, hand off to
+another plugin). Built-ins:
+    "sidekick"  — hands the batch to a running CLI agent via
+                  sidekick.nvim (`transport.sidekick`).
+    "cli"       — headless execution of an agent command in the project
+                  root (`transport.cli`); one-shot for batch submits,
+                  streaming for chat replies. The only transport that can
+                  capture + resume a session (used for both single-thread
+                  chat continuation and batch continuation).
+    "file"      — writes the batch markdown to `transport.file.path`
+                  instead of dispatching it anywhere.
+    "quickfix"  — loads the batch into the quickfix list (pairs with
+                  sidekick.nvim's `{quickfix}` prompt variable).
+
+Registering your own ~
+    `require("obelus.transport").register(name, fn)` — `fn(payload)`
+    receives:
+      payload.comments  — the batch: an array of comment records.
+      payload.markdown  — the fully-formatted prompt (comments serialized
+                           to markdown, with the @mention send-policy
+                           suffix from |obelus-mentions| already applied).
+      payload.opts      — the opts table `submit()` was called with
+                           (`resume`, `model`, `prompt`, `stream`,
+                           `batch`, ...).
+    Submit to it with `:ObelusSubmit <name>` or
+    `require("obelus").submit(name, opts)`. Example: >lua
+        require("obelus.transport").register("my-agent", function(payload)
+          vim.system({ "my-agent", "--apply" }, { stdin = payload.markdown })
+        end)
+<
+Write-back actions protocol (`transport.actions`) ~
+    For a dispatch/batch submit, obelus appends instructions asking the
+    agent to write ONE JSON file, `.ai/review-actions-<key>.json` (keyed
+    per-batch or per-comment so concurrent dispatches never collide): an
+    array with one entry per comment id — `{ comment_id, action, message?,
+    line? }` where `action` is one of "resolve" | "needs_response" |
+    "reply" | "move". After the run, obelus reads and applies that file:
+    resolve marks the thread done, needs_response/reply add an agent turn
+    (needs_response additionally flags the thread), move re-anchors the
+    comment to a new line. Only entries for comment ids the dispatch was
+    actually allowed to touch are applied. This is opt-out
+    (`transport.actions = false` falls back to just attaching the raw
+    reply and auto-resolving on success/failure). RESTRAINT: the protocol
+    explicitly tells the agent to resolve ONLY when it fully made the
+    requested change — a question or discussion is always a reply, never a
+    resolve; the human resolves what they consider settled. Chat replies do
+    NOT use this protocol by default (`transport.chat_actions` opts in) —
+    in a live conversation it would replace the agent's real streamed
+    answer with a terse actions-file summary.
+
+Session/batch continuation ~
+    A per-thread chat reply (|obelus.respond()|) is an isolated 1:1
+    conversation about a single comment, resumed via that comment's own
+    captured `session_id`. A BATCH (`<prefix>s` / |obelus.submit()| with no
+    explicit transport name, when `transport.batch.enabled`) is different:
+    several related comments go to ONE agent that reasons about them
+    together with shared context, and the session id is captured on the
+    BATCH record rather than per-comment, so `<prefix>s` again (or
+    `:ObelusContinue`) resumes the SAME session for round 2+, sending only
+    a compact delta (what got resolved, what's new, where you replied,
+    what's still open) rather than re-sending everything — unless
+    `transport.batch.mode = "stateless"` or `.prompt = "full"`, which
+    re-serializes the whole working set every round instead of resuming.
+    New pending comments added between rounds are folded into the batch
+    automatically.
+
+==============================================================================
+9. API                                                            *obelus-api*
+
+The public surface of `require("obelus")` (some functions re-export from
+`require("obelus.review")`, which the module returned by `require("obelus")`
+uses internally — reach through either).
+
+setup({opts})                                                *obelus.setup()*
+    Configure obelus (|obelus-setup|).
+comment()                                                  *obelus.comment()*
+    Capture a review comment for the current line.
+comment_visual()                                    *obelus.comment_visual()*
+    Capture a review comment for the visual selection.
+toggle({scope?})                                            *obelus.toggle()*
+    Toggle annotations; `"global"` toggles everywhere, else just the
+    current buffer.
+list({backend?})                                              *obelus.list()*
+    Open the review list ("buffer" | "quickfix" | "split").
+panel()                                                      *obelus.panel()*
+    Toggle the review threads sidebar/popup.
+open_chat({id?})                                          *obelus.open_chat()*
+    Open the sidebar for a thread (cursor thread, or `id`); with nothing
+    under the cursor, opens the navigator list instead.
+reply_here()                                            *obelus.reply_here()*
+    Reply to the thread at cursor in the active engagement modality.
+quick_reply({id?})                                     *obelus.quick_reply()*
+    Reply via the small inline compose float.
+set_mode({mode})                                          *obelus.set_mode()*
+    Set the engagement mode ("inline" | "sidebar"); a session override that
+    survives `setup()`.
+toggle_mode()                                          *obelus.toggle_mode()*
+    Toggle inline <-> sidebar.
+set_renderer({mode?})                                *obelus.set_renderer()*
+    Set/cycle the chat markdown renderer (|obelus-renderers|).
+toggle_hints()                                        *obelus.toggle_hints()*
+    Toggle the keybind hint footers.
+edit({id?})                                                    *obelus.edit()*
+    Edit a comment's raw text.
+delete({id?})                                                *obelus.delete()*
+    Delete a comment (cancels any in-flight dispatch on it first).
+submit({name?}, {opts?})                                    *obelus.submit()*
+    Submit pending comments — the continuable batch flow when `name` is
+    nil and `transport.batch.enabled`, else a one-shot send via `name`.
+tag({id?}, {name?})                                            *obelus.tag()*
+    Tag/untag a thread (curates batch membership); nil `name` prompts.
+tag_mode({name?})                                          *obelus.tag_mode()*
+    Toggle sticky tagging mode (new threads inherit the tag); nil
+    toggles/prompts.
+continue_batch({text?})                            *obelus.continue_batch()*
+    Continue the open batch conversation (next round).
+batch_advance({text?})                              *obelus.batch_advance()*
+    Submit-or-continue in one call: advances an open, idle batch, else
+    starts a new one.
+dispatch({id?})                                            *obelus.dispatch()*
+    Background-dispatch a single thread.
+cancel({id?})                                                *obelus.cancel()*
+    Cancel the in-flight dispatch at cursor/`id`.
+resolve({id?})                                              *obelus.resolve()*
+    Resolve a thread.
+reopen({id?})                                                *obelus.reopen()*
+    Reopen a thread.
+toggle_resolve({id?})                              *obelus.toggle_resolve()*
+    Toggle a thread's resolved state.
+busy({id})                                                    *obelus.busy()*
+    Is this thread mid-dispatch?
+respond({id?}, {text?})                                    *obelus.respond()*
+    Respond to a thread; prompts for text when `text` is nil.
+chat_save({id}, {text})                                  *obelus.chat_save()*
+    Save a draft reply without sending it.
+chat_send({id}, {text}, {mode?})                         *obelus.chat_send()*
+    Send a reply now ("send" | "fast").
+clear()                                                      *obelus.clear()*
+    Clear all comments.
+
+==============================================================================
+10. DEBUGGING                                                 *obelus-debug*
+
+|:ObelusPrompt|      Shows the exact last prompt handed to the agent
+                     process for the "cli" transport (including the
+                     @mention and formatting suffixes) — the single source
+                     of truth for "what did the agent actually see".
+|:ObelusRenderInfo|  Dumps the live renderer-decision inputs for the
+                     active chat/preview (resolved mode, markview extmark
+                     counts, treesitter parser/highlighter state) — see
+                     |obelus-renderers|.
+|:ObelusJobs|        Opens the persistent background-job output log
+                     (newest run on top) — every headless "cli" dispatch's
+                     full stdout/stderr lands here, since a headless run
+                     has no TUI of its own to show it in.
+
+Test suite ~
+    `make test` runs the headless Lua spec suite
+    (`nvim --headless -u NONE -i NONE -c "luafile tests/run.lua"`), loading
+    every `tests/*_spec.lua` and setting the process exit code from the
+    tally. Markview-dependent specs are skipped unless markview.nvim and
+    nvim-treesitter are reachable — either via `OBELUS_TEST_RTP=<path>:
+    <path>` or an existing lazy.nvim install under `stdpath("data")/lazy`.
+    `make lint` runs `stylua --check` over `lua/` and `tests/`.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:

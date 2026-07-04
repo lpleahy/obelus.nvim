@@ -103,7 +103,8 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 
 ## Configuration
 
-Defaults are in [`lua/obelus/config.lua`](lua/obelus/config.lua).
+Defaults are in [`lua/obelus/config.lua`](lua/obelus/config.lua). Full reference at `:h obelus`
+(doc/obelus.txt).
 
 ```lua
 require("obelus").setup({
