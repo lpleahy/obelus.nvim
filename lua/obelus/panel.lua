@@ -968,6 +968,13 @@ local function reconcile_renderer(mode, streaming, force)
       pcall(vim.treesitter.start, state.buf, "markdown")
       state._ts_on = true
     end
+    -- full synchronous parse incl. injections, every executed pass: nvim 0.12's
+    -- ASYNC injection parsing only progresses with redraw activity, so an idle
+    -- chat sat with grey code fences until the user typed (each keystroke's
+    -- redraws inched the parse along). Incremental — cheap when nothing changed.
+    pcall(function()
+      vim.treesitter.get_parser(state.buf, "markdown"):parse(true)
+    end)
   elseif state._ts_on then
     pcall(vim.treesitter.stop, state.buf)
     state._ts_on = false
@@ -2051,6 +2058,14 @@ local function fill_preview(force)
       pcall(vim.treesitter.start, state.preview_buf, "markdown")
       state._pts_buf = state.preview_buf -- once per buffer (bufhidden=wipe recreates)
     end
+    -- FORCE a full synchronous parse, injections included: nvim 0.12 parses
+    -- injections ASYNCHRONOUSLY, progressing on redraw activity — an idle,
+    -- unfocused float gets none, so big threads sat with grey (unparsed) code
+    -- fences forever while the same buffer coloured fine once something drove
+    -- redraws (e.g. typing). Incremental, so cheap on unchanged content.
+    pcall(function()
+      vim.treesitter.get_parser(state.preview_buf, "markdown"):parse(true)
+    end)
   end
   if markview_on() then
     -- per-actual-pass, NOT cached/once: this races markview's own ColorScheme
