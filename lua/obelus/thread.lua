@@ -207,8 +207,27 @@ end
 -- bg, so on obelus's tinted float those boxes clash. We define Obelus_Markview*
 -- twins whose BG is blended from obelus's float tint (keeping markview's tuned FG),
 -- then remap the bg-bearing Markview* groups to them PER-WINDOW via 'winhighlight'
--- (verified to retarget extmark hl_groups) — so only obelus's float is affected and
--- global markview rendering elsewhere is untouched.
+-- (verified to retarget extmark hl_groups — including @-prefixed treesitter capture
+-- names like @punctuation.special.markdown; winhighlight's {hl-from} is just a
+-- highlight-group NAME, nvim never special-cases the string shape) — so only
+-- obelus's float/sidebar is affected and global markview rendering elsewhere (the
+-- user's own markdown buffers, with their own personal markview config) is
+-- untouched. This ALSO makes obelus independent of two global repairs some users'
+-- dotfiles apply for a bare `markview.setup({})` install: (1) stripping bg from
+-- Markview{Code,CodeInfo,InlineCode,Heading0-6,Icon0-6} on transparent setups —
+-- every one of those groups is already remapped to a twin below whose bg is nil in
+-- transparent mode, so obelus never needed that global strip; (2) pinning
+-- @punctuation.special.markdown's fg — markview falls back to that exact group for
+-- a table's border glyphs when the window is wrapped at render time, and some
+-- colorschemes never define it (or its `@markup.raw`/`@markup.link.label...`
+-- cousins used by inline-code/hyperlink fg), leaving those groups with NEITHER fg
+-- nor bg (invisible). obelus's own render is never actually wrapped while markview
+-- draws (mv_render_scoped forces wrap off for the whole synchronous render call, so
+-- @punctuation.special.markdown's degraded path is structurally unreachable here),
+-- but it — and the other themes-can-leave-this-undefined groups below — get a twin
+-- with a themed fallback fg anyway, both as defense-in-depth and because the SAME
+-- undefined-@-group failure mode is real for MarkviewInlineCode/MarkviewHyperlink
+-- (their fg sources have no internal fallback in markview itself).
 
 -- (re)define the Obelus_Markview* twins from the live obelus tint + markview FGs.
 function M.markview_harmonize()
@@ -235,7 +254,14 @@ function M.markview_harmonize()
   local function set(name, opts)
     vim.api.nvim_set_hl(0, name, opts)
   end
-  set("Obelus_MarkviewCode", { bg = code_bg })
+  -- meta/border fallback fg chain shared by every twin below whose markview source
+  -- can end up genuinely undefined on some theme (no @markup.*/@punctuation.* capture
+  -- set): the group's own live fg if the theme DOES define it, else a neutral but
+  -- always-visible colour. Only ever shows through characters with no more specific
+  -- (e.g. per-token injected-language) highlighting on top of it — never overrides
+  -- real syntax colour, just prevents "no fg and no bg at all".
+  local meta_fallback = color("Comment", "fg") or 0x6c7086
+  set("Obelus_MarkviewCode", { bg = code_bg, fg = color("MarkviewCode", "fg") or meta_fallback })
   set("Obelus_MarkviewCodeInfo", { bg = code_bg, fg = color("Comment", "fg") })
   set("Obelus_MarkviewCodeFg", { fg = code_bg }) -- the code box border; fg must equal code bg (nil = none)
   -- the code-block language LABEL (transparent mode uses this via code_blocks.label_hl). Give it the
@@ -249,7 +275,12 @@ function M.markview_harmonize()
   -- recessed box reads as a dark hole that doesn't match the alternating bubble bg). A knob
   -- restores a box: render.colors.inline_code = true (recessed) | <0xRRGGBB> | <hl group name>.
   local ic = ((require("obelus.config").options.render or {}).colors or {}).inline_code
-  local icfg = color("MarkviewInlineCode", "fg")
+  -- markview's OWN MarkviewInlineCode fg is sourced from `@markup.raw` with NO
+  -- internal fallback (unlike its palette-driven groups, which always have a
+  -- hardcoded hex fallback baked into markview itself) — a theme that never sets
+  -- `@markup.raw` leaves inline code with no fg at all; fall back to String (most
+  -- themes colour inline code like a literal) then the shared meta chain.
+  local icfg = color("MarkviewInlineCode", "fg") or color("@markup.raw", "fg") or color("String", "fg") or meta_fallback
   local ibg
   if ic == true then
     ibg = inline_bg
@@ -272,6 +303,39 @@ function M.markview_harmonize()
   -- a plain `>` blockquote border: mute it (Comment colour) so it doesn't read as a
   -- second clashing vertical bar inside the bubble next to the turn's accent bar
   set("Obelus_MarkviewBlockQuoteDefault", { fg = color("Comment", "fg") or 0x6c7086 })
+  -- the horizontal-rule gap glyph: markview's OWN default hr config hardcodes
+  -- "MarkviewIcon3Fg" for it, but markview never actually DEFINES that group (it's
+  -- absent from markview's own highlights.lua) — every `---` is invisible-by-default
+  -- on a vanilla install, no colorscheme quirk required. Fall back through the same
+  -- palette index (Icon3/Palette3 groups ARE always defined — see the Icon0-6 loop
+  -- above) so the glyph stays in the same colour family as the rest of the palette.
+  set("Obelus_MarkviewIcon3Fg", {
+    fg = color("MarkviewIcon3Fg", "fg") or color("MarkviewPalette3Fg", "fg") or meta_fallback,
+  })
+  -- markdown links/images/footnotes: markview's OWN MarkviewHyperlink fg is sourced
+  -- from `@markup.link.label.markdown_inline` with no internal fallback (same class
+  -- of gap as inline code above) — fall back to the standard `Underlined` group
+  -- (virtually every colorscheme sets it; it's the semantically-right family for a
+  -- link) before the shared meta chain.
+  set("Obelus_MarkviewHyperlink", {
+    fg = color("MarkviewHyperlink", "fg") or color("@markup.link.label.markdown_inline", "fg") or color(
+      "Underlined",
+      "fg"
+    ) or meta_fallback,
+  })
+  -- @punctuation.special.markdown: markview's OWN degraded-table-border fallback hl
+  -- (used when a table renders in a WRAPPED window — see markview_winhl's remap
+  -- comment). obelus's scoped render always forces wrap off for the render call, so
+  -- this path is structurally unreachable today; twinned anyway as defense-in-depth
+  -- (a future render call site that doesn't wrap-bracket, or a markview internal
+  -- change, would otherwise silently regress to an undefined/invisible border) and
+  -- because it's the exact failure mode this whole hardening pass targets.
+  set("Obelus_MarkviewPunctuationSpecial", {
+    fg = color("@punctuation.special.markdown", "fg") or color("@punctuation.special", "fg") or color(
+      "Delimiter",
+      "fg"
+    ) or meta_fallback,
+  })
 end
 
 -- per-window winhighlight remap string retargeting markview's bg-bearing groups
@@ -283,6 +347,15 @@ function M.markview_winhl()
     "MarkviewCodeFg:Obelus_MarkviewCodeFg",
     "MarkviewInlineCode:Obelus_MarkviewInlineCode",
     "MarkviewBlockQuoteDefault:Obelus_MarkviewBlockQuoteDefault",
+    "MarkviewIcon3Fg:Obelus_MarkviewIcon3Fg", -- hr gap glyph (never defined by markview itself)
+    "MarkviewHyperlink:Obelus_MarkviewHyperlink", -- links/images/footnotes
+    -- markview's degraded (wrapped-window) table-border fallback hl — an ordinary
+    -- highlight group despite the @-prefixed treesitter-capture-style name; 'winhighlight'
+    -- remaps it exactly like any other {hl-from} (verified empirically: an extmark
+    -- referencing this exact group name resolves through the window's winhighlight
+    -- the same way a plain "MarkviewCode"-style name does — same before/after
+    -- attribute-id delta, same scoping to the one window).
+    "@punctuation.special.markdown:Obelus_MarkviewPunctuationSpecial",
   }
   for i = 0, 6 do
     p[#p + 1] = ("MarkviewIcon%d:Obelus_MarkviewIcon%d"):format(i, i)

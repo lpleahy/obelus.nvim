@@ -29,6 +29,107 @@ local function markview_decos(buf)
   return n
 end
 
+-- portability audit helpers (strip_bg/@punctuation independence) --------------
+-- Every hl_group/line_hl_group/sign_hl_group and virt_text/virt_lines chunk hl
+-- markview's OWN extmarks reference in `buf` — the exact walk the Phase-1 audit
+-- probe used, kept here so the pinning specs below exercise the SAME surface.
+local function collect_markview_groups(buf)
+  local groups = {}
+  local function add(g)
+    if g and g ~= "" then
+      groups[g] = true
+    end
+  end
+  for name, nsid in pairs(vim.api.nvim_get_namespaces()) do
+    if name:lower():find("markview", 1, true) then
+      local ok, marks = pcall(vim.api.nvim_buf_get_extmarks, buf, nsid, 0, -1, { details = true })
+      if ok then
+        for _, m in ipairs(marks) do
+          local d = m[4] or {}
+          add(d.hl_group)
+          add(d.line_hl_group)
+          add(d.sign_hl_group)
+          if d.virt_text then
+            for _, chunk in ipairs(d.virt_text) do
+              add(chunk[2])
+            end
+          end
+          if d.virt_lines then
+            for _, line in ipairs(d.virt_lines) do
+              for _, chunk in ipairs(line) do
+                add(chunk[2])
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  return groups
+end
+
+-- parse a window's 'winhighlight' into a {hl-from -> hl-to} map
+local function parse_winhl(win)
+  local raw = vim.wo[win].winhighlight or ""
+  local map = {}
+  for pair in raw:gmatch("[^,]+") do
+    local from, to = pair:match("^([^:]+):(.+)$")
+    if from then
+      map[from] = to
+    end
+  end
+  return map
+end
+
+-- a group's EFFECTIVE fg/bg accounting for the window's winhighlight remap: a
+-- group remapped by `winhl` resolves through its target; an unmapped group
+-- resolves globally (link=false follows markview's own internal `{link=...}`
+-- chains, e.g. MarkviewTableHeader -> @markup.heading -> ...).
+local function effective_hl(winhl, name)
+  local target = winhl[name]
+  local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = target or name, link = false })
+  if not ok or not hl then
+    return nil, nil, target
+  end
+  return hl.fg, hl.bg, target
+end
+
+-- rich markdown covering every element the portability audit cares about:
+-- headings, fenced+inline code, a FITTING table, an UNFITTABLE one (5 cols in a
+-- narrow window — exercises markview's degraded/wrapped table path), a
+-- blockquote, a bullet list, bold/italic, and a horizontal rule (whose gap glyph
+-- is the always-undefined MarkviewIcon3Fg — see thread.lua's markview_harmonize).
+local RICH_MD = table.concat({
+  "# H1 Heading",
+  "## H2 Heading",
+  "### H3 Heading",
+  "",
+  "Some **bold** and *italic* text.",
+  "",
+  "```lua",
+  "local function foo()",
+  "  return 1",
+  "end",
+  "```",
+  "",
+  "Inline `code span` here.",
+  "",
+  "| A | B |",
+  "| --- | --- |",
+  "| 1 | 2 |",
+  "",
+  "| One | Two | Three | Four | Five |",
+  "| --- | --- | --- | --- | --- |",
+  "| aaaaaaaaaa | bbbbbbbbbb | cccccccccc | dddddddddd | eeeeeeeeee |",
+  "",
+  "> A blockquote line.",
+  "",
+  "- bullet one",
+  "- bullet two",
+  "",
+  "---",
+}, "\n")
+
 T.it_when(has_mv, "markview mode renders DETACHED but with decorations", function()
   local mv = require("markview")
   pcall(mv.setup, { preview = { filetypes = { "markdown" } } })
@@ -226,4 +327,122 @@ T.it_when(has_mv, "a 5-column over-wide table doesn't wrap RENDERED (ncol-aware 
   vim.o.columns = saved_columns
   T.ok(saw, "the table's rows were found")
   T.ok(all_single, "every rendered table row occupies exactly one screen row" .. (bad and (": " .. bad) or ""))
+end)
+
+-- ---------------------------------------------------------------------------
+-- Portability: vanilla markview (plain setup({}), no personal user config) must
+-- render obelus chats correctly WITHOUT help from the two global repairs some
+-- users' dotfiles apply — stripping bg from Markview* groups on a transparent
+-- setup, and pinning @punctuation.special.markdown's fg. obelus must carry
+-- equivalent guarantees itself, scoped to its own windows.
+-- ---------------------------------------------------------------------------
+
+T.it_when(
+  has_mv,
+  "PORTABILITY: transparent Normal — no markview-referenced group leaks a bg outside an Obelus_ twin",
+  function()
+    vim.api.nvim_set_hl(0, "Normal", {}) -- bg NONE (transparent terminal), same as chat_spec's pattern
+    local ok, err = pcall(function()
+      local ctx = T.fresh({ render = { renderer = "markview", transparent = true } })
+      local panel = require("obelus.panel")
+      panel._timing.fill_throttle = 0
+      local c = ctx.store.add(T.comment({ comment = "rich" }))
+      ctx.store.add_turn(c.id, "agent", RICH_MD)
+      panel.open_thread(c.id, false) -- sidebar: default width is narrow enough the 5-col table can't fit
+      T.ok(
+        T.wait_for(function()
+          local g = panel.geom()
+          return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+        end, 2000),
+        "chat opened"
+      )
+      for _ = 1, 5 do
+        vim.cmd("redraw")
+        vim.wait(30)
+      end
+      local g = panel.geom()
+      local winhl = parse_winhl(g.win)
+      local groups = collect_markview_groups(g.buf)
+      local checked = 0
+      for name in pairs(groups) do
+        local fg, bg, target = effective_hl(winhl, name)
+        local via_twin = (target and target:match("^Obelus_")) or name:match("^Obelus_")
+        if not via_twin then
+          T.ok(
+            bg == nil,
+            string.format("%s (-> %s) leaks a bg in transparent mode: %s", name, tostring(target), tostring(bg))
+          )
+        end
+        checked = checked + 1
+      end
+      T.ok(checked > 0, "markview actually decorated the chat buffer (nothing to check otherwise)")
+      panel.close()
+    end)
+    vim.api.nvim_set_hl(0, "Normal", {})
+    if not ok then
+      error(err, 0)
+    end
+  end
+)
+
+T.it_when(
+  has_mv,
+  "PORTABILITY: @punctuation.special.markdown resolves to a defined fg through the chat winhl even when the global group is cleared",
+  function()
+    local ctx = T.fresh({ render = { renderer = "markview" } })
+    local panel = require("obelus.panel")
+    panel._timing.fill_throttle = 0
+    local c = ctx.store.add(T.comment({ comment = "table" }))
+    ctx.store.add_turn(c.id, "agent", RICH_MD)
+    panel.open_thread(c.id, false)
+    T.ok(
+      T.wait_for(function()
+        local g = panel.geom()
+        return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+      end, 2000),
+      "chat opened"
+    )
+    vim.cmd("hi clear @punctuation.special.markdown") -- simulate a theme that never defines it
+    require("obelus.thread").markview_harmonize() -- re-derive the twin from the now-cleared group,
+    -- same as the ColorScheme autocmd / next render would
+    local g = panel.geom()
+    local winhl = parse_winhl(g.win)
+    local target = winhl["@punctuation.special.markdown"]
+    T.ok(target ~= nil, "the chat window's winhighlight remaps @punctuation.special.markdown")
+    local hl = vim.api.nvim_get_hl(0, { name = target, link = false })
+    T.ok(hl and hl.fg ~= nil, "the twin (" .. tostring(target) .. ") still resolves to a defined fg")
+    panel.close()
+  end
+)
+
+T.it_when(has_mv, "PORTABILITY: opaque state — the twins still carry obelus's computed bgs", function()
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e })
+  local ok, err = pcall(function()
+    local ctx = T.fresh({ render = { renderer = "markview" } }) -- no `transparent` — the opaque branch
+    local panel = require("obelus.panel")
+    panel._timing.fill_throttle = 0
+    local c = ctx.store.add(T.comment({ comment = "code" }))
+    ctx.store.add_turn(c.id, "agent", RICH_MD)
+    panel.open_thread(c.id, false)
+    T.ok(
+      T.wait_for(function()
+        local g = panel.geom()
+        return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+      end, 2000),
+      "chat opened"
+    )
+    for _ = 1, 5 do
+      vim.cmd("redraw")
+      vim.wait(30)
+    end
+    local codebg = (vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false }) or {}).bg
+    local h1bg = (vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewHeading1", link = false }) or {}).bg
+    T.ok(codebg ~= nil, "Obelus_MarkviewCode carries a bg in opaque mode")
+    T.ok(h1bg ~= nil, "Obelus_MarkviewHeading1 carries a bg in opaque mode")
+    panel.close()
+  end)
+  vim.api.nvim_set_hl(0, "Normal", {})
+  if not ok then
+    error(err, 0)
+  end
 end)
