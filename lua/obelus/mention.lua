@@ -273,7 +273,7 @@ function M.paste_image(opts)
     local name = stamp .. "-" .. img_seq .. ".png"
     local candidate = dir .. "/" .. name
     if uv.fs_stat(candidate) == nil then
-      dest, relpath = candidate, ".ai/img/" .. name
+      dest, relpath = candidate, name -- SHORT display: _scan resolves bare names via .ai/img
       break
     end
   end
@@ -314,6 +314,36 @@ function M.paste_image(opts)
     vim.api.nvim_win_set_cursor(win, { row0 + 1, math.max(new_col - 1, 0) })
   end
   return true
+end
+
+-- Outgoing-prompt rewrite: the input DISPLAYS short image mentions ("@x.png");
+-- the AGENT needs the real path. Expand every valid short image mention in the
+-- outgoing markdown to "@.ai/img/<name>" — applied once at the transport choke
+-- point, before the mention send policy runs (which then sees the full path,
+-- so reference notes and inline expansion both resolve).
+function M.expand_image_mentions(text)
+  if not text or text == "" or not text:find("@", 1, true) then
+    return text
+  end
+  local lines = vim.split(text, "\n", { plain = true })
+  local changed = false
+  for i, line in ipairs(lines) do
+    local ms = M._scan(line)
+    for k = #ms, 1, -1 do -- right-to-left so earlier spans stay valid
+      local m = ms[k]
+      local span = line:sub(m[1] + 1, m[2])
+      if not m[3]:find("/", 1, true) then
+        -- plain root-level file: nothing to expand
+      elseif span == "@" .. M._escape(m[3]:match("([^/]+)$") or "") and m[3]:sub(1, 8) == ".ai/img/" then
+        line = line:sub(1, m[1]) .. "@" .. M._escape(m[3]) .. line:sub(m[2] + 1)
+        changed = true
+      end
+    end
+    if changed then
+      lines[i] = line
+    end
+  end
+  return changed and table.concat(lines, "\n") or text
 end
 
 -- keys.chat.paste_image (default <C-v>): the TUI paste gesture. IMAGE on the
@@ -624,6 +654,16 @@ function M._scan(line, edge_prev)
       -- token is the returned path, same as a file path is.
       local tid = path:match("^thread:(.+)$")
       local valid = tid and (require("obelus.store").get(tid) ~= nil) or (path ~= "" and stat_valid(root, path))
+      -- SHORT image mentions: pasted images display as just "@<name>.png" — a
+      -- slash-less token that exists under .ai/img resolves to its full path
+      -- (highlighting + the send-time rewrite/expansion all see the real file).
+      if not valid and path ~= "" and not tid and not path:find("/", 1, true) then
+        if stat_valid(root, ".ai/img/" .. path) then
+          out[#out + 1] = { col0, j - 1, ".ai/img/" .. path }
+          valid = nil -- handled; skip the plain branch below
+          path = ""
+        end
+      end
       if path ~= "" and valid then
         out[#out + 1] = { col0, j - 1, path }
       elseif first_colon and first_colon.len > 0 and not tid then
@@ -1033,10 +1073,82 @@ end
 -- span, row-wise). Clears + rebuilds the whole namespace on every call — input
 -- buffers are a handful of lines, so a full rescan per TextChanged(I) is cheap
 -- (M._scan's stat cache absorbs the repeat fs_stat calls across keystrokes).
+-- Cmd+V support (macOS terminals): the terminal can only forward TEXT — but
+-- screenshot tools (CleanShot/Clop) put the image's FILE PATH on the clipboard
+-- as text, so a Cmd+V paste lands an absolute "/…/Shot.png" string here.
+-- Convert it: import the file into .ai/img (copy, dedup by name) and replace
+-- the pasted path with a short "@<name>" mention. Runs from the same
+-- TextChanged(I) hook as the highlight rescan; idempotent (once replaced, no
+-- absolute path remains). Existence-gated, so half-typed paths never convert.
+local IMAGE_EXT = { png = true, jpg = true, jpeg = true, gif = true, webp = true }
+
+local function convert_pasted_image_paths(buf)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  for i, line in ipairs(lines) do
+    if line:find("[~/]") and line:find("%.%w") then
+      local changed = false
+      local search_from = 1
+      while true do
+        -- anchor on an image EXTENSION, then try candidate path starts
+        -- longest-first ("/" or "~" positions before it) with an existence
+        -- check — paths contain interior dots ("nvim.lpleahy/…") and spaces
+        -- (CleanShot names), so start-anchored patterns misparse them
+        local es, ee, ext = line:find("%.(%w+)", search_from)
+        if not es then
+          break
+        end
+        search_from = ee + 1
+        if IMAGE_EXT[ext:lower()] then
+          for st = 1, es - 1 do
+            local ch = line:sub(st, st)
+            if (ch == "/" or ch == "~") and (st == 1 or line:sub(st - 1, st - 1) ~= "") then
+              local cand = line:sub(st, ee)
+              local abs = vim.fn.fnamemodify(cand, ":p")
+              if vim.fn.filereadable(abs) == 1 then
+                local root = require("obelus.store").root()
+                local dir = root .. "/.ai/img"
+                vim.fn.mkdir(dir, "p")
+                local base = vim.fn.fnamemodify(abs, ":t")
+                local dest, name = dir .. "/" .. base, base
+                local uv = vim.uv or vim.loop
+                local n = 1
+                while uv.fs_stat(dest) ~= nil and n < 100 do
+                  n = n + 1
+                  name = vim.fn.fnamemodify(base, ":r") .. "-" .. n .. "." .. ext
+                  dest = dir .. "/" .. name
+                end
+                if uv.fs_copyfile(abs, dest) then
+                  local mtext = "@" .. M._escape(name)
+                  line = line:sub(1, st - 1) .. mtext .. line:sub(ee + 1)
+                  pcall(vim.api.nvim_buf_set_lines, buf, i - 1, i, false, { line })
+                  local win = vim.api.nvim_get_current_win()
+                  if vim.api.nvim_win_get_buf(win) == buf then
+                    local pos = vim.api.nvim_win_get_cursor(win)
+                    if pos[1] == i and pos[2] >= ee then
+                      pcall(vim.api.nvim_win_set_cursor, win, { i, pos[2] - (ee - st + 1) + #mtext })
+                    end
+                  end
+                  search_from = st + #mtext
+                  changed = true
+                end
+                break -- longest candidate that exists wins; stop trying shorter
+              end
+            end
+          end
+        end
+      end
+      if changed then
+        lines[i] = line
+      end
+    end
+  end
+end
+
 local function rescan_mentions(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
+  convert_pasted_image_paths(buf)
   vim.api.nvim_buf_clear_namespace(buf, hl_ns, 0, -1)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i, line in ipairs(lines) do

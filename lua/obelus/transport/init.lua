@@ -51,6 +51,9 @@ function M.submit(name, opts)
   -- the prompt: the meta briefing embeds "@thread:<id>" one-line summaries for
   -- resolved threads BY DESIGN, and scanning the whole markdown would full-expand
   -- every one of them right back (a >20x prompt blowup that defeats the summary).
+  -- short image mentions ("@x.png", the display form) expand to their real
+  -- ".ai/img/" paths for the agent — BEFORE the suffix policy scans them
+  markdown = mention.expand_image_mentions(markdown)
   local suffix = mention.prompt_suffix(opts.mention_text or markdown)
   if suffix then
     markdown = markdown .. suffix

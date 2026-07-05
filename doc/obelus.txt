@@ -660,7 +660,12 @@ Send policy — `input.mention.send` ~
 Images ~
     `keys.chat.paste_image` (default `<C-v>`, |obelus-config-keys.chat|)
     grabs whatever IMAGE is on the system clipboard into
-    `<project root>/.ai/img/<timestamp>-<seq>.png` and inserts an @mention
+    `<project root>/.ai/img/<timestamp>-<seq>.png` and inserts a SHORT
+    @mention (just the file name — the full `.ai/img/` path is expanded
+    into the outgoing prompt automatically). Cmd+V also works whenever the
+    screenshot tool put the image's FILE PATH on the clipboard as text
+    (CleanShot/Clop do): the pasted path is imported into `.ai/img` and
+    replaced with the same short @mention. It inserts an @mention
     for it at the cursor, same as picking a file — it validates/highlights
     the same way, since the file is real by the time it lands. Backend
     chain (first available wins): `pngpaste`, then (macOS, no `pngpaste`) an

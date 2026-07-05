@@ -325,9 +325,12 @@ T.it("paste_image: a successful grab inserts a valid, highlightable @mention at 
   vim.fn.mode = real_mode
 
   local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
-  T.ok(line:match("^see @%.ai/img/%d+%-%d+%-%d+%.png $") ~= nil, "an @mention for the pasted image landed: " .. line)
-  local path = line:match("@(%S+)")
-  T.ok(vim.fn.filereadable(ctx.root .. "/" .. path) == 1, "the pasted image file actually exists under the project")
+  T.ok(line:match("^see @%d+%-%d+%-%d+%.png $") ~= nil, "an @mention for the pasted image landed: " .. line)
+  local name = line:match("@(%S+)")
+  T.ok(
+    vim.fn.filereadable(ctx.root .. "/.ai/img/" .. name) == 1,
+    "the pasted image file exists under .ai/img (the mention shows just the name)"
+  )
   mention._scan_invalidate()
   T.ok(#mention._scan(line) > 0, "the inserted mention validates (mention._scan finds it)")
   T.eq(vim.api.nvim_win_get_cursor(win), { 1, #line }, "cursor lands right after the inserted mention")
@@ -352,7 +355,7 @@ T.it("paste_image: from Normal mode, inserts after the cursor and does NOT resum
   cb()
 
   local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
-  T.ok(line:match("^x@%.ai/img/%d+%-%d+%-%d+%.png $") ~= nil, "inserted right AFTER the cursor char: " .. line)
+  T.ok(line:match("^x@%d+%-%d+%-%d+%.png $") ~= nil, "inserted right AFTER the cursor char: " .. line)
   T.eq(vim.fn.mode(), "n", "stayed in Normal mode (no startinsert from a Normal-mode paste)")
 
   mention._grab_clipboard_image = real_grab
@@ -428,7 +431,7 @@ T.it("paste_image: two pastes get two distinct files and two @mentions (seq disa
   T.eq(#paths, 2, "two @mentions landed: " .. line)
   T.ok(paths[1] ~= paths[2], "the two pasted files have distinct names")
   for _, p in ipairs(paths) do
-    T.ok(vim.fn.filereadable(ctx.root .. "/" .. p) == 1, "file exists: " .. p)
+    T.ok(vim.fn.filereadable(ctx.root .. "/.ai/img/" .. p) == 1, "file exists under .ai/img: " .. p)
   end
 
   mention._grab_clipboard_image = real_grab
@@ -448,10 +451,7 @@ T.it("paste_image: also bound and working from the quick-reply composer float", 
   cb()
 
   local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
-  T.ok(
-    line:match("^@%.ai/img/%d+%-%d+%-%d+%.png $") ~= nil,
-    "the mention landed in the composer buffer: " .. tostring(line)
-  )
+  T.ok(line:match("^@%d+%-%d+%-%d+%.png $") ~= nil, "the mention landed in the composer buffer: " .. tostring(line))
   T.ok(vim.api.nvim_win_is_valid(fwin), "the composer float stays open — paste doesn't submit/close it")
 
   pcall(vim.api.nvim_win_close, fwin, true)
@@ -494,4 +494,35 @@ T.it("smart_paste: no image on the clipboard falls back to pasting the + registe
   mention.smart_paste()
   T.contains(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], "plain clipboard text", "text pasted like normal")
   mention._grab_clipboard_image = real_grab
+end)
+
+T.it("short image mentions expand to their .ai/img paths in the OUTGOING prompt", function()
+  local F = require("fake")
+  local ctx = T.fresh({ transport = { dispatch = "fake" } })
+  F.install()
+  vim.fn.mkdir(ctx.root .. "/.ai/img", "p")
+  vim.fn.writefile({ "png" }, ctx.root .. "/.ai/img/shot-1.png")
+  mention._scan_invalidate()
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  c.session_id = "sess-x" -- resumed: the prompt is just the text
+  require("obelus").chat_send(c.id, "look at @shot-1.png please", "send")
+  T.ok(F.payload, "dispatched")
+  T.contains(F.payload.markdown, "@.ai/img/shot-1.png", "the agent sees the REAL path")
+  T.ok(not F.payload.markdown:find("@shot%-1%.png"), "the short display form is gone from the wire")
+end)
+
+T.it("pasting an absolute image PATH as text (Cmd+V via CleanShot/Clop) converts to a mention", function()
+  local ctx = T.fresh()
+  local win, buf = open_input(ctx)
+  -- a real image file outside the project, as screenshot tools leave on disk
+  local src = ctx.root .. "-outside-shot.png"
+  vim.fn.writefile({ "pngbytes" }, src)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "see " .. src .. " here" })
+  vim.api.nvim_set_current_win(win)
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+  T.ok(line:match("^see @%S+%.png here$") ~= nil, "the pasted path became a short mention: " .. line)
+  local name = line:match("@(%S+%.png)")
+  T.ok(vim.fn.filereadable(ctx.root .. "/.ai/img/" .. name) == 1, "the image was imported under .ai/img")
+  vim.fn.delete(src)
 end)
