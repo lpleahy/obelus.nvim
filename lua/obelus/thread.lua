@@ -194,12 +194,25 @@ function M.setup_highlights()
   -- through, and its chrome is BRAND-tinted, which is exactly why the mention
   -- accent is a different colour (see mentionc above)
   set("ObelusMention", { fg = mentionc, bold = true })
-  -- optional Visual-selection override for the chat windows (render.colors.selection).
-  -- Remapped onto the chat window via chat_winhl so it doesn't touch Visual elsewhere.
+  -- Visual-selection inside the chat windows (remapped per-window via chat_winhl —
+  -- Visual elsewhere is untouched). The theme's Visual usually sits at nearly the
+  -- SAME luminance as obelus's tinted bubbles and recessed code boxes, so a
+  -- selection in a chat read as "the background got faintly lighter". Default
+  -- (colors.selection = nil): derive a contrast-BOOSTED Visual — lift the theme's
+  -- Visual bg in the OPPOSITE direction of the code-box recess (lighten on dark
+  -- themes, darken on light) with a hint of the brand accent so it reads as
+  -- intentional. Overrides: colors.selection = 0xRRGGBB | "<hl group>" (use
+  -- "Visual" itself to get the raw theme behavior back).
+  local sbg
   if cc.selection ~= nil then
-    local sbg = type(cc.selection) == "number" and cc.selection or color(cc.selection, "bg")
-    set("ObelusVisual", { bg = sbg })
+    sbg = type(cc.selection) == "number" and cc.selection or color(cc.selection, "bg")
+  else
+    local vbase = color("Visual", "bg") or blend(brand, bg, 0.3)
+    local lift = (select(1, channels(bg)) + select(2, channels(bg)) + select(3, channels(bg))) < 384 and 0xffffff
+      or 0x000000
+    sbg = blend(lift, blend(brand, vbase, 0.3), 0.16)
   end
+  set("ObelusVisual", { bg = sbg })
 end
 
 -- markview harmonization ---------------------------------------------------

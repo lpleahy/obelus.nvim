@@ -228,11 +228,15 @@ render.colors                                    *obelus-config-render.colors*
                                          0xRRGGBB = an explicit background.
       selection    (nil)               — Visual-selection highlight INSIDE
                                          obelus chat windows (a theme's
-                                         Visual can clash with tinted
-                                         bubbles): nil leaves the theme's
-                                         Visual; an hl group name or
-                                         0xRRGGBB overrides it just in the
-                                         chat/popup.
+                                         Visual blends into the tinted
+                                         bubbles/code boxes): nil = obelus
+                                         DERIVES a contrast-boosted Visual
+                                         (the theme's Visual bg lifted away
+                                         from the box backgrounds, with a
+                                         hint of the accent); an hl group
+                                         name or 0xRRGGBB overrides it —
+                                         set "Visual" to get the raw theme
+                                         behavior back. Chat windows only.
 
 ------------------------------------------------------------------------------
 3.2 input                                                *obelus-config-input*

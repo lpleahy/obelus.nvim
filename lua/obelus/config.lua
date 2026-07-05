@@ -109,9 +109,10 @@ M.defaults = {
       --   true  — a subtle recessed box blended from the editor bg (the old look)
       --   <hl>/<0xRRGGBB> — an explicit background
       inline_code = nil,
-      -- Visual-selection highlight INSIDE obelus chat windows (the theme's Visual can clash
-      -- with the tinted bubbles): nil = leave the theme's Visual; a hl group name or 0xRRGGBB
-      -- to override it just in the chat/popup.
+      -- Visual-selection highlight INSIDE obelus chat windows (the theme's Visual blends
+      -- into the tinted bubbles/code boxes): nil = obelus derives a contrast-boosted Visual
+      -- from the theme; a hl group name or 0xRRGGBB overrides it ("Visual" restores the raw
+      -- theme behavior). Chat windows only — Visual elsewhere is untouched.
       selection = nil,
     },
   },

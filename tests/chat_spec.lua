@@ -436,3 +436,40 @@ T.it("keys.chat.close = 'x': the reply box gets x, not q", function()
   T.is_nil(n_callback(ibuf, "q"), "q is no longer bound")
   panel.close()
 end)
+
+T.it("selection: ObelusVisual derives a contrast boost by default; explicit override wins", function()
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
+  vim.api.nvim_set_hl(0, "Visual", { bg = 0x283457 })
+  T.fresh()
+  require("obelus.thread").setup_highlights()
+  local hl = vim.api.nvim_get_hl(0, { name = "ObelusVisual", link = false })
+  T.ok(hl.bg ~= nil, "ObelusVisual defined without any config")
+  T.ok(hl.bg ~= 0x283457, "boosted away from the raw theme Visual")
+  -- dark theme: the boost lifts LIGHTER (opposite of the code-box recess)
+  local function lum(c)
+    return math.floor(c / 65536) % 256 + math.floor(c / 256) % 256 + c % 256
+  end
+  T.ok(lum(hl.bg) > lum(0x283457), "lighter than the theme Visual on a dark bg")
+
+  T.fresh({ render = { colors = { selection = 0x3d59a1 } } })
+  require("obelus.thread").setup_highlights()
+  local hl2 = vim.api.nvim_get_hl(0, { name = "ObelusVisual", link = false })
+  T.eq(hl2.bg, 0x3d59a1, "the explicit override is used verbatim")
+end)
+
+T.it("chat windows always remap Visual to ObelusVisual", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  ctx.store.add_turn(c.id, "agent", "hello")
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  T.contains(vim.wo[panel.geom().win].winhighlight, "Visual:ObelusVisual")
+  panel.close()
+end)

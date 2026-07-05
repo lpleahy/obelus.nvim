@@ -157,11 +157,10 @@ local function chat_winhl(base)
   if markview_on() then
     parts[#parts + 1] = require("obelus.thread").markview_winhl()
   end
-  -- optional per-window Visual override (render.colors.selection) so the theme's Visual
-  -- doesn't clash with the tinted bubbles — scoped to the chat window only
-  if ((require("obelus.config").options.render or {}).colors or {}).selection ~= nil then
-    parts[#parts + 1] = "Visual:ObelusVisual"
-  end
+  -- per-window Visual remap: ObelusVisual is the contrast-boosted (or user-set)
+  -- selection colour — ALWAYS mapped now; the theme's Visual blends into the
+  -- tinted bubbles/code boxes (see thread.setup_highlights' derivation)
+  parts[#parts + 1] = "Visual:ObelusVisual"
   return table.concat(parts, ",")
 end
 
