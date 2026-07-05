@@ -424,6 +424,7 @@ keys.chat                                            *obelus-config-keys.chat*
     close          `q`         Close (the popup/panel, or cancel the composer)
     close_esc      `<Esc>`     Same as `close`, via Escape
     wrap           `W`         Toggle wrap in the CHAT window (see |obelus-keymaps|)
+    maximize       `Z`         Toggle the chat popup full-screen and back
 
     Example: >lua
         keys = { chat = { close = "x", wrap = false } }
@@ -489,6 +490,7 @@ local to those inputs, not `keys.prefix`-based) are configured as a group via
     close          `q`         Close (the popup/panel, or cancel the composer)
     close_esc      `<Esc>`     Same as `close`, via Escape
     wrap           `W`         Toggle wrap in the CHAT window (below)
+    maximize       `Z`         Toggle the chat popup full-screen and back
 
 nvim cannot horizontally scroll a WRAPPED window. `W` (chat window only, not
 the unfocusable hover preview) toggles `wrap` off/on for that one chat/popup;
