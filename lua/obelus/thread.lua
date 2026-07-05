@@ -988,29 +988,46 @@ local function mv_table_margin(ncol)
   return 2 * ncol + 4 -- ncol+1 structural + ~2 conceal-recoup cells per column + slack
 end
 
+-- Approximate markview's marker-STRIPPED cell measurement (it conceals inline
+-- markers before aligning columns): drop backticks, **/__ bold, */_ italic, ~~
+-- strike, and collapse [label](url) to label. Exact for plain cells (headers,
+-- most data); a cell with exotic markup can be a cell or two off, which shows as
+-- a 1-2 cell markview pad on just that cell — same class of tie it was before,
+-- but no longer on EVERY short cell.
+local function stripped_w(text)
+  local t = text:gsub("%[([^%]]*)%]%([^)]*%)", "%1")
+  t = t:gsub("`", ""):gsub("%*%*", ""):gsub("__", ""):gsub("~~", ""):gsub("%*", "")
+  return vim.fn.strdisplaywidth(t)
+end
+
 local function fit_one_table(block, budget)
   local header, _, body = parse_table(block)
   local ncol = #header
+  -- column widths from STRIPPED cell measure — markview's own alignment metric
   local widths = {}
   for i = 1, ncol do
-    local w = vim.fn.strdisplaywidth(header[i] or "")
+    local w = stripped_w(header[i] or "")
     for _, r in ipairs(body) do
-      w = math.max(w, vim.fn.strdisplaywidth(r[i] or ""))
+      w = math.max(w, stripped_w(r[i] or ""))
     end
     widths[i] = w
   end
   local chrome = 3 * ncol + 1 -- "| " + " | " + " |" — same chrome shape as table_block_rows
   shrink_col_widths(widths, ncol, chrome, budget - mv_table_margin(ncol))
 
-  -- Truncate-only, NO padding: markview aligns columns itself, measuring cells by
-  -- their MARKER-STRIPPED width (it conceals `code` backticks, ** markers, …).
-  -- Padding by RAW width here skewed that math — rows containing concealed markers
-  -- rendered narrower than plain rows, so their side walls drifted out of line
-  -- (the broken vertical bars in mixed prose/code tables). Unpadded cells are also
-  -- strictly narrower raw text, so the no-wrap budget still holds.
+  -- Truncate AND pad, both by the STRIPPED measure: markview pads any cell whose
+  -- stripped width is under the column max with an inline virt pad AT THE PIPE
+  -- POSITION — the same position as its border `│` mark, and nvim's tie-break
+  -- between two same-col inline marks can draw the border BEFORE the pad,
+  -- shifting that row's border a few cells left of the aligned column (the
+  -- "stray tick" header glitch). Pre-padding every cell to the column's stripped
+  -- width means markview computes a ZERO pad — no pad mark, no tie, no drift.
+  -- (Padding by RAW width — the first attempt — skewed marker-carrying cells the
+  -- other way; stripped is the measure markview actually uses.)
   local function fit_cell(text, w)
-    if vim.fn.strdisplaywidth(text) <= w then
-      return text
+    local tw = stripped_w(text)
+    if tw <= w then
+      return text .. string.rep(" ", w - tw)
     end
     -- truncate by DISPLAY width, not chars: strcharpart counts characters, and a
     -- CJK/emoji cell cut to w-1 CHARS can still be ~2(w-1) CELLS wide — the row
@@ -1027,7 +1044,12 @@ local function fit_one_table(block, budget)
     if ticks % 2 == 1 then
       cut = cut .. "`"
     end
-    return cut .. "…"
+    cut = cut .. "…"
+    local cw = stripped_w(cut)
+    if cw < w then
+      cut = cut .. string.rep(" ", w - cw)
+    end
+    return cut
   end
 
   -- table_cells UNESCAPED any `\|` to a literal pipe when parsing; re-emitting that

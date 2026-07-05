@@ -557,3 +557,42 @@ T.it("default (knob off): the hover keeps its own narrower auto width", function
   vim.o.columns = saved
   T.eq(pw, 105, "the original 0.7-fraction preview width")
 end)
+
+T.it("keys.chat.maximize: the popup toggles to near-full-editor and back to the fitted root", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  local file = ctx.root .. "/m.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  ctx.store.add_turn(c.id, "agent", "hello")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, true)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "popup opened"
+  )
+  local g = panel.geom()
+  T.eq(vim.api.nvim_win_get_config(g.win).relative, "win", "rooted before maximize")
+  panel.toggle_maximize()
+  T.ok(
+    T.wait_for(function()
+      return vim.api.nvim_win_get_config(g.win).relative == "editor"
+    end),
+    "maximized to an editor overlay"
+  )
+  T.eq(vim.api.nvim_win_get_width(g.win), math.max(40, vim.o.columns - 4), "near-full width")
+  panel.toggle_maximize()
+  T.ok(
+    T.wait_for(function()
+      return vim.api.nvim_win_get_config(g.win).relative == "win"
+    end),
+    "back to the fitted rooted geometry"
+  )
+  panel.close()
+end)

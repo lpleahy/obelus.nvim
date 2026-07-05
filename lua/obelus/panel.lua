@@ -918,6 +918,29 @@ local function fit_rooted(force)
   -- (fit_rooted is called from fill() AFTER its own coalesce/throttle gate has already
   -- let the pass through — see fill()'s `force`/`sig` checks above), not per keystroke.
   local base_w = base_width_for(c)
+  if state.maximized then
+    -- keys.chat.maximize: near-full-editor overlay; the coalesce below still
+    -- guards reconfig churn, and toggling back re-fits (toggle cleared _rootfit)
+    local W = math.max(40, vim.o.columns - 4)
+    local H = math.max(6, vim.o.lines - vim.o.cmdheight - 6)
+    local wcfg_max = {
+      relative = "editor",
+      row = 1,
+      col = math.max(0, math.floor((vim.o.columns - W) / 2)),
+      width = W,
+      height = H,
+      style = "minimal",
+      border = "rounded",
+      title = title,
+      title_pos = "center",
+    }
+    local last = state._rootfit
+    if not last or last.relative ~= "editor" or last.width ~= wcfg_max.width or last.height ~= wcfg_max.height then
+      state._rootfit = wcfg_max
+      pcall(vim.api.nvim_win_set_config, state.win, wcfg_max)
+    end
+    return
+  end
   -- fit the CONTENT. The window wraps (wrap=true), so its real height is the WRAPPED
   -- screen-row count, not the buffer line count — buffer lines undersize a popup whose
   -- long agent lines wrap (cutting content off). Take the larger of the two; the rooted
@@ -1366,6 +1389,23 @@ end
 -- thread starts from the plain default, not a stale wrap state from the last one).
 -- With wrap off, native zl/zh/$/0 pan horizontally (nvim has no other way to scroll a
 -- wrapped window sideways).
+-- Full-screen toggle for the chat FLOAT (keys.chat.maximize, default "Z"): blow
+-- the popup up to (nearly) the whole editor for reading, toggle back to the
+-- fitted rooted/centred geometry. Sidebar mode: no-op with a note (it's a split;
+-- resize it with normal window commands).
+function M.toggle_maximize()
+  if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
+    return
+  end
+  if not state.is_float then
+    return vim.notify("obelus: maximize is for the popup — the sidebar is a normal split", vim.log.levels.INFO)
+  end
+  state.maximized = not state.maximized or nil
+  state._rootfit, state._fillsig = nil, nil -- force the next fill to re-fit + re-seat
+  M.refresh()
+  pcall(vim.cmd, "redraw")
+end
+
 function M.toggle_wrap()
   if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
     return
@@ -1609,6 +1649,9 @@ local function open_input()
   bind_chat(o, "n", "close_esc", "<Esc>", function()
     M.focus_history()
   end)
+  bind_chat(o, "n", "maximize", "Z", function()
+    M.toggle_maximize() -- same toggle as the chat window's — reachable while typing
+  end)
   bind_chat(o, "n", "close", "q", function()
     M.close()
   end)
@@ -1704,6 +1747,7 @@ function M.open_thread(id, as_float)
   state.wrap_override = nil -- a fresh thread starts from the plain wrap default, not a stale toggle
   -- (the sticky anchor side is a per-thread MAP now — a re-open reuses the side
   -- this thread was first placed on; a different thread decides its own)
+  state.maximized = nil -- the full-screen toggle is per-open, not per-thread
   -- Create the docked reply box BEFORE the chat fill. fill() seats the chat (scroll to
   -- bottom) and then repositions the reply box against that SETTLED layout — but only if the
   -- box already exists. Opening it AFTER render_all left the first open positioned by
@@ -1937,6 +1981,16 @@ local function maps()
       end
     end)
   end
+  -- full-screen toggle (keys.chat.maximize, default "Z" — shadows ZZ/ZQ inside
+  -- the chat only; rebind or disable via keys.chat)
+  local max_lhs = require("obelus.config").chat_key("maximize", "Z")
+  if max_lhs then
+    set(max_lhs, function()
+      if state.mode == "chat" then
+        M.toggle_maximize()
+      end
+    end)
+  end
 end
 
 function M.open(as_float)
@@ -2082,6 +2136,7 @@ function M.close()
     pcall(vim.api.nvim_win_close, state.win, true)
   end
   state.win, state.buf, state.is_float = nil, nil, nil
+  state.maximized = nil
   state.wrap_override = nil -- clear the session wrap toggle with the window it applied to
   -- the thread's inline band returns now the popup is gone
   pcall(function()

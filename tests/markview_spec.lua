@@ -487,3 +487,62 @@ T.it_when(has_mv, "Obelus_MarkviewCode never gains a fallback fg — fence token
   -- token in every fence that colour (the "all my code blocks are grey" bug)
   T.is_nil(hl.fg, "no fg on the region group")
 end)
+
+T.it_when(has_mv, "a fitted table produces NO markview pad marks — the stray-border-tick tie is gone", function()
+  local ctx = T.fresh({ render = { renderer = "markview" } })
+  local panel = require("obelus.panel")
+  panel._timing.fill_throttle = 0
+  local c = ctx.store.add(T.comment({ comment = "wide" }))
+  -- header cells deliberately SHORTER than their columns (markview would pad them)
+  ctx.store.add_turn(
+    c.id,
+    "agent",
+    "| Typing | Runtime | Paradigm-style-long-header |\n| --- | --- | --- |\n| Dynamic | LuaJIT/PUC | "
+      .. string.rep("z", 60)
+      .. " |"
+  )
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  local g = panel.geom()
+  T.ok(
+    T.wait_for(function()
+      for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+        if name:find("markview", 1, true) and #vim.api.nvim_buf_get_extmarks(g.buf, ns, 0, -1, {}) > 0 then
+          return true
+        end
+      end
+      return false
+    end, 2000),
+    "markview rendered"
+  )
+  vim.cmd("redraw")
+  -- a "pad mark" = inline virt_text of ONLY spaces on a table row: its position
+  -- ties with the border conceal and can draw the border cells out of column
+  local pads = 0
+  local lines = vim.api.nvim_buf_get_lines(g.buf, 0, -1, false)
+  for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+    if name:find("markview", 1, true) then
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(g.buf, ns, 0, -1, { details = true })) do
+        local d = m[4] or {}
+        local row_text = lines[m[2] + 1] or ""
+        if d.virt_text and d.virt_text_pos == "inline" and row_text:find("|", 1, true) then
+          local t = ""
+          for _, chunk in ipairs(d.virt_text) do
+            t = t .. (chunk[1] or "")
+          end
+          if t ~= "" and t:match("^%s+$") then
+            pads = pads + 1
+          end
+        end
+      end
+    end
+  end
+  T.eq(pads, 0, "pre-padded cells leave markview nothing to pad")
+  panel.close()
+end)
