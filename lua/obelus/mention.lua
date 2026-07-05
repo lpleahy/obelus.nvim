@@ -250,7 +250,8 @@ local img_seq = 0 -- disambiguates two pastes landing in the same wall-clock sec
 -- other @mention. Works from Normal or Insert mode: records the mode BEFORE the
 -- (synchronous, bounded) clipboard grab, inserts at the recorded cursor, and only
 -- resumes insert if it started there.
-function M.paste_image()
+function M.paste_image(opts)
+  opts = opts or {}
   local buf = vim.api.nvim_get_current_buf()
   local win = vim.api.nvim_get_current_win()
   local was_insert = vim.fn.mode():match("^[iR]") ~= nil
@@ -279,7 +280,10 @@ function M.paste_image()
 
   if not dest or not M._grab_clipboard_image(dest) then
     pcall(os.remove, dest) -- a failed backend may have left a zero-byte stub
-    return vim.notify("obelus: no image on the clipboard", vim.log.levels.INFO)
+    if not opts.silent then
+      vim.notify("obelus: no image on the clipboard", vim.log.levels.INFO)
+    end
+    return false
   end
   if not (vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_win_is_valid(win)) then
     return -- the input surface closed during the (bounded, synchronous) grab
@@ -308,6 +312,26 @@ function M.paste_image()
     vim.cmd("startinsert")
   else
     vim.api.nvim_win_set_cursor(win, { row0 + 1, math.max(new_col - 1, 0) })
+  end
+  return true
+end
+
+-- keys.chat.paste_image (default <C-v>): the TUI paste gesture. IMAGE on the
+-- clipboard -> save + @mention (paste_image above); otherwise fall back to a
+-- normal TEXT paste of the + register, so <C-v> is simply "paste" in obelus
+-- inputs — like other agent TUIs (a terminal can't deliver Cmd+V for images at
+-- all: the terminal owns that key and only ever forwards TEXT via bracketed
+-- paste, which nvim already handles natively — that path doesn't come through
+-- here and keeps working).
+function M.smart_paste()
+  if M.paste_image({ silent = true }) then
+    return
+  end
+  local text = vim.fn.getreg("+")
+  if text and text ~= "" then
+    vim.api.nvim_paste(text, true, -1)
+  else
+    vim.notify("obelus: clipboard is empty", vim.log.levels.INFO)
   end
 end
 

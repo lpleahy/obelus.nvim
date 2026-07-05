@@ -283,7 +283,7 @@ T.it("a stale pick (the @ was deleted) aborts the insert but still refocuses + r
 end)
 
 -- ---------------------------------------------------------------------------
--- 8. paste_image: native clipboard-image paste (keys.chat.paste_image, <C-y>)
+-- 8. paste_image: native clipboard-image paste (keys.chat.paste_image, <C-v> — smart: image else text)
 -- ---------------------------------------------------------------------------
 
 local real_grab = mention._grab_clipboard_image
@@ -319,7 +319,7 @@ T.it("paste_image: a successful grab inserts a valid, highlightable @mention at 
   vim.fn.mode = function()
     return "i"
   end
-  local cb = keymap_cb(buf, "i", "<C-Y>")
+  local cb = keymap_cb(buf, "i", "<C-V>")
   T.ok(cb, "paste_image is bound in insert mode")
   cb()
   vim.fn.mode = real_mode
@@ -347,7 +347,7 @@ T.it("paste_image: from Normal mode, inserts after the cursor and does NOT resum
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "x" })
   vim.cmd("stopinsert")
   vim.api.nvim_win_set_cursor(win, { 1, 0 }) -- Normal mode, cursor ON "x"
-  local cb = keymap_cb(buf, "n", "<C-Y>")
+  local cb = keymap_cb(buf, "n", "<C-V>")
   T.ok(cb, "paste_image is bound in normal mode")
   cb()
 
@@ -374,14 +374,23 @@ T.it("paste_image: a failed grab notifies and inserts nothing", function()
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
   vim.api.nvim_win_set_cursor(win, { 1, 0 })
   vim.cmd("startinsert")
-  local cb = keymap_cb(buf, "i", "<C-Y>")
+  vim.fn.setreg("+", "") -- empty clipboard: the smart fallback has no text either
+  local cb = keymap_cb(buf, "i", "<C-V>")
   cb()
 
   vim.notify = real_notify
   T.ok(notified, "a notification fired")
-  T.contains(notified.msg, "no image on the clipboard")
+  T.contains(notified.msg, "clipboard is empty")
   T.eq(notified.level, vim.log.levels.INFO)
   T.eq(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], "", "nothing was inserted on failure")
+  -- and the DIRECT (non-smart) call still reports the image-specific message
+  notified = nil
+  vim.notify = function(msg, level)
+    notified = { msg = msg, level = level }
+  end
+  mention.paste_image()
+  vim.notify = real_notify
+  T.ok(notified and notified.msg:find("no image on the clipboard", 1, true), "direct call keeps its message")
 
   mention._grab_clipboard_image = real_grab
   local _ = ctx
@@ -390,7 +399,7 @@ end)
 T.it("paste_image: keys.chat.paste_image = false disables the binding entirely", function()
   local ctx = T.fresh({ keys = { chat = { paste_image = false } } })
   local _win, buf = open_input(ctx)
-  T.is_nil(keymap_cb(buf, "i", "<C-Y>"), "no <C-y> keymap bound in the docked reply box")
+  T.is_nil(keymap_cb(buf, "i", "<C-V>"), "no <C-v> paste keymap bound in the docked reply box")
 end)
 
 T.it("paste_image: two pastes get two distinct files and two @mentions (seq disambiguation)", function()
@@ -407,7 +416,7 @@ T.it("paste_image: two pastes get two distinct files and two @mentions (seq disa
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
   vim.api.nvim_win_set_cursor(win, { 1, 0 })
   vim.cmd("startinsert")
-  local cb = keymap_cb(buf, "i", "<C-Y>")
+  local cb = keymap_cb(buf, "i", "<C-V>")
   cb()
   cb() -- a second paste right after — must not collide with the first's filename
 
@@ -434,7 +443,7 @@ T.it("paste_image: also bound and working from the quick-reply composer float", 
   local fwin = require("obelus.render").compose({ on_cancel = function() end })
   T.ok(fwin and vim.api.nvim_win_is_valid(fwin), "the composer float opened")
   local buf = vim.api.nvim_win_get_buf(fwin)
-  local cb = keymap_cb(buf, "i", "<C-Y>")
+  local cb = keymap_cb(buf, "i", "<C-V>")
   T.ok(cb, "paste_image is bound on the composer float too")
   cb()
 
@@ -467,5 +476,22 @@ T.it("paste_image in Normal mode on a multibyte char inserts AFTER the character
   T.ok(line:find("^café@", 1, false) ~= nil or line:sub(1, 5) == "café", "the é survived intact: " .. line)
   T.ok(vim.fn.strdisplaywidth(line) > 0 and not line:find("\239\191\189", 1, true), "no replacement chars")
   T.contains(line, "café@", "mention landed after the whole character")
+  mention._grab_clipboard_image = real_grab
+end)
+
+T.it("smart_paste: no image on the clipboard falls back to pasting the + register text", function()
+  local ctx = T.fresh()
+  local win, buf = open_input(ctx)
+  local real_grab = mention._grab_clipboard_image
+  mention._grab_clipboard_image = function()
+    return false -- no image
+  end
+  vim.fn.setreg("+", "plain clipboard text")
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "" })
+  vim.api.nvim_set_current_win(win)
+  vim.cmd("stopinsert")
+  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  mention.smart_paste()
+  T.contains(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1], "plain clipboard text", "text pasted like normal")
   mention._grab_clipboard_image = real_grab
 end)
