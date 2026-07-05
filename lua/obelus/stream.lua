@@ -77,6 +77,12 @@ end
 function M.collector(on_update)
   local linebuf, acc, got_delta, session = "", "", false, nil
   local pending_sep = false -- a new text block opened; separate it from prior prose
+  -- byte offset in `acc` where the CURRENT (latest) text block began, AFTER its
+  -- lazy separator (see the block_start/message handling below) — 0 while there's
+  -- only ever been one block. Feeds narration greying (thread.build) and the CHAT
+  -- stream-finish narration collapse (M.collapse) below; untouched by anything
+  -- else about the delta/result precedence rules.
+  local final_start = 0
   local C = {}
 
   function C.feed(data)
@@ -105,6 +111,7 @@ function M.collector(on_update)
             if not acc:match("\n%s*$") then
               acc = acc .. "\n\n"
             end
+            final_start = #acc -- the new latest block starts HERE, after the separator
           end
           acc = acc .. (ev.text or "")
           got_delta = true
@@ -119,6 +126,7 @@ function M.collector(on_update)
           else
             acc = acc .. (ev.text or "")
           end
+          final_start = #acc - #(ev.text or "") -- each message IS its own latest block
           if on_update then
             on_update(acc)
           end
@@ -128,6 +136,7 @@ function M.collector(on_update)
           -- message (e.g. after a tool/file write) that would truncate the real reply
           if ev.text and ev.text ~= "" and not got_delta then
             acc = ev.text
+            final_start = 0 -- acc was just wholesale replaced: back to "a single block"
           end
           session = ev.session or session
         end
@@ -143,7 +152,37 @@ function M.collector(on_update)
     return session
   end
 
+  -- byte offset in C.text() where the latest text block begins (after any lazy
+  -- separator); 0 when there's only ever been one block.
+  function C.final_start()
+    return final_start
+  end
+
   return C
+end
+
+---Compute the text a CHAT stream-finish should store, honoring render.narration:
+---  "keep"     — always the full `acc`.
+---  "collapse" (default, any other value) — ONLY the latest block's text (`acc`
+---               from `final_start`, with one leading separator run of blank
+---               lines stripped) — the interim narration and its \n\n
+---               separators vanish together.
+---Guard: nothing to collapse (`final_start` is 0/past the end of `acc`) or the
+---sliced tail is empty/whitespace-only (stream ended right after a block_start,
+---or narration_end lands past #acc) — never store an empty reply that had real
+---narration; fall back to the full `acc`.
+---@param acc string
+---@param final_start integer
+---@param mode? "collapse"|"keep"
+function M.collapse(acc, final_start, mode)
+  if mode == "keep" or not final_start or final_start <= 0 or final_start >= #acc then
+    return acc
+  end
+  local tail = acc:sub(final_start + 1):match("^\n*(.*)$")
+  if not tail or tail:match("^%s*$") then
+    return acc -- guard: the "final block" was empty — keep the full narration
+  end
+  return tail
 end
 
 return M

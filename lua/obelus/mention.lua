@@ -126,6 +126,191 @@ function M._escape(path)
   return (path:gsub(" ", "\\ "))
 end
 
+-- Native clipboard-image paste (keys.chat.paste_image, default <C-y>) --------
+-- Grabs whatever IMAGE is on the system clipboard into a dest .png under
+-- <root>/.ai/img and inserts an "@"-mention for it at the cursor — reference mode
+-- (input.mention.send) then tells the agent to Read the file itself; inline mode
+-- skips it outright (inline_block's NUL sniff treats any PNG as a binary file), so
+-- an @'d screenshot can never blow up an inline-mode prompt either way.
+
+local PASTE_WAIT_MS = 1500 -- an explicit one-off user action, not a hot path
+
+local function file_nonempty(path)
+  local st = (vim.uv or vim.loop).fs_stat(path)
+  return st ~= nil and st.size > 0
+end
+
+-- Runs `cmd` (its own dest arg is baked in by the caller), bounded synchronous
+-- wait — same wait/kill shape as run_lister above. Success = `dest` exists and is
+-- non-empty afterward: the one check that covers every backend below, whether it
+-- writes dest directly (pngpaste, osascript) or we pipe stdout to it ourselves.
+local function run_and_check(cmd, dest, timeout_ms)
+  if vim.fn.executable(cmd[1]) ~= 1 then
+    return false
+  end
+  local ok, proc = pcall(vim.system, cmd, { text = true })
+  if not ok or not proc then
+    return false
+  end
+  local ok2, res = pcall(function()
+    return proc:wait(timeout_ms)
+  end)
+  if not ok2 or not res then
+    pcall(function()
+      proc:kill(9)
+    end)
+    return false
+  end
+  return file_nonempty(dest)
+end
+
+-- Linux backends (wl-paste / xclip) write the PNG to STDOUT, not a dest arg —
+-- capture it and write `dest` ourselves. `text = false`: this is binary data, not
+-- something to decode/normalize as text.
+local function run_stdout_to_file(cmd, dest, timeout_ms)
+  if vim.fn.executable(cmd[1]) ~= 1 then
+    return false
+  end
+  local ok, proc = pcall(vim.system, cmd, { text = false })
+  if not ok or not proc then
+    return false
+  end
+  local ok2, res = pcall(function()
+    return proc:wait(timeout_ms)
+  end)
+  if not ok2 or not res or not res.stdout or res.stdout == "" then
+    pcall(function()
+      proc:kill(9)
+    end)
+    return false
+  end
+  local f = io.open(dest, "wb")
+  if not f then
+    return false
+  end
+  f:write(res.stdout)
+  f:close()
+  return file_nonempty(dest)
+end
+
+local function osascript_quote(s)
+  return (s:gsub("\\", "\\\\"):gsub('"', '\\"'))
+end
+
+-- macOS fallback (no pngpaste installed): read the clipboard as «class PNGf» and
+-- write it straight to `dest` via AppleScript's own file I/O, closing access in
+-- either the success or the error path (never leaves the file handle open).
+-- Verified for real on a dev machine — see the paste-narration report for the
+-- exact command run and its result.
+local function grab_osascript(dest, timeout_ms)
+  if vim.fn.executable("osascript") ~= 1 then
+    return false
+  end
+  local q = osascript_quote(dest)
+  local script = table.concat({
+    "try",
+    "set pngData to the clipboard as «class PNGf»",
+    'set outFile to open for access (POSIX file "' .. q .. '") with write permission',
+    "set eof outFile to 0",
+    "write pngData to outFile",
+    "close access outFile",
+    "on error errMsg",
+    "try",
+    'close access (POSIX file "' .. q .. '")',
+    "end try",
+    "error errMsg",
+    "end try",
+  }, "\n")
+  local ok, proc = pcall(vim.system, { "osascript", "-e", script }, { text = true })
+  if not ok or not proc then
+    return false
+  end
+  pcall(function()
+    proc:wait(timeout_ms)
+  end)
+  return file_nonempty(dest)
+end
+
+-- Clipboard IMAGE -> `dest` (parent dir must already exist). Backend chain, each
+-- executable-gated: pngpaste, then the macOS osascript fallback, then Linux
+-- wl-paste/xclip. Test seam — specs stub this wholesale for a deterministic paste.
+function M._grab_clipboard_image(dest)
+  return run_and_check({ "pngpaste", dest }, dest, PASTE_WAIT_MS)
+    or grab_osascript(dest, PASTE_WAIT_MS)
+    or run_stdout_to_file({ "wl-paste", "-t", "image/png" }, dest, PASTE_WAIT_MS)
+    or run_stdout_to_file({ "xclip", "-selection", "clipboard", "-t", "image/png", "-o" }, dest, PASTE_WAIT_MS)
+end
+
+local img_seq = 0 -- disambiguates two pastes landing in the same wall-clock second
+
+-- keys.chat.paste_image's handler (panel.lua's docked reply box + render.lua's
+-- composer both bind this the same way, n+i). Grabs the clipboard image into
+-- <root>/.ai/img/<timestamp>-<seq>.png and inserts "@<relpath> " at the cursor —
+-- mention._scan will find the just-written file and highlight/validate it like any
+-- other @mention. Works from Normal or Insert mode: records the mode BEFORE the
+-- (synchronous, bounded) clipboard grab, inserts at the recorded cursor, and only
+-- resumes insert if it started there.
+function M.paste_image()
+  local buf = vim.api.nvim_get_current_buf()
+  local win = vim.api.nvim_get_current_win()
+  local was_insert = vim.fn.mode():match("^[iR]") ~= nil
+  local pos = vim.api.nvim_win_get_cursor(win)
+  local row0, col0 = pos[1] - 1, pos[2]
+
+  local root = require("obelus.store").root()
+  local dir = root .. "/.ai/img"
+  local made = vim.fn.mkdir(dir, "p")
+  if made ~= 1 and vim.fn.isdirectory(dir) ~= 1 then
+    vim.notify("obelus: cannot create " .. dir .. " (permissions?)", vim.log.levels.ERROR)
+    return
+  end
+  local stamp = os.date("%Y%m%d-%H%M%S")
+  local dest, relpath
+  local uv = vim.uv or vim.loop
+  for _ = 1, 1000 do -- disambiguate same-second pastes; bounded so a stuck dir can't loop forever
+    img_seq = img_seq + 1
+    local name = stamp .. "-" .. img_seq .. ".png"
+    local candidate = dir .. "/" .. name
+    if uv.fs_stat(candidate) == nil then
+      dest, relpath = candidate, ".ai/img/" .. name
+      break
+    end
+  end
+
+  if not dest or not M._grab_clipboard_image(dest) then
+    pcall(os.remove, dest) -- a failed backend may have left a zero-byte stub
+    return vim.notify("obelus: no image on the clipboard", vim.log.levels.INFO)
+  end
+  if not (vim.api.nvim_buf_is_valid(buf) and vim.api.nvim_win_is_valid(win)) then
+    return -- the input surface closed during the (bounded, synchronous) grab
+  end
+
+  local line = vim.api.nvim_buf_get_lines(buf, row0, row0 + 1, false)[1] or ""
+  -- Insert mode: col0 IS the insertion gap. Normal mode: the cursor sits ON a
+  -- character — insert AFTER it (mirrors normal-mode `p`), not before. AFTER THE
+  -- CHARACTER, not after its first byte: col0+1 on a multibyte char (é/CJK/emoji)
+  -- splices the mention MID-CHARACTER, corrupting the line's UTF-8.
+  local insert_col
+  if was_insert then
+    insert_col = col0
+  elseif #line == 0 then
+    insert_col = 0
+  else
+    local ci = vim.fn.charidx(line, math.min(col0, #line - 1))
+    local bi = ci >= 0 and vim.fn.byteidx(line, ci + 1) or -1
+    insert_col = (bi >= 0) and bi or #line
+  end
+  local text = "@" .. M._escape(relpath) .. " "
+  vim.api.nvim_buf_set_text(buf, row0, insert_col, row0, insert_col, { text })
+  local new_col = insert_col + #text
+  if was_insert then
+    vim.api.nvim_win_set_cursor(win, { row0 + 1, new_col })
+    vim.cmd("startinsert")
+  else
+    vim.api.nvim_win_set_cursor(win, { row0 + 1, math.max(new_col - 1, 0) })
+  end
+end
+
 -- Async file listing for the completion path: fd → rg → git tried in sequence,
 -- each via vim.system with an on_exit callback (NO :wait — this runs inside the
 -- completion engine's per-keystroke request, where a synchronous multi-second

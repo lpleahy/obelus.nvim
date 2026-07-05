@@ -9,12 +9,14 @@
 
 local store = require("obelus.store")
 local progress = require("obelus.progress")
+local stream = require("obelus.stream")
 
 local F = {
   payload = nil, -- the last payload the handler received
   target = nil, -- payload.comments[1] for the in-flight stream, if any
   job = nil, -- the progress handle for the in-flight stream, if any
-  acc = "", -- accumulated streamed text (grown by F.delta)
+  acc = "", -- accumulated streamed text (grown by F.delta/F.block_start)
+  col = nil, -- the real stream.lua collector backing the in-flight stream
   oneshots = {}, -- non-stream payloads, in dispatch order
   cancelled = nil, -- set true by the registered job's cancel closure (jobs.cancel)
 }
@@ -48,26 +50,52 @@ function F.install()
       })
       F.job = progress.start({ label = "fake", comments = payload.comments })
       F.acc = ""
+      -- the REAL collector, same as cli.lua's run_stream — so a spec driving
+      -- F.delta/F.block_start exercises the exact same block-boundary/narration
+      -- bookkeeping (final_start) a live subprocess's stream-json would.
+      F.col = stream.collector(function(text)
+        store.stream_update(F.target.id, text, F.col.final_start())
+      end)
     else
       F.oneshots[#F.oneshots + 1] = payload
     end
   end)
 end
 
--- Grow the streamed reply by one chunk. Synchronous — the spec drives the loop
--- instead of a subprocess's stdout callback.
+-- Feed one raw stream-json line through the real collector (F.delta/F.block_start
+-- both funnel through this) and mirror F.acc for callers that still read it.
+local function feed(ev)
+  F.col.feed(vim.json.encode(ev) .. "\n")
+  F.acc = F.col.text()
+end
+
+-- Grow the streamed reply by one chunk (a `content_block_delta` event) —
+-- synchronous, the spec drives the loop instead of a subprocess's stdout callback.
 function F.delta(chunk)
-  F.acc = F.acc .. (chunk or "")
-  store.stream_update(F.target.id, F.acc)
+  feed({
+    type = "stream_event",
+    event = { type = "content_block_delta", delta = { type = "text_delta", text = chunk or "" } },
+  })
+end
+
+-- Simulate a NEW text block opening (tools ran between two prose blocks) — a
+-- `content_block_start` event. The lazy separator only lands once the NEXT
+-- F.delta() actually produces text (see stream.lua's collector).
+function F.block_start()
+  feed({ type = "stream_event", event = { type = "content_block_start", content_block = { type = "text" } } })
 end
 
 -- End the stream: same order as cli.lua's run_stream exit callback (clear the job
--- registration — a finished job has no live process — then finalize the turn, then
--- the spinner, then a render pass).
+-- registration — a finished job has no live process — then apply the CHAT
+-- narration collapse exactly as run_stream does, then finalize the turn, then the
+-- spinner, then a render pass).
 function F.finish(ok, session)
   require("obelus.jobs").clear(F.target.id)
-  store.stream_finish(F.target.id, F.acc, session, ok ~= false)
-  pcall(progress.finish, F.job, ok ~= false, F.acc)
+  local mode = (require("obelus.config").options.render or {}).narration
+  local acc = stream.collapse(F.col.text(), F.col.final_start(), mode)
+  F.acc = acc
+  store.stream_finish(F.target.id, acc, session, ok ~= false)
+  pcall(progress.finish, F.job, ok ~= false, acc)
   require("obelus.render").render_all()
 end
 
@@ -76,7 +104,7 @@ function F.reset()
   if F.target then
     require("obelus.jobs").clear(F.target.id) -- drop any leftover registration
   end
-  F.payload, F.target, F.job, F.acc, F.oneshots = nil, nil, nil, "", {}
+  F.payload, F.target, F.job, F.acc, F.col, F.oneshots = nil, nil, nil, "", nil, {}
   F.cancelled = nil
 end
 

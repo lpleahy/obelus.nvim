@@ -181,6 +181,19 @@ render.renderer                                *obelus-config-render.renderer*
     bars/dividers/headers — see |obelus-renderers|). `nil` = auto: markview
     if installed, else builtin. Toggle/cycle live with |:ObelusRenderer|.
 
+render.narration                              *obelus-config-render.narration*
+    Default: `"collapse"`     Enum: `"collapse"` | `"keep"`
+    A stream interleaves prose with tool work ("let me check X…" [tools]
+    "…the real answer"). While replying, every prose block before the
+    latest renders grey (the turn's Meta highlight) — see |obelus-renderers|.
+    Once the stream finishes:
+      "collapse" — keep ONLY the final block; the interim narration (and
+                   its blank-line separators) is dropped from the stored
+                   reply.
+      "keep"     — keep the full narration, exactly as accumulated.
+    Only applies to interactive CHAT replies — a batch submit's transient
+    progress preview is unaffected.
+
 render.bands                                      *obelus-config-render.bands*
     Inline thread bands: how a comment's conversation shows at its spot in
     the buffer — a native, collapsible review view, either a rooted hover
@@ -428,6 +441,8 @@ keys.chat                                            *obelus-config-keys.chat*
     send           `<CR>`      Send the reply
     send_fast      `<M-CR>`    Send with the configured FAST model
     save           `<C-s>`     Save as a draft without sending
+    paste_image    `<C-y>`     Grab a clipboard image into `.ai/img` and
+                               @-mention it (|obelus-mentions|)
     to_code        `<C-h>`     Jump to the source code (docked reply box only)
     cycle          `<Tab>`     Hop to the chat history / the parent window
     cycle_back     `<S-Tab>`   Same, backwards (docked reply box only)
@@ -499,6 +514,8 @@ local to those inputs, not `keys.prefix`-based) are configured as a group via
     send           `<CR>`      Send the reply
     send_fast      `<M-CR>`    Send with the configured FAST model
     save           `<C-s>`     Save as a draft without sending
+    paste_image    `<C-y>`     Grab a clipboard image into `.ai/img` and
+                               @-mention it (|obelus-mentions|)
     to_code        `<C-h>`     Jump to the source code (docked reply box only)
     cycle          `<Tab>`     Hop to the chat history / the parent window
     cycle_back     `<S-Tab>`   Same, backwards (docked reply box only)
@@ -634,6 +651,22 @@ Send policy — `input.mention.send` ~
     point (|obelus-transports|) — every transport (cli, file, sidekick, a
     custom one) sees the same resulting markdown.
 
+Images ~
+    `keys.chat.paste_image` (default `<C-y>`, |obelus-config-keys.chat|)
+    grabs whatever IMAGE is on the system clipboard into
+    `<project root>/.ai/img/<timestamp>-<seq>.png` and inserts an @mention
+    for it at the cursor, same as picking a file — it validates/highlights
+    the same way, since the file is real by the time it lands. Backend
+    chain (first available wins): `pngpaste`, then (macOS, no `pngpaste`) an
+    `osascript` clipboard read, then (Linux) `wl-paste` or `xclip`. No image
+    on the clipboard notifies "obelus: no image on the clipboard" and
+    inserts nothing. Since the agent runs with `cwd` at the project root,
+    "reference" mode (the default `input.mention.send`) is what carries an
+    image — it tells the agent to Read the file itself; "inline" mode
+    always skips it (the NUL-sniff treats any PNG as a binary file — see
+    the `send` policy above). `.ai/img` accumulates pasted screenshots
+    across a session; clean it up yourself when you're done with a review.
+
 ==============================================================================
 7. RENDERERS                                              *obelus-renderers*
 
@@ -656,6 +689,10 @@ While a reply is STREAMING, every mode shows the plain in-house (builtin)
 markdown regardless of the configured renderer — this avoids a
 flash/reflow as markview's async render or treesitter's parse catches up
 mid-stream — then swaps to the configured renderer once the turn finishes.
+Prior prose blocks (interleaved "let me check X…" narration before tool
+work) render grey while streaming, and — per `render.narration`
+(|obelus-config-render.narration|) — collapse out of the stored reply, or
+stay, once the turn finishes.
 
 Toggle/cycle live with |:ObelusRenderer| `[markview / builtin / treesitter]`
 (no argument cycles through the three) or |obelus.set_renderer()|; the

@@ -168,3 +168,92 @@ T.it("collector: feed(nil) (process end) is a no-op", function()
   T.eq(c.text(), "A")
   T.is_nil(c.session())
 end)
+
+-- collector: final_start() (narration boundary tracking) --------------------
+
+local block_start =
+  { type = "stream_event", event = { type = "content_block_start", content_block = { type = "text" } } }
+
+T.it("final_start: a single block stays 0", function()
+  local c = M.collector()
+  c.feed(line(delta("hello ")))
+  c.feed(line(delta("world")))
+  T.eq(c.text(), "hello world")
+  T.eq(c.final_start(), 0, "no second block ever opened")
+end)
+
+T.it("final_start: two blocks — text from final_start()+1 is exactly the second block", function()
+  local c = M.collector()
+  c.feed(line(block_start)) -- first block: no leading separator
+  c.feed(line(delta("Let me check one thing.")))
+  c.feed(line(block_start)) -- tools ran; a genuinely new block opens
+  c.feed(line(delta("The fix is simple.")))
+  local acc = c.text()
+  T.eq(acc, "Let me check one thing.\n\nThe fix is simple.")
+  T.eq(acc:sub(c.final_start() + 1), "The fix is simple.", "final_start lands right after the lazy separator")
+end)
+
+T.it("final_start: an empty second block (lazy sep never applied) leaves it unchanged", function()
+  local c = M.collector()
+  c.feed(line(delta("done.")))
+  local before = c.final_start()
+  c.feed(line(block_start)) -- opens but never produces a delta
+  T.eq(c.text(), "done.", "no dangling blank paragraph")
+  T.eq(c.final_start(), before, "an empty block never becomes 'the latest' — nothing was ever appended for it")
+end)
+
+T.it("final_start: three blocks — always tracks the LATEST one", function()
+  local c = M.collector()
+  c.feed(line(block_start))
+  c.feed(line(delta("first")))
+  c.feed(line(block_start))
+  c.feed(line(delta("second")))
+  c.feed(line(block_start))
+  c.feed(line(delta("third")))
+  T.eq(c.text():sub(c.final_start() + 1), "third")
+end)
+
+T.it("final_start: a result replacing acc (no deltas ever arrived) resets it to 0", function()
+  local c = M.collector()
+  c.feed(line(block_start))
+  c.feed(line(message("hi")))
+  c.feed(line(result("final replaces", "sess-z", false)))
+  T.eq(c.text(), "final replaces")
+  T.eq(c.final_start(), 0)
+end)
+
+-- M.collapse: the CHAT stream-finish narration collapse -----------------------
+
+T.it("collapse: mode 'keep' always returns the full acc", function()
+  T.eq(M.collapse("A\n\nB", 3, "keep"), "A\n\nB")
+end)
+
+T.it("collapse: final_start 0 (single block) returns the full acc", function()
+  T.eq(M.collapse("just one block", 0, nil), "just one block")
+end)
+
+T.it("collapse: slices from final_start, stripping a leading separator run", function()
+  local acc = "Let me check.\n\nThe fix is simple."
+  local fs = #"Let me check.\n\n" -- final_start as stream.lua would report it
+  T.eq(M.collapse(acc, fs, nil), "The fix is simple.")
+end)
+
+T.it("collapse: strips leading blank lines even if final_start landed a byte early", function()
+  -- defensive: even if final_start pointed at the START of the separator run
+  -- instead of after it, the result must never carry leading blank lines
+  local acc = "narration\n\nreal answer"
+  local fs = #"narration"
+  T.eq(M.collapse(acc, fs, nil), "real answer")
+end)
+
+T.it("collapse: guard — an empty final block falls back to the full acc", function()
+  local acc = "Let me check.\n\n"
+  local fs = #acc
+  T.eq(M.collapse(acc, fs, nil), acc, "final_start >= #acc: nothing to collapse to")
+end)
+
+T.it("collapse: guard — a whitespace-only final block falls back to the full acc", function()
+  local acc = "Let me check.\n\n   "
+  local fs = #"Let me check.\n\n"
+  T.eq(M.collapse(acc, fs, nil), acc, "never store an empty reply that had real narration")
+end)

@@ -174,6 +174,61 @@ T.it("build is a pure formatter: opts.live/opts.spinner drive the spinner direct
 end)
 
 -- ---------------------------------------------------------------------------
+-- narration greying: a live streaming turn's pre-final-block lines render grey
+-- (ObelusReplyMeta) instead of the normal body hl; the final block keeps normal
+-- styling. See store.stream_update's narration_end (fed by stream.lua's
+-- collector's final_start() via cli.lua's run_stream).
+-- ---------------------------------------------------------------------------
+
+T.it("narration: a live turn's narration lines carry Meta hl; the final block carries Text hl", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "please fix" }))
+  ctx.store.add_turn(c.id, "agent", "Let me check the file first.\n\nThe fix is simple.")
+  local turns = ctx.store.turns(ctx.store.get(c.id))
+  local t = turns[#turns]
+  t.narration_end = #"Let me check the file first.\n\n" -- as stream.lua's final_start() would report it
+
+  local rows = require("obelus.thread").build(ctx.store.get(c.id), 60, { markdown = true, rules = true, live = true })
+
+  local narration_hl, final_hl
+  for _, r in ipairs(rows) do
+    if r.kind == "content" and r.agent then
+      for _, ch in ipairs(r.chunks) do
+        if ch[1]:find("Let me check", 1, true) then
+          narration_hl = ch[2]
+        elseif ch[1]:find("The fix is simple", 1, true) then
+          final_hl = ch[2]
+        end
+      end
+    end
+  end
+  T.eq(narration_hl, "ObelusReplyMeta", "the pre-final-block line greys")
+  T.eq(final_hl, "ObelusReplyText", "the final block keeps its normal body hl")
+end)
+
+T.it("narration: never applies without live=true, even if narration_end lingers on the turn", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "please fix" }))
+  ctx.store.add_turn(c.id, "agent", "Let me check.\n\nThe fix is simple.")
+  local turns = ctx.store.turns(ctx.store.get(c.id))
+  turns[#turns].narration_end = #"Let me check.\n\n" -- simulate a leaked/stale field
+
+  local rows = require("obelus.thread").build(ctx.store.get(c.id), 60, { markdown = true, rules = true, live = false })
+  local saw_body = false
+  for _, r in ipairs(rows) do
+    if r.kind == "content" and r.agent then
+      for _, ch in ipairs(r.chunks) do
+        if ch.role == "body" and ch[1] ~= "" then
+          saw_body = true
+          T.eq(ch[2], "ObelusReplyText", "no greying when the turn isn't the live one")
+        end
+      end
+    end
+  end
+  T.ok(saw_body, "the turn's body rows were actually checked")
+end)
+
+-- ---------------------------------------------------------------------------
 -- ts_chunks memoization: a bounded content-keyed cache (thread_spec test seam)
 -- ---------------------------------------------------------------------------
 
@@ -827,4 +882,43 @@ T.it("pad_code_blocks: fence interiors pad to a uniform width; markers and prose
       T.ok(not l:match("%s%s+$"), "markers/prose stay unpadded: " .. vim.inspect(l))
     end
   end
+end)
+
+T.it("narration greying: a zero-width char in the narration does NOT shift the boundary", function()
+  -- narration_end is a RAW-text offset; the render sanitizes (strips ZWSP etc.) —
+  -- without translating the boundary, the live FINAL ANSWER greyed out
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  local raw = "Let me check\226\128\139.\n\nthe answer"
+  ctx.store.stream_start(c.id)
+  ctx.store.stream_update(c.id, raw, #"Let me check\226\128\139.\n\n")
+  local rows = require("obelus.thread").build(ctx.store.get(c.id), 70, { markdown = true, rules = false })
+  local answer_hl
+  for _, r in ipairs(rows) do
+    if r.kind == "content" then
+      for _, ch in ipairs(r.chunks) do
+        if (ch[1] or ""):find("the answer", 1, true) then
+          answer_hl = ch[2]
+        end
+      end
+    end
+  end
+  T.eq(answer_hl, "ObelusReplyText", "the final block keeps the normal hl despite the ZWSP")
+  ctx.store.abort(c.id)
+end)
+
+T.it("store.abort clears narration_end on the kept partial turn", function()
+  local ctx = T.fresh()
+  local c = ctx.store.add(T.comment({ comment = "q" }))
+  ctx.store.stream_start(c.id)
+  ctx.store.stream_update(c.id, "partial narration\n\nmore", 19)
+  local streamed
+  for _, t in ipairs(ctx.store.turns(ctx.store.get(c.id))) do
+    if (t.text or ""):find("partial narration", 1, true) then
+      streamed = t
+    end
+  end
+  T.ok(streamed and streamed.narration_end ~= nil, "marker present mid-stream")
+  ctx.store.abort(c.id)
+  T.is_nil(streamed.narration_end, "abort cleared it — a later stream can't re-grey this turn")
 end)

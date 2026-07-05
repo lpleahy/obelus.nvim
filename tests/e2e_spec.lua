@@ -7,9 +7,11 @@ T.describe("e2e")
 
 -- Fresh obelus + a fresh fake transport registration, with the wall-clock knobs
 -- shrunk so a T.wait_for actually observes the tick/fill propagation quickly.
-local function fresh_stream_ctx()
+-- `extra` (optional) merges over the base opts (e.g. { render = { narration = "keep" } }).
+local function fresh_stream_ctx(extra)
   local F = require("fake")
-  local ctx = T.fresh({ transport = { dispatch = "fake" }, render = { renderer = "builtin" } })
+  local base = { transport = { dispatch = "fake" }, render = { renderer = "builtin" } }
+  local ctx = T.fresh(extra and vim.tbl_deep_extend("force", base, extra) or base)
   F.reset()
   F.install()
   require("obelus.panel")._timing.fill_throttle = 0
@@ -399,3 +401,74 @@ T.it(
     )
   end
 )
+
+-- ---------------------------------------------------------------------------
+-- 9. streaming narration: grey while streaming, collapsed at finish
+-- ---------------------------------------------------------------------------
+
+local function tail_turn(ctx, c)
+  local turns = ctx.store.turns(ctx.store.get(c.id))
+  return turns[#turns]
+end
+
+T.it("narration: a two-block stream's mid-stream turn holds both blocks + a live narration_end", function()
+  local ctx, F = fresh_stream_ctx()
+  local c = open_file_comment(ctx)
+  open_and_send(c, "hello agent")
+
+  F.block_start() -- the very first block: no leading separator
+  F.delta("Let me check the file first.")
+  F.block_start() -- tools ran; the agent starts a genuinely new block
+  F.delta("The fix is simple.")
+
+  local t = tail_turn(ctx, c)
+  T.eq(t.text, "Let me check the file first.\n\nThe fix is simple.", "both blocks are visible mid-stream")
+  T.ok(t.narration_end and t.narration_end > 0, "narration_end tracks the latest block's start")
+  T.eq(t.text:sub(t.narration_end + 1), "The fix is simple.", "narration_end lands right at the final block")
+end)
+
+T.it("narration: finish collapses to the final block only (default render.narration = 'collapse')", function()
+  local ctx, F = fresh_stream_ctx()
+  local c = open_file_comment(ctx)
+  open_and_send(c, "hello agent")
+
+  F.block_start()
+  F.delta("Let me check the file first.")
+  F.block_start()
+  F.delta("The fix is simple.")
+  F.finish(true, "sess-narr-1")
+
+  local t = tail_turn(ctx, c)
+  T.eq(t.text, "The fix is simple.", "only the final block survives — the interim narration is gone")
+  T.ok(not t.text:match("^\n"), "no leading blank line left behind")
+  T.is_nil(t.narration_end, "narration_end is stripped once the turn settles")
+end)
+
+T.it('narration: render.narration = "keep" preserves the full narration on finish', function()
+  local ctx, F = fresh_stream_ctx({ render = { narration = "keep" } })
+  local c = open_file_comment(ctx)
+  open_and_send(c, "hello agent")
+
+  F.block_start()
+  F.delta("Let me check the file first.")
+  F.block_start()
+  F.delta("The fix is simple.")
+  F.finish(true, "sess-narr-2")
+
+  local t = tail_turn(ctx, c)
+  T.eq(t.text, "Let me check the file first.\n\nThe fix is simple.", "keep mode stores the whole accumulated reply")
+  T.is_nil(t.narration_end, "narration_end is still stripped — it's runtime-only regardless of the mode")
+end)
+
+T.it("narration: guard — a stream that ends right after a block_start keeps the full acc", function()
+  local ctx, F = fresh_stream_ctx()
+  local c = open_file_comment(ctx)
+  open_and_send(c, "hello agent")
+
+  F.delta("Let me check the file first.")
+  F.block_start() -- opens but nothing ever follows it — an "empty final block"
+  F.finish(true, "sess-narr-3")
+
+  local t = tail_turn(ctx, c)
+  T.eq(t.text, "Let me check the file first.", "never store an empty reply — the guard kept the only real text")
+end)

@@ -51,6 +51,7 @@ obelus-config-render.bar	obelus.txt	/*obelus-config-render.bar*
 obelus-config-render.colors	obelus.txt	/*obelus-config-render.colors*
 obelus-config-render.enabled	obelus.txt	/*obelus-config-render.enabled*
 obelus-config-render.hints	obelus.txt	/*obelus-config-render.hints*
+obelus-config-render.narration	obelus.txt	/*obelus-config-render.narration*
 obelus-config-render.preview_matches_chat	obelus.txt	/*obelus-config-render.preview_matches_chat*
 obelus-config-render.renderer	obelus.txt	/*obelus-config-render.renderer*
 obelus-config-render.reply_dock	obelus.txt	/*obelus-config-render.reply_dock*

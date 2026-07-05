@@ -73,6 +73,13 @@ M.defaults = {
     --   "treesitter" — raw Markdown + treesitter syntax highlighting (real lines, no conceal)
     -- nil = auto: markview if installed, else builtin.
     renderer = nil,
+    -- A stream interleaves prose with tool work ("let me check X…" [tools] "…the
+    -- real answer") — every prose block before the last renders grey (the turn's
+    -- Meta hl) while streaming. Once the stream finishes:
+    --   "collapse" — keep ONLY the final block; the interim narration (and its
+    --                blank-line separators) is dropped from the stored reply.
+    --   "keep"     — keep the full narration, exactly as accumulated.
+    narration = "collapse",
 
     -- Inline thread bands: how a comment's conversation shows at its spot in the
     -- buffer (native, collapsible review view — either a rooted hover popup or a
@@ -525,6 +532,7 @@ local function validate(o)
     true -- nil == auto: legal, not a typo
   )
   enum(o.render, "reply_dock", "render.reply_dock", { "pinned", "serial" }, M.defaults.render.reply_dock)
+  enum(o.render, "narration", "render.narration", { "collapse", "keep" }, M.defaults.render.narration)
   boolean(o.render, "preview_matches_chat", "render.preview_matches_chat", M.defaults.render.preview_matches_chat)
   boolean(o.render, "hints", "render.hints", M.defaults.render.hints)
   if o.input.mention ~= false then

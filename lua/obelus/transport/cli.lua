@@ -267,10 +267,11 @@ local function run_stream(payload)
   local job = progress.start({ label = cmd[1], comments = payload.comments })
 
   -- grow the stored turn; the progress timer re-renders bands/sidebar in sync.
-  -- (the collector owns the line buffering + delta/result precedence — stream.lua)
+  -- (the collector owns the line buffering + delta/result precedence — stream.lua).
+  -- final_start() feeds thread.build's live narration-greying (grey while streaming).
   local col = stream.collector(function(text)
     vim.schedule(function()
-      store.stream_update(target.id, text)
+      store.stream_update(target.id, text, col.final_start())
     end)
   end)
   sysopts.stdout = function(_, data)
@@ -287,6 +288,12 @@ local function run_stream(payload)
         return
       end
       local ok = res.code == 0
+      -- CHAT-only narration collapse (render.narration, default "collapse"): store
+      -- ONLY the final block once the stream settles — the interim "let me check X"
+      -- narration and its separators vanish. BATCH runs never reach this function
+      -- (run_oneshot above has its own finish path — see its notes), so this can't
+      -- affect a batch's actions-file / transient-preview finish.
+      acc = stream.collapse(acc, col.final_start(), (config.options.render or {}).narration)
       if not ok and (res.stderr or "") ~= "" then
         acc = (acc ~= "" and acc .. "\n" or "") .. res.stderr
       end

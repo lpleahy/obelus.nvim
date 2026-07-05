@@ -428,7 +428,12 @@ function M.stream_start(id)
   return c
 end
 
-function M.stream_update(id, text)
+-- `narration_end` (optional) is the collector's C.final_start() — the byte offset
+-- where the latest text block begins; stored RUNTIME-ONLY on the turn (thread.build
+-- reads it to grey narration lines while streaming). Batch callers that never pass
+-- it just clear the field each call, which is harmless — narration greying and the
+-- CHAT-only collapse-on-finish (cli.lua) both key off this same field.
+function M.stream_update(id, text, narration_end)
   local c = M.get(id)
   if not c then
     return
@@ -436,6 +441,7 @@ function M.stream_update(id, text)
   if c._stream_turn then
     if turn_present(c, c._stream_turn) then
       c._stream_turn.text = text
+      c._stream_turn.narration_end = narration_end
     end
     -- handle exists but its turn is gone (a draft-save moved it off the tail, or
     -- abort already popped it): drop the update silently — never write to
@@ -446,6 +452,7 @@ function M.stream_update(id, text)
   -- the old tail-write, but ONLY when the tail is actually an agent turn.
   if c.turns and #c.turns > 0 and c.turns[#c.turns].author == "agent" then
     c.turns[#c.turns].text = text
+    c.turns[#c.turns].narration_end = narration_end
   end
 end
 
@@ -484,6 +491,10 @@ function M.abort(id)
     if turn_present(c, c._stream_turn) and (c._stream_turn.text == nil or c._stream_turn.text == "") then
       remove_turn(c, c._stream_turn)
     end
+    -- kept partial text must not keep the narration marker: `live` in thread.build
+    -- is per-COMMENT, so a LATER stream on this thread would re-grey this finished
+    -- (aborted) turn's narration span — stream_finish clears it, abort must too
+    c._stream_turn.narration_end = nil
     c._stream_turn = nil
   elseif c.turns and #c.turns > 0 then
     local tail = c.turns[#c.turns]
@@ -503,17 +514,24 @@ function M.stream_finish(id, text, session, ok)
   if not c then
     return
   end
+  local turn
   if c._stream_turn then
     if turn_present(c, c._stream_turn) then
       c._stream_turn.text = text
+      turn = c._stream_turn
     end
     -- else: aborted mid-flight (a draft-save/abort already dropped this turn) — do
     -- NOT resurrect it, just fall through to the bookkeeping below.
   elseif c.turns and #c.turns > 0 and c.turns[#c.turns].author == "agent" then
     c.turns[#c.turns].text = text -- legacy caller, no handle: old tail-write fallback
+    turn = c.turns[#c.turns]
   else
     c.turns = c.turns or {}
     table.insert(c.turns, { author = "agent", text = text, at = os.time() })
+    turn = c.turns[#c.turns]
+  end
+  if turn then
+    turn.narration_end = nil -- runtime-only; this turn is no longer "in flight"
   end
   c._stream_turn = nil
   c.last_result = text
@@ -709,6 +727,9 @@ function M.save()
     copy.dispatching = nil
     copy._stream_turn = nil -- a table ref into copy.turns — serializing it would
     -- duplicate the in-flight turn into the jsonl as a second top-level field
+    for _, t in ipairs(copy.turns or {}) do
+      t.narration_end = nil -- runtime-only (stream.lua's collector offset); never persisted
+    end
     table.insert(lines, vim.json.encode(copy))
   end
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
@@ -753,6 +774,9 @@ function M.load()
           rec.extmark_id = nil
           rec._stream_turn = nil -- migration: strip if an older build ever leaked one
           rec.batch_id = nil -- migration: membership is owned solely by batch.comment_ids now
+          for _, t in ipairs(rec.turns or {}) do
+            t.narration_end = nil -- migration: runtime-only, strip if one ever leaked to disk
+          end
           -- HEAL duplicate meta records (planted by concurrent instances before the
           -- pin-no-create fix, or by a lost race between two saves): keep whichever
           -- has the most conversation (turns, then a session), drop the rest.

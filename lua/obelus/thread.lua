@@ -1414,6 +1414,43 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
     code_buf = {}
   end
   local lines = vim.split(sanitize(t.text) or "", "\n", { plain = true })
+  -- Narration greying: while THIS turn is the one actively streaming (live) and it
+  -- carries a narration_end (stream.lua's collector offset — see store.stream_update),
+  -- source lines that fall ENTIRELY before that offset are prior "let me check X…"
+  -- narration blocks, not the real answer — grey them (meta_hl) instead of the normal
+  -- body hl; the final block's lines render normally. Line-level granularity (a line
+  -- straddling the boundary counts as narration only if it ENDS at/before it) — scoped
+  -- to the plain-prose path below (headers/quotes/lists/paragraphs), which is what
+  -- narration text actually looks like; code/table/hr rows are left unstyled by this.
+  -- TWO offset correctness rules, both bugs when violated:
+  --   (1) narration_end was computed on the RAW accumulated text; `lines` is the
+  --       SANITIZED text (zero-width bytes stripped) — translate the boundary by
+  --       sanitizing the raw prefix, else a single ZWSP in the narration shifts the
+  --       boundary and greys the live FINAL ANSWER.
+  --   (2) builtin (md) path ONLY: the md==false branch rewrites `lines`
+  --       (pad_table_edges/fit_table_cells/pad_code_blocks) AFTER this point, which
+  --       shifts line indices — and treesitter mode renders live turns md==false.
+  local narration_line
+  if agent and live and md and t.narration_end and t.narration_end > 0 then
+    local nend = #(sanitize((t.text or ""):sub(1, t.narration_end)) or "")
+    narration_line = {}
+    local pos = 0
+    for li = 1, #lines do
+      local endpos = pos + #lines[li]
+      narration_line[li] = endpos <= nend
+      pos = endpos + 1 -- +1 for the '\n' vim.split consumed between lines
+    end
+  end
+  local function greyed(chunks, grey)
+    if not grey then
+      return chunks
+    end
+    local out = {}
+    for i, ch in ipairs(chunks) do
+      out[i] = { ch[1], meta_hl }
+    end
+    return out
+  end
   if not md then
     -- external renderer (markview/treesitter): pad table blank-lines on OUR copy
     -- only — see pad_table_edges above. REVERT: delete this call to restore
@@ -1519,7 +1556,7 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
           end
           chunks = merged
         end
-        content_row(rows, agent, bar, bg, mark_role(chunks, "body"))
+        content_row(rows, agent, bar, bg, mark_role(greyed(chunks, narration_line and narration_line[li]), "body"))
       end
       li = li + 1
     end

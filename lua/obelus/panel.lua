@@ -1614,6 +1614,7 @@ local function open_input()
   --   send       <CR>
   --   send_fast  <M-CR> — send with the configured FAST model
   --   save       <C-s>
+  --   paste_image <C-y> — grab a clipboard image into .ai/img and @-mention it
   --   cycle      <Tab>   — from insert too, so "type, then Tab" hops to the history
   --                        and leaves the box (and its text) in place instead of
   --                        falling through to a global/cmp <Tab>
@@ -1640,6 +1641,9 @@ local function open_input()
   end)
   bind_chat(o, { "n", "i" }, "save", "<C-s>", function()
     input_submit("save")
+  end)
+  bind_chat(o, { "n", "i" }, "paste_image", "<C-y>", function()
+    require("obelus.mention").paste_image()
   end)
   bind_chat(o, { "n", "i" }, "cycle", "<Tab>", function()
     M.focus_history()
