@@ -21,6 +21,14 @@ function M.open()
   return store.open_batch()
 end
 
+-- Like M.open, but scoped to ONE tag (nil = untagged) — the continue target for a
+-- SPECIFIC tag's engagement (a tag meta thread's SUBMIT-ALL; see review.submit_all)
+-- rather than whichever batch is globally most-recent.
+---@param tag? string
+function M.open_for_tag(tag)
+  return store.open_batch_for_tag(tag)
+end
+
 -- Is this batch mid-dispatch? (any member's spinner is live) — used to serialize
 -- continues so we never fork the shared session with overlapping resumes.
 -- jobs.lua is the WS3 liveness owner (single source of truth, provenance-aware)
@@ -185,10 +193,16 @@ function M.create(comments, opts)
   return batch
 end
 
--- Round N: resume the open batch with the round diff (or re-serialize the open set
--- when the session is gone / prompt = "full" / mode = "stateless").
-function M.continue(message)
-  local batch = M.open()
+-- Round N: resume `target` (default: the most recent open batch, M.open()) with the
+-- round diff (or re-serialize the open set when the session is gone / prompt =
+-- "full" / mode = "stateless"). `target` lets a caller resume a SPECIFIC batch —
+-- e.g. review.submit_all's tag-scoped continue, which must resume THAT tag's own
+-- batch rather than whichever is globally most-recent — instead of the default
+-- "most recent open" pick <prefix>s/M.continue_batch always uses.
+---@param message? string
+---@param target? table
+function M.continue(message, target)
+  local batch = target or M.open()
   if not batch then
     return vim.notify("obelus: no open batch to continue — submit one first (<prefix>s)", vim.log.levels.WARN)
   end
@@ -231,6 +245,11 @@ function M.continue(message)
     end
   end
 
+  -- Persist MEMBERSHIP before the dispatch attempt: set_comment_batch already
+  -- claimed the folded-in members away from other batches, so comment_ids must
+  -- reflect that immediately — a failed dispatch previously left a new member
+  -- claimed but unlisted (self-healing via the next fold-in, but a lie on disk).
+  store.update_batch(batch.id, { comment_ids = ids })
   local ok = require("obelus.transport").submit(batch.transport or "cli", {
     comments = working,
     prompt = prompt,
@@ -241,16 +260,14 @@ function M.continue(message)
   -- Commit the round bump + snapshot ONLY on submit success (transport.submit
   -- already notified any failure) — an exit-callback-timed snapshot would bake in
   -- agent-resolved statuses from a run that never happened. On failure we return
-  -- WITHOUT bumping round/snapshot: membership (ids, set_comment_batch's claims)
-  -- is already folded in above regardless, so the next successful round still
-  -- diffs against the OLD (unchanged) snapshot and conveys the user's replies +
-  -- everything resolved since — nothing this round would have reported is lost.
+  -- WITHOUT bumping round/snapshot: the next successful round still diffs against
+  -- the OLD (unchanged) snapshot and conveys the user's replies + everything
+  -- resolved since — nothing this round would have reported is lost.
   if ok == false then
     return
   end
 
   store.update_batch(batch.id, {
-    comment_ids = ids,
     round = (batch.round or 1) + 1,
     snapshot = snapshot(working),
   })

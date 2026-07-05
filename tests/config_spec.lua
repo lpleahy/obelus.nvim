@@ -285,3 +285,17 @@ T.it("keys.overrides: an unknown suffix warns once (typo'd or removed row)", fun
   end
   T.ok(seen, "warned about the unknown override suffix")
 end)
+
+T.it("MAPSPEC: suffix 'A' (tag_thread) maps under the prefix by default", function()
+  local init = require("obelus.init")
+  local prefix = "<leader>ZZA"
+  init._keymaps({ prefix = prefix, disabled = {}, overrides = {} })
+  T.ok(vim.fn.maparg(prefix .. "A", "n") ~= "", "suffix A is mapped by default")
+end)
+
+T.it("MAPSPEC: suffix 'A' disables/overrides like any other row", function()
+  local init = require("obelus.init")
+  local prefix = "<leader>ZZAA"
+  init._keymaps({ prefix = prefix, disabled = {}, overrides = { A = false } })
+  T.eq(vim.fn.maparg(prefix .. "A", "n"), "", "disabled via override: no mapping at the default lhs")
+end)

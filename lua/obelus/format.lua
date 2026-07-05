@@ -64,15 +64,39 @@ end
 ---repeated. Used by M.meta_context (every pending thread, in full) and by
 ---mention.prompt_suffix's "@thread:<id>" expansion (any thread, resolved or not —
 ---this is how a resolved thread's one-line summary gets pulled back in full).
-function M.thread_full(c)
+---
+---A trailing UNSENT draft reply (store.pending_you_text's definition: turn 2+ and
+---the tail is "you") is a special case: `opts.include_drafts` (default true, so
+---every existing caller — the global meta, mention.lua's pull-back — keeps
+---showing it) true LABELS it distinctly ("You (draft, unsent):"); false SKIPS the
+---turn entirely and leaves a one-line note instead, so it never leaks into a
+---briefing where drafts must stay invisible (a tag meta's plain RESPOND mode —
+---see review.do_respond). A brand-new, never-sent comment (turns == 1, the "you"
+---turn IS c.comment) is never treated as a "draft" here — it's always shown via
+---comment_md's own Feedback line, before this loop even starts.
+---@param c table
+---@param opts? { include_drafts?: boolean }
+function M.thread_full(c, opts)
+  opts = opts or {}
+  local include_drafts = opts.include_drafts
+  if include_drafts == nil then
+    include_drafts = true
+  end
   local out = M.comment_md(c)
   local turns = store.turns(c)
+  local n = #turns
+  local trailing_draft = n >= 2 and turns[n].author == "you"
   local lines = {}
   for i = 2, #turns do
     local t = turns[i]
-    local label = t.author == "agent" and "Agent" or "You"
-    lines[#lines + 1] = "**" .. label .. ":** " .. (t.text or "")
-    lines[#lines + 1] = ""
+    if trailing_draft and i == n and not include_drafts then
+      lines[#lines + 1] = "- (has an unsent draft, not shown)"
+      lines[#lines + 1] = ""
+    else
+      local label = (trailing_draft and i == n) and "You (draft, unsent)" or (t.author == "agent" and "Agent" or "You")
+      lines[#lines + 1] = "**" .. label .. ":** " .. (t.text or "")
+      lines[#lines + 1] = ""
+    end
   end
   if #lines > 0 then
     out = out .. table.concat(lines, "\n")
@@ -80,29 +104,47 @@ function M.thread_full(c)
   return out
 end
 
----The project thread's briefing (obelus.project() / review.do_respond's `c.meta`
----branch): every OTHER thread in the project, PENDING/unresolved in full
----(M.thread_full — comment + conversation so far), RESOLVED collapsed to one
----summary line under a heading (pull one back in full with "@thread:<id>" — see
----mention.prompt_suffix). The meta record itself is never included.
-function M.meta_context()
-  local parts = { "# Project thread — review status briefing", "" }
+---The project (or tag) thread's briefing (obelus.project()/obelus.tag_thread() —
+---review.do_respond's `c.meta`/`c.meta_tag` branch): every OTHER thread in scope,
+---PENDING/unresolved in full (M.thread_full — comment + conversation so far),
+---RESOLVED collapsed to one summary line under a heading (pull one back in full
+---with "@thread:<id>" — see mention.prompt_suffix). The meta record itself is
+---never included.
+---
+---@param opts? { tag?: string, include_drafts?: boolean }
+---  tag           — scope to threads carrying this tag only (nil = every thread
+---                  in the project, the global project thread's briefing).
+---  include_drafts — forwarded to M.thread_full for every pending thread (default
+---                  true — the global thread's briefing always included drafts;
+---                  it now additionally LABELS them, see thread_full). A tag
+---                  meta's plain RESPOND engagement passes false: member drafts
+---                  must not leak into a mode that deliberately excludes them.
+function M.meta_context(opts)
+  opts = opts or {}
+  local tag = opts.tag
+  local include_drafts = opts.include_drafts
+  if include_drafts == nil then
+    include_drafts = true
+  end
+  local title = tag and ("# #" .. tag .. " thread — batch status briefing")
+    or "# Project thread — review status briefing"
+  local parts = { title, "" }
   local pending_parts, resolved_lines = {}, {}
   for _, c in ipairs(store.all()) do
-    if not c.meta then
+    if not c.meta and (tag == nil or c.tag == tag) then
       if c.status == "resolved" then
         local first = vim.split(c.comment or "", "\n")[1] or ""
         resolved_lines[#resolved_lines + 1] =
           string.format("- @thread:%s %s %s: %s", c.id, M.relpath(c.file), M.range_label(c), first)
       else
-        pending_parts[#pending_parts + 1] = M.thread_full(c)
+        pending_parts[#pending_parts + 1] = M.thread_full(c, { include_drafts = include_drafts })
       end
     end
   end
   if #pending_parts > 0 then
     vim.list_extend(parts, pending_parts)
   else
-    parts[#parts + 1] = "(no open threads)"
+    parts[#parts + 1] = tag and ("(no open #" .. tag .. " threads)") or "(no open threads)"
     parts[#parts + 1] = ""
   end
   if #resolved_lines > 0 then

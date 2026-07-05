@@ -771,14 +771,18 @@ end
 -- from ANY chat, not just the project thread's. The meta (project) record itself
 -- is never expandable this way (nothing to pull about itself) — skipped silently.
 -- nil when none of `ids` names a real, non-meta thread.
-local function thread_mentions_block(ids)
+local function thread_mentions_block(ids, expand_opts)
   local store = require("obelus.store")
   local format = require("obelus.format")
   local blocks = {}
   for _, id in ipairs(ids) do
     local c = store.get(id)
     if c and not c.meta then
-      blocks[#blocks + 1] = format.thread_full(c)
+      -- expand_opts.include_drafts: the SENDING context's draft policy — a tag
+      -- meta's plain RESPOND promises member drafts stay unsent AND unseen; an
+      -- explicit @thread pull-back must not smuggle the draft in through the
+      -- side door (it still gets the "(has an unsent draft, not shown)" note)
+      blocks[#blocks + 1] = format.thread_full(c, expand_opts)
     end
   end
   if #blocks == 0 then
@@ -796,7 +800,7 @@ end
 -- PLUS, independently of that knob: a "[Mentioned threads]" block for every
 -- "@thread:<id>" mention (see thread_mentions_block above).
 -- nil when the text has no valid mentions at all, or mentions are disabled outright.
-function M.prompt_suffix(text)
+function M.prompt_suffix(text, opts)
   local cfg = require("obelus.config").options.input.mention
   if cfg == false then
     return nil
@@ -814,7 +818,7 @@ function M.prompt_suffix(text)
       file_paths[#file_paths + 1] = p
     end
   end
-  local out = thread_mentions_block(thread_ids) or ""
+  local out = thread_mentions_block(thread_ids, opts and { include_drafts = opts.include_drafts }) or ""
 
   if #file_paths == 0 then
     return out ~= "" and out or nil

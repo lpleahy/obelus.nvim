@@ -55,6 +55,7 @@ M.busy = review.busy
 M.respond = review.respond
 M.chat_save = review.chat_save
 M.chat_send = review.chat_send
+M.submit_all = review.submit_all
 M.clear = review.clear
 
 -- Set (or, with no arg, cycle) the chat markdown renderer. Applies live to an open
@@ -110,6 +111,33 @@ end
 function M.project()
   local c = store.meta_thread()
   require("obelus.panel").open_thread(c.id, config.mode() ~= "sidebar")
+end
+
+---Get-or-create the ACTIVE tag's meta/batch thread (|obelus-project-thread|'s
+---tag-scoped sibling — "for whatever batch we're working on for a tag") and open
+---it: the sticky tag (|obelus.tag_mode()|) if set, else the tag on the thread at
+---cursor. Toggles closed if that thread is already showing (mirrors panel.toggle's
+---"press it again to dismiss" for a single-thread target). No tag context at all
+---notifies instead of silently doing nothing.
+function M.tag_thread()
+  local tag = store.active_tag
+  if not tag then
+    local at = render.at_cursor()
+    tag = at and at.tag
+  end
+  if not tag then
+    return vim.notify(
+      "obelus: no active tag — <prefix>g tags a thread, <prefix>G sets the sticky tag",
+      vim.log.levels.WARN
+    )
+  end
+  local panel = require("obelus.panel")
+  local existing = store.get_meta(tag)
+  if existing and panel.showing(existing.id) then
+    return panel.close() -- toggle: pressing it again while open closes it
+  end
+  local c = store.tag_meta_thread(tag)
+  panel.open_thread(c.id, config.mode() ~= "sidebar")
 end
 
 -- Open the sidebar: if the cursor is on a comment, open that thread's chat in the
@@ -319,6 +347,10 @@ local function commands()
     M.project()
   end, { desc = "obelus: open the project thread (get-or-create)" })
 
+  cmd("ObelusTagThread", function()
+    M.tag_thread()
+  end, { desc = "obelus: open the active tag's meta/batch thread (get-or-create)" })
+
   cmd("ObelusResolve", function()
     M.resolve()
   end, { desc = "obelus: resolve comment at cursor" })
@@ -511,6 +543,14 @@ local MAPSPEC = {
       M.project()
     end,
     desc = "obelus: project thread",
+  },
+  {
+    suffix = "A",
+    modes = "n",
+    rhs = function()
+      M.tag_thread()
+    end,
+    desc = "obelus: active tag's meta/batch thread",
   },
   {
     suffix = "h",

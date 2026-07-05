@@ -437,6 +437,59 @@ T.it("keys.chat.close = 'x': the reply box gets x, not q", function()
   panel.close()
 end)
 
+-- ---------------------------------------------------------------------------
+-- 9. keys.chat.send_all (SUBMIT-ALL, tag meta threads — default <M-s>)
+-- ---------------------------------------------------------------------------
+
+T.it("keys.chat.send_all: bound by default (<M-s>), fires obelus.submit_all(thread, text)", function()
+  local ctx = T.fresh()
+  local c = ctx.store.tag_meta_thread("auth")
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  local ibuf = vim.api.nvim_win_get_buf(panel.geom().input_win)
+  local cb = n_callback(ibuf, "<M-s>")
+  T.ok(cb, "<M-s> is bound on the reply box by default")
+
+  local seen_id, seen_text
+  local obelus = require("obelus")
+  local orig = obelus.submit_all
+  obelus.submit_all = function(id, text)
+    seen_id, seen_text = id, text
+    return orig(id, text)
+  end
+  vim.api.nvim_buf_set_lines(ibuf, 0, -1, false, { "please prioritize the token issue" })
+  cb()
+  obelus.submit_all = orig
+  T.eq(seen_id, c.id, "send_all dispatched for the open thread")
+  T.eq(seen_text, "please prioritize the token issue")
+  T.eq(vim.api.nvim_buf_get_lines(ibuf, 0, -1, false), { "" }, "the input box was cleared")
+  panel.close()
+end)
+
+T.it("keys.chat.send_all = false disables the binding entirely", function()
+  local ctx = T.fresh({ keys = { chat = { send_all = false } } })
+  local c = ctx.store.tag_meta_thread("auth")
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  local ibuf = vim.api.nvim_win_get_buf(panel.geom().input_win)
+  T.is_nil(n_callback(ibuf, "<M-s>"), "no <M-s> keymap bound when keys.chat.send_all = false")
+  panel.close()
+end)
+
 T.it("selection: ObelusVisual derives a contrast boost by default; explicit override wins", function()
   vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
   vim.api.nvim_set_hl(0, "Visual", { bg = 0x283457 })

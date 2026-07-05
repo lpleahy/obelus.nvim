@@ -54,7 +54,7 @@ function M.submit(name, opts)
   -- short image mentions ("@x.png", the display form) expand to their real
   -- ".ai/img/" paths for the agent — BEFORE the suffix policy scans them
   markdown = mention.expand_image_mentions(markdown)
-  local suffix = mention.prompt_suffix(opts.mention_text or markdown)
+  local suffix = mention.prompt_suffix(opts.mention_text or markdown, { include_drafts = opts.mention_include_drafts })
   if suffix then
     markdown = markdown .. suffix
   end

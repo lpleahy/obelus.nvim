@@ -89,9 +89,16 @@ end
 -- render meant two nvim instances on one project each planted their own meta
 -- record just by opening the sidebar (last save then clobbered the other).
 -- Creation is reserved for the deliberate action: obelus.project() / <prefix>a.
-function M.get_meta()
+--
+-- `tag` (optional) selects a TAG meta record instead of the global one — see
+-- M.tag_meta_thread below. nil (the default, and every pre-existing call site)
+-- means "the global project thread" and, crucially, never returns a tag record
+-- even though both share `meta = true` — matched on `c.meta_tag == tag`, and a
+-- tag record's meta_tag is always a non-empty string, never nil.
+---@param tag? string
+function M.get_meta(tag)
   for _, c in ipairs(M.comments) do
-    if c.meta then
+    if c.meta and c.meta_tag == tag then
       return c
     end
   end
@@ -109,6 +116,38 @@ function M.meta_thread()
     kind = "line",
     selected_text = {},
     comment = "project thread",
+    id = M.next_id(),
+    created_at = os.time(),
+    status = "open",
+  }
+  table.insert(M.comments, rec)
+  if opts().persist.auto then
+    M.save_soon()
+  end
+  return rec
+end
+
+-- Get-or-create the ONE meta record for a given tag: "for whatever batch we're
+-- working on for a tag, a batch/tag-level meta-thread that can be engaged for the
+-- active tag" — same idempotent get-or-create shape as M.meta_thread (never
+-- planted twice; get_meta(tag) is the existence check), but scoped to that tag's
+-- threads instead of the whole project (see format.meta_context's `tag` opt and
+-- review.do_respond's `c.meta_tag` branch). `tag` must be a real, non-empty tag —
+-- callers needing the GLOBAL thread use M.meta_thread(), not this with a nil tag.
+---@param tag string
+function M.tag_meta_thread(tag)
+  local existing = M.get_meta(tag)
+  if existing then
+    return existing
+  end
+  local rec = {
+    meta = true,
+    meta_tag = tag,
+    file = M.root(),
+    range = { sl = 1, el = 1 },
+    kind = "line",
+    selected_text = {},
+    comment = "#" .. tag .. " thread",
     id = M.next_id(),
     created_at = os.time(),
     status = "open",
@@ -266,6 +305,21 @@ function M.open_batch()
   local found
   for _, b in ipairs(M.batches) do
     if b.status == "open" and (not found or (b.seq or 0) > (found.seq or 0)) then
+      found = b
+    end
+  end
+  return found
+end
+
+-- Like M.open_batch, but scoped to ONE tag (nil = untagged batches only) — the
+-- continue target for a SPECIFIC tag's engagement (a tag meta thread's SUBMIT-ALL
+-- must resume THAT tag's own batch, not whichever is globally most-recent, which
+-- may belong to a different tag entirely).
+---@param tag? string
+function M.open_batch_for_tag(tag)
+  local found
+  for _, b in ipairs(M.batches) do
+    if b.status == "open" and b.tag == tag and (not found or (b.seq or 0) > (found.seq or 0)) then
       found = b
     end
   end
@@ -780,8 +834,12 @@ function M.load()
           -- HEAL duplicate meta records (planted by concurrent instances before the
           -- pin-no-create fix, or by a lost race between two saves): keep whichever
           -- has the most conversation (turns, then a session), drop the rest.
+          -- Keyed PER meta_tag (nil = the global thread) — a duplicate global record
+          -- must never be healed against a TAG record, and vice versa, or a rival
+          -- #foo thread could silently evict the real global project thread (or
+          -- another tag's).
           if rec.meta then
-            local existing = M.get_meta()
+            local existing = M.get_meta(rec.meta_tag)
             if existing then
               local function weight(r)
                 return #(r.turns or {}) * 2 + (r.session_id and 1 or 0)

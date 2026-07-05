@@ -26,6 +26,7 @@
 :ObelusSubmit	obelus.txt	/*:ObelusSubmit*
 :ObelusTag	obelus.txt	/*:ObelusTag*
 :ObelusTagMode	obelus.txt	/*:ObelusTagMode*
+:ObelusTagThread	obelus.txt	/*:ObelusTagThread*
 :ObelusToggle	obelus.txt	/*:ObelusToggle*
 :ObelusToggleResolved	obelus.txt	/*:ObelusToggleResolved*
 obelus	obelus.txt	/*obelus*
@@ -77,6 +78,7 @@ obelus-mentions	obelus.txt	/*obelus-mentions*
 obelus-project-thread	obelus.txt	/*obelus-project-thread*
 obelus-renderers	obelus.txt	/*obelus-renderers*
 obelus-setup	obelus.txt	/*obelus-setup*
+obelus-tag-thread	obelus.txt	/*obelus-tag-thread*
 obelus-transports	obelus.txt	/*obelus-transports*
 obelus.batch_advance()	obelus.txt	/*obelus.batch_advance()*
 obelus.busy()	obelus.txt	/*obelus.busy()*
@@ -103,8 +105,10 @@ obelus.set_mode()	obelus.txt	/*obelus.set_mode()*
 obelus.set_renderer()	obelus.txt	/*obelus.set_renderer()*
 obelus.setup()	obelus.txt	/*obelus.setup()*
 obelus.submit()	obelus.txt	/*obelus.submit()*
+obelus.submit_all()	obelus.txt	/*obelus.submit_all()*
 obelus.tag()	obelus.txt	/*obelus.tag()*
 obelus.tag_mode()	obelus.txt	/*obelus.tag_mode()*
+obelus.tag_thread()	obelus.txt	/*obelus.tag_thread()*
 obelus.toggle()	obelus.txt	/*obelus.toggle()*
 obelus.toggle_hints()	obelus.txt	/*obelus.toggle_hints()*
 obelus.toggle_mode()	obelus.txt	/*obelus.toggle_mode()*

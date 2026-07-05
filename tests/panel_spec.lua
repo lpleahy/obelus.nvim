@@ -143,3 +143,89 @@ T.it("panel list: the project thread is pinned as the FIRST row; <CR> on it open
   T.eq(g2.thread, meta.id, "the chat opened IS the project thread")
   panel.close()
 end)
+
+-- tag meta threads ------------------------------------------------------------
+
+T.it("panel list: no active tag -> no pinned '#<tag> thread' row", function()
+  local ctx = T.fresh()
+  ctx.store.set_active_tag(nil) -- store.active_tag isn't reset by T.fresh (only a real store.load() clears it)
+  require("obelus.panel")._timing.fill_throttle = 0
+  ctx.store.meta_thread()
+  ctx.store.add(T.comment({ file = ctx.root .. "/f.lua", comment = "a real thread" }))
+  local panel = require("obelus.panel")
+  panel.open()
+  vim.cmd("redraw")
+  local g = panel.geom()
+  local text = table.concat(vim.api.nvim_buf_get_lines(g.buf, 0, -1, false), "\n")
+  T.contains(text, "project thread", "the global row is still there")
+  T.ok(not text:find("◆  #", 1, true), "no tag row when no tag is engaged (no active tag, no open tagged batch)")
+  panel.close()
+end)
+
+T.it(
+  "panel list: an active (sticky) tag pins '#<tag> thread' under the global row; <CR> opens it (get-or-create)",
+  function()
+    local ctx = T.fresh()
+    require("obelus.panel")._timing.fill_throttle = 0
+    ctx.store.meta_thread()
+    ctx.store.set_active_tag("auth")
+    T.is_nil(ctx.store.get_meta("auth"), "the tag meta record doesn't exist yet — only engagement (active_tag) does")
+
+    local panel = require("obelus.panel")
+    panel.open()
+    vim.cmd("redraw")
+    local g = panel.geom()
+    local lines = vim.api.nvim_buf_get_lines(g.buf, 0, -1, false)
+    local meta_row, tag_row
+    for i, l in ipairs(lines) do
+      if not meta_row and l:find("project thread", 1, true) then
+        meta_row = i
+      end
+      if l:find("#auth thread", 1, true) then
+        tag_row = i
+      end
+    end
+    T.ok(meta_row, "the global row is present")
+    T.ok(tag_row, "the #auth row is present")
+    T.ok(tag_row > meta_row, "the tag row sits UNDER the global row")
+
+    vim.api.nvim_win_set_cursor(g.win, { tag_row, 0 })
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
+    vim.cmd("redraw")
+    local g2 = panel.geom()
+    T.eq(g2.mode, "chat", "<CR> on the tag row opened chat mode")
+    local created = ctx.store.get_meta("auth")
+    T.ok(created, "the tag meta record was get-or-created by <CR>")
+    T.eq(g2.thread, created.id, "the chat opened IS the newly created #auth thread")
+    panel.close()
+    ctx.store.set_active_tag(nil) -- don't leak sticky tagging mode into the next spec (process-wide singleton)
+  end
+)
+
+T.it("tag_thread(): no active tag notifies; a sticky tag opens/creates and toggles closed on a second call", function()
+  local ctx = T.fresh()
+  ctx.store.set_active_tag(nil) -- guard against a leaked active_tag from a prior spec (see above)
+  local obelus = require("obelus")
+  local panel = require("obelus.panel")
+
+  local msg
+  local orig = vim.notify
+  vim.notify = function(m, ...)
+    msg = m
+    return orig(m, ...)
+  end
+  obelus.tag_thread()
+  vim.notify = orig
+  T.contains(msg or "", "no active tag", "no tag context at all -> a clear notice")
+
+  ctx.store.set_active_tag("auth")
+  obelus.tag_thread()
+  vim.cmd("redraw")
+  local created = ctx.store.get_meta("auth")
+  T.ok(created, "get-or-created the sticky tag's meta thread")
+  T.ok(panel.showing(created.id), "opened it")
+
+  obelus.tag_thread() -- press it again while it's already open
+  T.ok(not panel.showing(created.id), "a second call while showing TOGGLES it closed")
+  ctx.store.set_active_tag(nil) -- don't leak sticky tagging mode into the next spec (process-wide singleton)
+end)

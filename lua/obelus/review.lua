@@ -156,6 +156,48 @@ function M.batch_advance(text)
   end
 end
 
+-- SUBMIT-ALL (keys.chat.send_all, default <M-s>, in a TAG meta thread's input):
+-- unlike plain RESPOND (do_respond above, which deliberately excludes member
+-- drafts from the briefing), this ENGAGES the batch — every pending thread
+-- carrying the tag, INCLUDING one sitting on a saved-but-unsent draft reply
+-- (store.pending()/pending_by_tag already treat a trailing "you" turn as a real
+-- reply regardless of whether it was ever formally "sent" — see store.lua's
+-- pending_you_text; the round's write-back reply is what actually turns it into
+-- a settled, no-longer-draft turn, same as any other reply) — via the SAME batch
+-- machinery <prefix>s/<prefix>S use: continue the tag's own open batch if it's
+-- idle, else start a new one, carrying `text` as this round's instruction. The
+-- note is only conveyed on a CONTINUE — batch.create has no per-round instruction
+-- slot, the same limitation <prefix>s's own optional text already has on a fresh
+-- submit. In the GLOBAL meta or an ordinary thread — neither has a "tag" or
+-- "member drafts" concept — this falls back to a plain send.
+---@param id string
+---@param text string
+function M.submit_all(id, text)
+  local c = store.get(id)
+  if not (c and c.meta_tag) then
+    return M.chat_send(id, text, "send") -- not a tag meta: plain send (see doc comment above)
+  end
+  if not (text and text ~= "") then
+    return
+  end
+  local tag = c.meta_tag
+  local batch = require("obelus.batch")
+  local open = batch.open_for_tag(tag)
+  if open then
+    if batch.busy(open) then
+      return vim.notify("obelus: the batch agent is still working — wait for it to finish", vim.log.levels.WARN)
+    end
+    return batch.continue(text, open)
+  end
+  local comments = store.pending_by_tag(tag)
+  if #comments == 0 then
+    return vim.notify("obelus: no pending threads tagged #" .. tag .. " to submit", vim.log.levels.WARN)
+  end
+  local cli = config.options.transport.cli or {}
+  local models = cli.models or {}
+  batch.create(comments, { model = models.batch or models.send, tag = tag })
+end
+
 -- Per-comment modality: fire the comment at cursor (or `id`) off to a
 -- background agent immediately, with a spinner. Doesn't touch the batch.
 ---@param id? string
@@ -225,6 +267,17 @@ local META_PREAMBLE = "You are the project-level reviewer for this codebase: you
   .. " (reply to it, resolve it, or ask it a question) you MUST use the write-back protocol — keyed by that"
   .. " thread's comment id — rather than just describing the change in prose."
 
+-- A TAG meta's own framing (parallel to META_PREAMBLE, scoped to one tag): plain
+-- RESPOND here is a discussion ABOUT the tag's threads that deliberately does NOT
+-- send/commit any member's unsent draft (format.meta_context's include_drafts =
+-- false already keeps drafts out of the briefing itself; this just says so) — that
+-- is what keys.chat.send_all (SUBMIT-ALL, see M.submit_all below) is for instead.
+local TAG_META_PREAMBLE = 'You are the batch-level reviewer for the tag "#%s": you may read any file to answer.'
+  .. " Your streamed reply here IS the tag-level conversation — replying here does NOT send or commit any"
+  .. " member thread's unsent draft. To act on an INDIVIDUAL review thread below (reply to it, resolve it, or"
+  .. " ask it a question) you MUST use the write-back protocol — keyed by that thread's comment id — rather"
+  .. " than just describing the change in prose."
+
 -- Add a follow-up user turn and continue the agent conversation (--resume).
 -- mode: "send" (default → cli.models.send) | "fast" (→ cli.models.fast, falling back to send)
 local function do_respond(c, text, mode)
@@ -248,7 +301,16 @@ local function do_respond(c, text, mode)
   -- comment's own markdown.
   local prompt = text
   if not c.session_id then
-    if c.meta then
+    if c.meta_tag then
+      -- a TAG meta: scope the briefing to this tag's threads only, and NEVER
+      -- include a member's unsent draft (plain RESPOND vs SUBMIT-ALL — see
+      -- M.submit_all and TAG_META_PREAMBLE above).
+      prompt = require("obelus.format").meta_context({ tag = c.meta_tag, include_drafts = false })
+        .. "\n\n"
+        .. string.format(TAG_META_PREAMBLE, c.meta_tag)
+        .. "\n\n"
+        .. text
+    elseif c.meta then
       prompt = require("obelus.format").meta_context() .. "\n\n" .. META_PREAMBLE .. "\n\n" .. text
     else
       prompt = require("obelus.format").comment_md(c) .. "\n" .. text
@@ -265,14 +327,23 @@ local function do_respond(c, text, mode)
     -- fan-out: the write-back protocol must cover every REAL thread (not just the
     -- meta record itself, which cli.lua's run_stream would otherwise scope
     -- `allowed` to) — this is how the project chat can reply/resolve/needs_response
-    -- on any thread in the project, not only the one it's nominally "about".
+    -- on any thread in the project, not only the one it's nominally "about". A tag
+    -- meta narrows the fan-out to THAT tag's threads only.
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      return not x.meta
+      if x.meta then
+        return false
+      end
+      return c.meta_tag == nil or x.tag == c.meta_tag
     end, store.all())
     -- the mention policy must see ONLY the user's text: the briefing's resolved
     -- summaries are @thread tokens on purpose and must NOT self-expand (see
     -- transport/init.lua's choke point)
     submit_opts.mention_text = text
+    -- a tag meta's RESPOND promises member drafts stay unseen — that policy also
+    -- governs explicit @thread pull-backs in the user's own text
+    if c.meta_tag ~= nil then
+      submit_opts.mention_include_drafts = false
+    end
   end
   -- transport.submit pcalls the backend and RETURNS FALSE on failure (unknown
   -- transport name, backend threw) — and this pcall is belt-and-braces for anything

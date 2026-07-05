@@ -39,6 +39,7 @@ also has an `:Obelus*` command.
 | `op` | Toggle the threads sidebar |
 | `oo` | Open the thread at the cursor as a chat |
 | `oa` | Open/create the project thread |
+| `oA` | Open/create the active tag's meta/batch thread |
 | `or` / `of` | Reply to the thread (docked box / quick float) |
 | `oR` / `oh` | Toggle resolved / show-hide resolved |
 | `od` | Delete the comment at cursor |
@@ -77,6 +78,10 @@ full and every resolved one as a one-line summary; `@thread:<id>` mentions (in a
 thread's full history back in, and the agent can reply/resolve/ask individual threads from there
 via the same write-back protocol a batch dispatch uses.
 
+`oA` / `:ObelusTagThread` is its tag-scoped sibling — a meta-thread for whatever batch you're
+working on for one tag, where plain send discusses the tag's threads and `<M-s>` instead folds
+member drafts into a real batch round.
+
 Popup geometry is one knob: `render.preview_matches_chat`. Off (default), the boxes adapt —
 every pass re-picks the roomier side of the commented lines and each surface sizes its own
 comfortable width. On, the hover preview and the chat popup share ONE geometry (the chat's
@@ -95,6 +100,7 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | `list(backend?)` | Open the review list (`"buffer"` \| `"quickfix"` \| `"split"`) |
 | `panel()` | Toggle the threads sidebar/popup |
 | `project()` | Get-or-create the project thread and open it |
+| `tag_thread()` | Get-or-create the active tag's meta/batch thread and open it (toggles closed) |
 | `open_chat(id?)` | Open the sidebar for a thread (or the navigator list) |
 | `reply_here()` | Reply to the thread at cursor in the active modality |
 | `quick_reply(id?)` | Reply via the small inline compose float |
@@ -110,6 +116,7 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | `busy(id)` | Is this thread mid-dispatch? |
 | `respond(id?, text?)` | Respond to a thread (prompts when `text` is nil) |
 | `chat_save(id, text)` / `chat_send(id, text, mode?)` | Save a draft / send now |
+| `submit_all(id, text)` | SUBMIT-ALL: a tag meta's batch round with member drafts folded in |
 | `clear()` | Clear all comments |
 
 ## Configuration

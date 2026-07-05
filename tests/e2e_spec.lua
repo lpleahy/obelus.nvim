@@ -403,6 +403,149 @@ T.it(
 )
 
 -- ---------------------------------------------------------------------------
+-- 8b. tag meta threads: scoped briefing, own session, SUBMIT-ALL's batch round
+-- ---------------------------------------------------------------------------
+
+T.it(
+  "tag meta send (plain RESPOND): briefs ONLY that tag's threads, drafts excluded; actions_comments scoped to the tag",
+  function()
+    local ctx, F = fresh_stream_ctx()
+    local auth_pending = ctx.store.add(T.comment({ comment = "fix the auth check" }))
+    ctx.store.tag_comment(auth_pending.id, "auth")
+    local auth_draft = ctx.store.add(T.comment({ comment = "check the token expiry" }))
+    ctx.store.tag_comment(auth_draft.id, "auth")
+    ctx.store.add_turn(auth_draft.id, "agent", "looks fine to me")
+    ctx.store.set_pending_you(auth_draft.id, "actually, double check the refresh path")
+    local perf = ctx.store.add(T.comment({ comment = "speed up the query" }))
+    ctx.store.tag_comment(perf.id, "perf")
+    local untagged = ctx.store.add(T.comment({ comment = "totally unrelated thread" }))
+
+    local tagmeta = ctx.store.tag_meta_thread("auth")
+    require("obelus").chat_send(tagmeta.id, "what's the state of #auth?", "send")
+
+    T.ok(F.payload, "the tag meta dispatched through the fake transport")
+    T.contains(F.payload.markdown, "fix the auth check", "the #auth pending thread is in the briefing")
+    T.contains(F.payload.markdown, "looks fine to me", "the #auth thread's sent agent turn is shown in full")
+    T.ok(
+      not F.payload.markdown:find("actually, double check the refresh path", 1, true),
+      "a member's unsent draft TEXT is never in the briefing (plain RESPOND excludes drafts)"
+    )
+    T.contains(F.payload.markdown, "has an unsent draft, not shown", "the skipped draft is noted instead")
+    T.ok(not F.payload.markdown:find("speed up the query", 1, true), "a DIFFERENT tag's thread is absent")
+    T.ok(not F.payload.markdown:find("totally unrelated thread", 1, true), "an untagged thread is absent")
+    T.contains(F.payload.markdown, "what's the state of #auth?", "the user's own text follows the briefing")
+
+    local ids = {}
+    for _, cm in ipairs(F.payload.opts.actions_comments) do
+      ids[cm.id] = true
+    end
+    T.ok(ids[auth_pending.id], "the #auth pending thread is in the fan-out list")
+    T.ok(ids[auth_draft.id], "the #auth draft-holding thread is in the fan-out list too")
+    T.is_nil(ids[perf.id], "a DIFFERENT tag's thread is never in the fan-out list")
+    T.is_nil(ids[untagged.id], "an untagged thread is never in the fan-out list")
+    T.is_nil(ids[tagmeta.id], "the tag meta's OWN id is never in the fan-out list")
+
+    F.finish(true, "sess-tag-auth-1")
+  end
+)
+
+T.it(
+  "tag meta send: rides its OWN session — independent of the batch's and the global meta's (MVP decision)",
+  function()
+    local ctx, F = fresh_stream_ctx()
+    local c = ctx.store.add(T.comment({ comment = "some auth thing" }))
+    ctx.store.tag_comment(c.id, "auth")
+    local global = ctx.store.meta_thread()
+    global.session_id = "sess-global"
+    local batch = ctx.store.add_batch({
+      status = "open",
+      tag = "auth",
+      comment_ids = { c.id },
+      session_id = "sess-batch-auth",
+    })
+
+    local tagmeta = ctx.store.tag_meta_thread("auth")
+    T.is_nil(tagmeta.session_id, "a fresh tag meta has no session of its own yet")
+
+    require("obelus").chat_send(tagmeta.id, "hello", "send")
+    T.is_nil(F.payload.opts.resume, "first send: nothing to resume yet (its OWN session, not the batch's)")
+    F.finish(true, "sess-tag-own")
+
+    T.eq(ctx.store.get(tagmeta.id).session_id, "sess-tag-own", "the tag meta recorded its OWN session")
+    T.eq(ctx.store.get_batch(batch.id).session_id, "sess-batch-auth", "the batch's session is untouched")
+    T.eq(ctx.store.get_meta().session_id, "sess-global", "the global meta's session is untouched")
+
+    require("obelus").chat_send(tagmeta.id, "follow-up", "send")
+    T.eq(F.payload.opts.resume, "sess-tag-own", "the SECOND send resumes the tag meta's own session, not the batch's")
+    F.finish(true, "sess-tag-own")
+  end
+)
+
+T.it("tag meta SUBMIT-ALL: continues the tag's own open batch, folding in a member's draft + the typed note", function()
+  local ctx = T.fresh({ transport = { dispatch = "fake", batch = { transport = "fake" } } })
+  local F = require("fake")
+  F.reset()
+  F.install()
+
+  local c1 = ctx.store.add(T.comment({ comment = "fix the auth check" }))
+  ctx.store.tag_comment(c1.id, "auth")
+  local c2 = ctx.store.add(T.comment({ comment = "check the token expiry" }))
+  ctx.store.tag_comment(c2.id, "auth")
+
+  local batch = require("obelus.batch")
+  local created = batch.create({ c1 }, { tag = "auth" })
+  T.ok(created, "the tag's batch was created (one-shot, non-stream dispatch — see F.oneshots)")
+  -- the fake transport doesn't simulate session capture for a one-shot (non-
+  -- streamed) batch dispatch — record one by hand so the round below takes the
+  -- normal resumed-session "diff" path (round_prompt, which labels members by
+  -- id) instead of falling back to a full re-serialization (no ids to grep for).
+  ctx.store.update_batch(created.id, { session_id = "sess-batch-fake-1" })
+
+  -- c2 is NOT yet a batch member and carries a saved-but-unsent draft reply —
+  -- SUBMIT-ALL must fold it in as a new member of the round, same as any other
+  -- pending thread (store.pending()/pending_by_tag already treat a trailing
+  -- "you" turn as pending regardless of whether it was ever formally "sent").
+  ctx.store.set_pending_you(c2.id, "wait, also check the refresh token")
+
+  local tagmeta = ctx.store.tag_meta_thread("auth")
+  require("obelus").submit_all(tagmeta.id, "please prioritize the token issue")
+
+  T.eq(#F.oneshots, 2, "the create dispatch, then SUBMIT-ALL's continue round dispatch")
+  local payload = F.oneshots[#F.oneshots]
+  T.contains(payload.markdown, "please prioritize the token issue", "the typed note became the round instruction")
+  T.contains(payload.markdown, c2.id, "the newly-folded draft-holding member's id is in the round diff")
+
+  local reloaded = ctx.store.get_batch(created.id)
+  T.eq(reloaded.round, 2, "the batch advanced to round 2 via the EXISTING batch machinery")
+  local member_ids = {}
+  for _, id in ipairs(reloaded.comment_ids) do
+    member_ids[id] = true
+  end
+  T.ok(member_ids[c1.id] and member_ids[c2.id], "both threads (incl. the draft-holder) are now batch members")
+
+  T.eq(
+    ctx.store.pending_you_text(ctx.store.get(c2.id)),
+    "wait, also check the refresh token",
+    "SUBMIT-ALL doesn't itself rewrite the draft text — the round's own agent write-back reply is what "
+      .. "settles it into a real turn, same as any other reply"
+  )
+end)
+
+T.it("submit_all: in the GLOBAL meta or an ordinary thread, falls back to a plain send", function()
+  local ctx, F = fresh_stream_ctx()
+  local global = ctx.store.meta_thread()
+  require("obelus").submit_all(global.id, "hello")
+  T.ok(F.payload, "dispatched")
+  T.eq(F.payload.opts.stream, true, "went through the normal streaming chat_send path, not a batch round")
+  F.finish(true, "sess-g")
+
+  local c = ctx.store.add(T.comment({ comment = "ordinary thread" }))
+  require("obelus").submit_all(c.id, "hi")
+  T.eq(F.payload.comments[1].id, c.id, "an ordinary thread also just gets a plain send")
+  F.finish(true, "sess-c")
+end)
+
+-- ---------------------------------------------------------------------------
 -- 9. streaming narration: grey while streaming, collapsed at finish
 -- ---------------------------------------------------------------------------
 
@@ -471,4 +614,43 @@ T.it("narration: guard — a stream that ends right after a block_start keeps th
 
   local t = tail_turn(ctx, c)
   T.eq(t.text, "Let me check the file first.", "never store an empty reply — the guard kept the only real text")
+end)
+
+T.it("tag-meta RESPOND: an explicit @thread pull-back still hides the member's draft", function()
+  local F = require("fake")
+  local ctx = T.fresh({ transport = { dispatch = "fake" } })
+  F.install()
+  local m = ctx.store.add(T.comment({ comment = "member thread" }))
+  ctx.store.tag_comment(m.id, "auth")
+  ctx.store.add_turn(m.id, "agent", "earlier agent reply")
+  ctx.store.set_pending_you(m.id, "SECRET DRAFT do not send")
+  local tm = ctx.store.tag_meta_thread("auth")
+  require("obelus").chat_send(tm.id, "context on @thread:" .. m.id .. " please", "send")
+  T.ok(F.payload, "dispatched")
+  T.contains(F.payload.markdown, "[Mentioned threads]", "the pull-back expanded")
+  T.ok(not F.payload.markdown:find("SECRET DRAFT", 1, true), "the draft did NOT leak through the mention")
+  T.contains(F.payload.markdown, "unsent draft, not shown", "the skip note travels with the expansion")
+end)
+
+T.it("batch.continue persists folded-in membership even when the dispatch fails", function()
+  local F = require("fake")
+  local ctx = T.fresh({ transport = { dispatch = "fake", batch = { enabled = true, transport = "fake" } } })
+  F.install()
+  local c1 = ctx.store.add(T.comment({ comment = "one" }))
+  ctx.store.tag_comment(c1.id, "auth")
+  require("obelus.batch").create({ ctx.store.get(c1.id) }, { tag = "auth" })
+  local b = require("obelus.batch").open_for_tag("auth")
+  T.ok(b, "batch open")
+  local c2 = ctx.store.add(T.comment({ comment = "two" }))
+  ctx.store.tag_comment(c2.id, "auth")
+  -- make the NEXT dispatch fail
+  require("obelus.transport").register("fake", function()
+    error("boom")
+  end)
+  require("obelus.batch").continue("round note", b)
+  local ids = {}
+  for _, id in ipairs(require("obelus.batch").open_for_tag("auth").comment_ids or {}) do
+    ids[id] = true
+  end
+  T.ok(ids[c2.id], "the new member's id is in comment_ids despite the failed round")
 end)

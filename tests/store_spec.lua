@@ -336,3 +336,101 @@ T.it("load() heals duplicate meta records — keeps the one with the most conver
   T.eq(metas, 1, "exactly one meta record after load")
   T.eq(ctx.store.get_meta().id, keep.id, "the one with the conversation won")
 end)
+
+-- tag meta threads --------------------------------------------------------------
+
+T.it("tag_meta_thread: get-or-create is idempotent PER TAG — separate records, stable ids", function()
+  local S = T.fresh().store
+  local a1 = S.tag_meta_thread("auth")
+  T.ok(a1.meta, "meta = true")
+  T.eq(a1.meta_tag, "auth")
+  local a2 = S.tag_meta_thread("auth")
+  T.eq(a2.id, a1.id, "same tag -> the SAME record")
+
+  local b1 = S.tag_meta_thread("perf")
+  T.ok(b1.id ~= a1.id, "a different tag -> a DIFFERENT record")
+  T.eq(b1.meta_tag, "perf")
+
+  local metas = vim.tbl_filter(function(c)
+    return c.meta
+  end, S.all())
+  T.eq(#metas, 2, "exactly one meta record per tag, even after repeat get-or-create calls")
+end)
+
+T.it("get_meta(tag): nil never returns a tag record; a tag arg returns only that tag's", function()
+  local S = T.fresh().store
+  local tagmeta = S.tag_meta_thread("auth")
+  T.is_nil(S.get_meta(), "no GLOBAL meta exists yet — a tag record must not satisfy get_meta(nil)")
+  T.eq(S.get_meta("auth").id, tagmeta.id)
+  T.is_nil(S.get_meta("perf"), "a different tag's meta doesn't exist")
+
+  local global = S.meta_thread()
+  T.eq(S.get_meta().id, global.id, "get_meta(nil) now finds the global record")
+  T.eq(S.get_meta("auth").id, tagmeta.id, "and still returns the tag record for its own tag")
+  T.ok(S.get_meta().id ~= S.get_meta("auth").id, "global and tag metas are distinct records")
+end)
+
+T.it("tag_meta_thread: excluded from pending, like the global meta", function()
+  local S = T.fresh().store
+  local tagmeta = S.tag_meta_thread("auth")
+  local pending_ids = {}
+  for _, c in ipairs(S.pending()) do
+    pending_ids[c.id] = true
+  end
+  T.is_nil(pending_ids[tagmeta.id])
+end)
+
+T.it("tag_meta_thread: persists to disk and reloads with meta_tag intact, same id", function()
+  local ctx = T.fresh({ persist = { auto = true } })
+  local S = ctx.store
+  local tagmeta = S.tag_meta_thread("auth")
+  S.save()
+  S.load()
+  local reloaded = S.get(tagmeta.id)
+  T.ok(reloaded, "the tag meta record survives a reload under its original id")
+  T.eq(reloaded.meta, true)
+  T.eq(reloaded.meta_tag, "auth")
+  local again = S.tag_meta_thread("auth")
+  T.eq(again.id, tagmeta.id, "get-or-create after a reload still finds it")
+end)
+
+T.it(
+  "load() dedupes duplicate meta records PER meta_tag — a rival #auth record can't evict #perf's or the global's",
+  function()
+    local ctx = T.fresh({ persist = { auto = true } })
+    local S = ctx.store
+    local global = S.meta_thread()
+    local auth_keep = S.tag_meta_thread("auth")
+    S.add_turn(auth_keep.id, "you", "the real #auth conversation")
+    local perf_keep = S.tag_meta_thread("perf")
+    S.save()
+
+    -- plant a rival #auth record (as a concurrent instance racing get-or-create would)
+    local path = S.store_path()
+    local lines = vim.fn.readfile(path)
+    lines[#lines + 1] = vim.json.encode({
+      meta = true,
+      meta_tag = "auth",
+      id = "9999999999-1",
+      file = S.root(),
+      range = { sl = 1, el = 1 },
+      kind = "line",
+      selected_text = {},
+      comment = "#auth thread",
+      status = "open",
+    })
+    vim.fn.writefile(lines, path)
+    S.load()
+
+    T.eq(S.get_meta().id, global.id, "the global record is untouched by the #auth rival")
+    T.eq(S.get_meta("perf").id, perf_keep.id, "the #perf record is untouched by the #auth rival")
+    T.eq(S.get_meta("auth").id, auth_keep.id, "the #auth record with the real conversation won its own heal")
+    local auth_metas = 0
+    for _, c in ipairs(S.all()) do
+      if c.meta and c.meta_tag == "auth" then
+        auth_metas = auth_metas + 1
+      end
+    end
+    T.eq(auth_metas, 1, "exactly one #auth meta record after load")
+  end
+)

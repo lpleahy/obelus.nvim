@@ -80,3 +80,66 @@ T.it("meta_context: the meta record itself is never included, pending or resolve
   T.ok(not md:find(meta.id, 1, true), "the meta thread's own id never appears in its own briefing")
   T.contains(md, "no open threads", "with nothing else, the briefing says so")
 end)
+
+-- meta_context({ tag = ... }): the tag-scoped (tag meta thread) briefing ---------
+
+T.it("meta_context({tag=...}): only that tag's threads appear — a different tag's is absent", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local a = ctx.store.add(T.comment({ comment = "fix the auth check" }))
+  ctx.store.tag_comment(a.id, "auth")
+  local p = ctx.store.add(T.comment({ comment = "speed up the query" }))
+  ctx.store.tag_comment(p.id, "perf")
+
+  local md = F.meta_context({ tag = "auth" })
+  T.contains(md, "fix the auth check", "the #auth thread is present")
+  T.ok(not md:find("speed up the query", 1, true), "the #perf thread is absent from the #auth briefing")
+  T.contains(md, "#auth thread", "the title names the scoped tag")
+end)
+
+T.it("meta_context({tag=...}): an untagged thread is absent too (tag scope, not just 'not this other tag')", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local a = ctx.store.add(T.comment({ comment = "tagged one" }))
+  ctx.store.tag_comment(a.id, "auth")
+  ctx.store.add(T.comment({ comment = "never tagged at all" }))
+
+  local md = F.meta_context({ tag = "auth" })
+  T.contains(md, "tagged one")
+  T.ok(not md:find("never tagged at all", 1, true), "an untagged thread doesn't leak into a tag-scoped briefing")
+end)
+
+T.it("meta_context({tag=..., include_drafts=false}): a trailing unsent draft reply is skipped + noted", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local c = ctx.store.add(T.comment({ comment = "why is this here?" }))
+  ctx.store.tag_comment(c.id, "auth")
+  ctx.store.add_turn(c.id, "agent", "because of the legacy migration")
+  ctx.store.set_pending_you(c.id, "an unsent follow-up draft")
+
+  local md = F.meta_context({ tag = "auth", include_drafts = false })
+  T.contains(md, "because of the legacy migration", "the sent agent turn is still shown in full")
+  T.ok(not md:find("an unsent follow-up draft", 1, true), "the draft's TEXT never appears")
+  T.contains(md, "(has an unsent draft, not shown)", "a one-line note marks the skipped draft")
+end)
+
+T.it("meta_context (include_drafts=true, default): the draft is shown, LABELED as an unsent draft", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local c = ctx.store.add(T.comment({ comment = "why is this here?" }))
+  ctx.store.add_turn(c.id, "agent", "because of the legacy migration")
+  ctx.store.set_pending_you(c.id, "an unsent follow-up draft")
+
+  local md = F.meta_context() -- the GLOBAL thread's briefing: today's behavior + the new label
+  T.contains(md, "an unsent follow-up draft", "the draft's text is still included (unchanged behavior)")
+  T.contains(md, "You (draft, unsent):", "but now explicitly labeled as an unsent draft")
+end)
+
+T.it("thread_full: a brand-new (never-sent) comment is never treated as a draft to skip/label", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local c = ctx.store.add(T.comment({ comment = "first thought" }))
+  local out = F.thread_full(c, { include_drafts = false })
+  T.contains(out, "first thought", "the initial comment shows via comment_md regardless of include_drafts")
+  T.ok(not out:find("not shown", 1, true), "no 'skipped draft' note for the very first turn")
+end)

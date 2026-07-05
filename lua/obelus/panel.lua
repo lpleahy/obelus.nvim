@@ -272,7 +272,7 @@ end
 -- project root) — a fixed title instead.
 local function float_title(c)
   if c and c.meta then
-    return " ◆ project thread "
+    return c.meta_tag and (" ◆ #" .. c.meta_tag .. " thread ") or " ◆ project thread "
   end
   return c and (" ◆ " .. format.relpath(c.file) .. "  " .. format.range_label(c) .. " ") or " ◆ obelus review "
 end
@@ -426,6 +426,20 @@ local function real_comments()
   end, store.all())
 end
 
+-- The tag the sidebar's pinned "#<tag> thread" row (below) is for, or nil (no
+-- row): the sticky active tag if tagging mode is on, else the most recently open
+-- batch's tag (so the row still surfaces mid-batch even after tagging mode is
+-- switched back off). Only ONE row ever shows — for THIS tag, never one per tag
+-- in use (store.tags()) — matching the design: "for whatever batch we're working
+-- on for a tag", not a directory of every tag that's ever existed.
+local function engaged_tag()
+  if store.active_tag then
+    return store.active_tag
+  end
+  local b = store.open_batch()
+  return b and b.tag or nil
+end
+
 local function build_list()
   local lines, map, decos = {}, {}, {}
   local function push(text, id, deco)
@@ -467,6 +481,21 @@ local function build_list()
     if meta then
       local text = "  ◆  project thread"
       push(text, meta.id, { segs = { { 0, #text, "ObelusChrome" } } })
+    end
+    -- the ACTIVE tag's meta/batch thread — pinned right under the global row, but
+    -- ONLY while a tag is actually engaged (see engaged_tag). Unlike the global
+    -- row above, this shows up EAGERLY (before the record necessarily exists —
+    -- get_meta(tag), no create) since the row itself is a deliberate entry point
+    -- into it (mirrors obelus.tag_thread()); <CR> (see `nav` below) get-or-creates.
+    -- The row's `id` is the real comment id once it exists, else a sentinel table
+    -- `nav` recognizes — never store.get_meta's create path just for a render.
+    local tag = engaged_tag()
+    if tag then
+      local tm = store.get_meta(tag)
+      local text = "  ◆  #" .. tag .. " thread"
+      push(text, tm and tm.id or { tag_meta = tag }, { segs = { { 0, #text, "ObelusChrome" } } })
+    end
+    if meta or tag then
       push("")
     end
   end
@@ -629,7 +658,11 @@ local function build_chat(id, opts)
   -- the float shows file+range in its border title; only the split needs the header line
   if not is_float then
     if c.meta then
-      push(string.format(" ◆ project thread  [%s]", status_of(c)))
+      if c.meta_tag then
+        push(string.format(" ◆ #%s thread  [%s]", c.meta_tag, status_of(c)))
+      else
+        push(string.format(" ◆ project thread  [%s]", status_of(c)))
+      end
     else
       push(string.format(" ◆ %s  %s  [%s]", format.relpath(c.file), format.range_label(c), status_of(c)))
     end
@@ -1522,6 +1555,8 @@ local function input_submit(action)
     require("obelus").chat_save(id, text)
   elseif action == "send_fast" then
     require("obelus").chat_send(id, text, "fast")
+  elseif action == "send_all" then
+    require("obelus").submit_all(id, text) -- SUBMIT-ALL (tag meta only; plain send elsewhere)
   else
     require("obelus").chat_send(id, text, "send")
   end
@@ -1613,6 +1648,9 @@ local function open_input()
   --                      the wincmd-h direction order)
   --   send       <CR>
   --   send_fast  <M-CR> — send with the configured FAST model
+  --   send_all   <M-s>  — SUBMIT-ALL (tag meta threads only): commits every member
+  --                      draft into a batch round carrying this text as the round
+  --                      instruction (obelus.submit_all); plain send elsewhere
   --   save       <C-s>
   --   paste_image <C-y> — grab a clipboard image into .ai/img and @-mention it
   --   cycle      <Tab>   — from insert too, so "type, then Tab" hops to the history
@@ -1638,6 +1676,12 @@ local function open_input()
   end)
   bind_chat(o, { "n", "i" }, "send_fast", "<M-CR>", function()
     input_submit("send_fast")
+  end)
+  -- SUBMIT-ALL (tag meta threads only — see obelus.submit_all): commits every
+  -- member draft into a batch round carrying this text as the round instruction.
+  -- Plain send in the global meta / an ordinary thread (submit_all's own fallback).
+  bind_chat(o, { "n", "i" }, "send_all", "<M-s>", function()
+    input_submit("send_all")
   end)
   bind_chat(o, { "n", "i" }, "save", "<C-s>", function()
     input_submit("save")
@@ -1792,22 +1836,34 @@ end
 -- Jump to the file buffer holding a thread (inline mode: the list is a navigator).
 -- The project (meta) thread has no source location — its "file" is the project
 -- root, a directory — so there's nothing to `:edit`; no-op with a notice instead.
+-- "the project thread" / "the #<tag> thread" — shared by jump_to/jump's no-
+-- source-location notice below.
+local function meta_label(c)
+  return c.meta_tag and ("the #" .. c.meta_tag .. " thread") or "the project thread"
+end
+
 function M.jump_to(id)
   local c = store.get(id)
   if not c then
     return
   end
   if c.meta then
-    return vim.notify("obelus: the project thread has no source location", vim.log.levels.INFO)
+    return vim.notify("obelus: " .. meta_label(c) .. " has no source location", vim.log.levels.INFO)
   end
   nav_util.goto_source(c, { avoid = state.win })
 end
 
--- The project thread has no source location to root a floating popup at (see
+-- The project/tag thread has no source location to root a floating popup at (see
 -- open_thread) or jump to — it always opens as a normal thread chat, regardless of
 -- the active engagement modality (which only decides "popup vs sidebar" for
--- threads that actually HAVE a file/range to root against).
+-- threads that actually HAVE a file/range to root against). A sidebar row for a
+-- tag thread that doesn't have a record YET (see build_list's pinned row) maps to
+-- a `{ tag_meta = <tag> }` sentinel instead of a real id — get-or-create it here,
+-- the row's whole point being a reachable entry point into that thread.
 local function nav(id)
+  if type(id) == "table" and id.tag_meta then
+    return M.open_thread(store.tag_meta_thread(id.tag_meta).id)
+  end
   local c = store.get(id)
   if c and c.meta then
     return M.open_thread(id)
@@ -1825,7 +1881,7 @@ function M.jump()
     return
   end
   if c.meta then
-    return vim.notify("obelus: the project thread has no source location", vim.log.levels.INFO)
+    return vim.notify("obelus: " .. meta_label(c) .. " has no source location", vim.log.levels.INFO)
   end
   local float = state.is_float
   nav_util.goto_source(c, { avoid = state.win, warn_orphan = true })
