@@ -1120,6 +1120,40 @@ local function fit_one_table(block, budget)
   return out
 end
 
+-- markview-mode ONLY: pad the INTERIOR lines of fenced code blocks with trailing
+-- spaces up to `target` display cells — markview's MarkviewCode highlight spans
+-- the raw line, so padding the RAW text gives every code row one uniform,
+-- full-chat-width recessed box. markview's own `min_width` knob would be the
+-- obvious lever, but the installed version ignores it in render_block (verified
+-- empirically: min_width=60 in the effective config, pads unchanged) — padding
+-- the rendered COPY (same precedent as pad_table_edges/fit_table_cells; the
+-- stored text is never touched) is deterministic on any markview version.
+-- Fence marker lines are left alone (labels/conceal own them); already-long
+-- lines are left alone (never truncate here). REVERT: delete this fn + call.
+local function pad_code_blocks(lines, target)
+  if target <= 0 then
+    return lines
+  end
+  local out = {}
+  local fence = nil
+  for _, raw in ipairs(lines) do
+    local bt = raw:match("^%s*(`+)")
+    if bt and #bt >= 3 and not fence then
+      fence = #bt
+      out[#out + 1] = raw
+    elseif fence and bt and #bt >= fence and raw:match("^%s*`+%s*$") then
+      fence = nil
+      out[#out + 1] = raw
+    elseif fence then
+      local w = vim.fn.strdisplaywidth(raw)
+      out[#out + 1] = w < target and (raw .. string.rep(" ", target - w)) or raw
+    else
+      out[#out + 1] = raw
+    end
+  end
+  return out
+end
+
 -- markview-mode ONLY (md == false, called from body_rows right after
 -- pad_table_edges): fixes a table row that would otherwise physically WRAP when
 -- displayed. markview's wrap-bracketed render (panel.lua's mv_render_scoped) only
@@ -1365,6 +1399,10 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
     -- fit_table_cells above. The per-block ncol-aware markview margin
     -- (mv_table_margin) is subtracted inside; pass the plain available width.
     lines = fit_table_cells(lines, inner)
+    -- and give fenced code lines a uniform full-width recessed box — see
+    -- pad_code_blocks above. -6 leaves room for markview's own lead/trail pads
+    -- so a padded line can never physically wrap.
+    lines = pad_code_blocks(lines, inner - 6)
   end
   local li, ln = 1, #lines
   while li <= ln do

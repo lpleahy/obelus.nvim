@@ -236,7 +236,13 @@ T.it("pad_table_edges: a piped 'table' inside a 4-backtick fence is not padded",
   local c = ctx.store.add(T.comment({ comment = text }))
   local rows = require("obelus.thread").build(ctx.store.get(c.id), 70, { markdown = false, rules = true })
   local want = vim.split(text, "\n", { plain = true })
-  T.eq(body_texts(rows), want, "fenced content passed through verbatim, no padding inserted")
+  -- fenced lines legitimately gain RIGHT-padding now (pad_code_blocks: the
+  -- uniform full-width code box) — strip it; the CONTENT must be unrewritten
+  local got = {}
+  for i, l in ipairs(body_texts(rows)) do
+    got[i] = (l:gsub("%s+$", ""))
+  end
+  T.eq(got, want, "fenced content unrewritten (modulo the code-box right padding)")
 end)
 
 T.it("pad_table_edges: markdown=true path is untouched (no padding)", function()
@@ -662,7 +668,11 @@ T.it("fit_table_cells: a piped 'table' inside a fence is never rewritten, even a
   local text = "text\n````\n| " .. string.rep("y", 100) .. " | b |\n| --- | --- |\n````\nmore"
   local c = ctx.store.add(T.comment({ comment = text }))
   local rows = require("obelus.thread").build(ctx.store.get(c.id), width, { markdown = false, rules = true })
-  T.eq(body_texts(rows), vim.split(text, "\n", { plain = true }), "fenced content passed through verbatim")
+  local got = {}
+  for i, l in ipairs(body_texts(rows)) do
+    got[i] = (l:gsub("%s+$", "")) -- pad_code_blocks right-pads fenced lines; content itself untouched
+  end
+  T.eq(got, vim.split(text, "\n", { plain = true }), "fenced content unrewritten (modulo right padding)")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -802,4 +812,19 @@ T.it("fit_one_table: a bare pipe from an unescaped \\| is re-escaped; code-span 
   T.ok(header_line ~= nil, "the rebuilt header row was emitted")
   T.contains(header_line, "a\\|b", "the bare pipe is re-escaped so markview reparses 3 columns")
   T.contains(header_line, "`c|d`", "the code-span pipe stays unescaped (GFM: literal inside backticks)")
+end)
+
+T.it("pad_code_blocks: fence interiors pad to a uniform width; markers and prose don't", function()
+  local ctx = T.fresh()
+  local text = "prose line\n```lua\nshort\nlonger line here\n```\nafter"
+  local c = ctx.store.add(T.comment({ comment = text }))
+  local rows = require("obelus.thread").build(ctx.store.get(c.id), 40, { markdown = false, rules = true })
+  local target = math.max(12, 40 - 3) - 6 -- inner - 6, as body_rows passes it
+  for _, l in ipairs(body_texts(rows)) do
+    if l:find("short", 1, true) or l:find("longer line", 1, true) then
+      T.eq(vim.fn.strdisplaywidth(l), target, "interior line padded to the uniform box width: " .. l)
+    elseif l:find("```", 1, true) or l:find("prose", 1, true) or l == "after" then
+      T.ok(not l:match("%s%s+$"), "markers/prose stay unpadded: " .. vim.inspect(l))
+    end
+  end
 end)
