@@ -305,6 +305,15 @@ function M.paste_image(opts)
     insert_col = (bi >= 0) and bi or #line
   end
   local text = "@" .. M._escape(relpath) .. " "
+  -- boundary guard: an @ glued to a word ("see@x.png") is a MID-WORD token the
+  -- validator rightly rejects (renders white, not orange) — prefix a space when
+  -- the char before the insertion point isn't already a boundary
+  if insert_col > 0 then
+    local prev = line:sub(insert_col, insert_col)
+    if prev ~= "" and not prev:match("%s") and prev ~= "(" then
+      text = " " .. text
+    end
+  end
   vim.api.nvim_buf_set_text(buf, row0, insert_col, row0, insert_col, { text })
   local new_col = insert_col + #text
   if was_insert then
@@ -1086,6 +1095,16 @@ local function convert_pasted_image_paths(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i, line in ipairs(lines) do
     if line:find("[~/]") and line:find("%.%w") then
+      -- some tools paste a file:// URL: strip the scheme + percent-decode so
+      -- the plain-path detector below sees a real filesystem path
+      if line:find("file://", 1, true) then
+        line = line:gsub("file://([^%s]+)", function(enc)
+          return (enc:gsub("%%(%x%x)", function(h)
+            return string.char(tonumber(h, 16))
+          end))
+        end)
+        pcall(vim.api.nvim_buf_set_lines, buf, i - 1, i, false, { line })
+      end
       local changed = false
       local search_from = 1
       while true do
@@ -1108,7 +1127,10 @@ local function convert_pasted_image_paths(buf)
                 local root = require("obelus.store").root()
                 local dir = root .. "/.ai/img"
                 vim.fn.mkdir(dir, "p")
-                local base = vim.fn.fnamemodify(abs, ":t")
+                -- sanitize: CleanShot-style names carry spaces and "@2x" — an
+                -- "@" inside a mention token CUTS it (PATH_CHAR excludes @) and
+                -- spaces need escaping; normalize both away on import
+                local base = vim.fn.fnamemodify(abs, ":t"):gsub("[%s@]+", "-"):gsub("%-+", "-")
                 local dest, name = dir .. "/" .. base, base
                 local uv = vim.uv or vim.loop
                 local n = 1

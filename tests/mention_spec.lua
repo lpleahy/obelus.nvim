@@ -355,7 +355,10 @@ T.it("paste_image: from Normal mode, inserts after the cursor and does NOT resum
   cb()
 
   local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
-  T.ok(line:match("^x@%d+%-%d+%-%d+%.png $") ~= nil, "inserted right AFTER the cursor char: " .. line)
+  T.ok(
+    line:match("^x @%d+%-%d+%-%d+%.png $") ~= nil,
+    "inserted AFTER the cursor char WITH a boundary space (a glued @ is a mid-word token): " .. line
+  )
   T.eq(vim.fn.mode(), "n", "stayed in Normal mode (no startinsert from a Normal-mode paste)")
 
   mention._grab_clipboard_image = real_grab
@@ -475,7 +478,7 @@ T.it("paste_image in Normal mode on a multibyte char inserts AFTER the character
   local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
   T.ok(line:find("^café@", 1, false) ~= nil or line:sub(1, 5) == "café", "the é survived intact: " .. line)
   T.ok(vim.fn.strdisplaywidth(line) > 0 and not line:find("\239\191\189", 1, true), "no replacement chars")
-  T.contains(line, "café@", "mention landed after the whole character")
+  T.contains(line, "café @", "mention landed after the whole character, boundary-spaced")
   mention._grab_clipboard_image = real_grab
 end)
 
@@ -525,4 +528,23 @@ T.it("pasting an absolute image PATH as text (Cmd+V via CleanShot/Clop) converts
   local name = line:match("@(%S+%.png)")
   T.ok(vim.fn.filereadable(ctx.root .. "/.ai/img/" .. name) == 1, "the image was imported under .ai/img")
   vim.fn.delete(src)
+end)
+
+T.it("path-paste: CleanShot-style names (spaces, @2x) sanitize into valid mention tokens", function()
+  local ctx = T.fresh()
+  local win, buf = open_input(ctx)
+  local src_dir = ctx.root .. "-shots"
+  vim.fn.mkdir(src_dir, "p")
+  local src = src_dir .. "/CleanShot 2026-07-05 at 10.13.11@2x.jpg"
+  vim.fn.writefile({ "jpgbytes" }, src)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { src })
+  vim.api.nvim_set_current_win(win)
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1]
+  T.ok(not line:find(" at ", 1, true), "spaces sanitized out of the imported name: " .. line)
+  mention._scan_invalidate()
+  local ms = mention._scan(line)
+  T.eq(#ms, 1, "the converted mention validates: " .. line)
+  T.ok(ms[1][3]:find("2x%.jpg$") ~= nil and not ms[1][3]:find("@"), "no @ inside the token")
+  vim.fn.delete(src_dir, "rf")
 end)
