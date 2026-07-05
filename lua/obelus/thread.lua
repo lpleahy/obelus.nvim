@@ -286,7 +286,11 @@ function M.markview_harmonize()
     code_bg = color("ObelusReplyBg", "bg") or recessed
   end
   local inline_bg = not transparent and blend(sink, base, 0.16) or nil
-  local box_bg = not transparent and blend(sink, base, 0.08) or nil
+  -- heading strips / palette bands: SEAMLESS like the code boxes — the agent
+  -- bubble's own bg (identical by construction), not a neutral-base blend that
+  -- lands off-hue on bg-less themes. Headings stay distinct via their palette
+  -- fgs + icons; the strip itself melts into the bubble.
+  local box_bg = not transparent and (color("ObelusReplyBg", "bg") or blend(sink, base, 0.08)) or nil
   local function set(name, opts)
     vim.api.nvim_set_hl(0, name, opts)
   end

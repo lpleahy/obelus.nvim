@@ -511,3 +511,16 @@ T.it("colors.code: default melts the code box into the agent bubble; true recess
   th.markview_harmonize()
   T.eq(vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false }).bg, 0x123456, "explicit wins")
 end)
+
+T.it("heading strips melt into the agent bubble too (same seamless default as code boxes)", function()
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
+  T.fresh()
+  local th = require("obelus.thread")
+  th.setup_highlights()
+  th.markview_harmonize()
+  local bubble = vim.api.nvim_get_hl(0, { name = "ObelusReplyBg", link = false }).bg
+  for i = 1, 6 do
+    local hl = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewHeading" .. i, link = false })
+    T.eq(hl.bg, bubble, "heading " .. i .. " strip == bubble bg")
+  end
+end)
