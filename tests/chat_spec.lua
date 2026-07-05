@@ -489,3 +489,25 @@ T.it("a bg-less colorscheme does NOT strip the code boxes when transparent = fal
   T.is_nil(hl2.bg, "transparent = true is the only thing that strips it")
   vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
 end)
+
+T.it("colors.code: default melts the code box into the agent bubble; true recesses; number verbatim", function()
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
+  T.fresh()
+  local th = require("obelus.thread")
+  th.setup_highlights()
+  th.markview_harmonize()
+  local bubble = vim.api.nvim_get_hl(0, { name = "ObelusReplyBg", link = false }).bg
+  local codebg = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false }).bg
+  T.eq(codebg, bubble, "seamless: code bg == the agent bubble bg")
+
+  T.fresh({ render = { colors = { code = true } } })
+  th.setup_highlights()
+  th.markview_harmonize()
+  local recessed = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false }).bg
+  T.ok(recessed ~= nil and recessed ~= bubble, "true = the distinct recessed box")
+
+  T.fresh({ render = { colors = { code = 0x123456 } } })
+  th.setup_highlights()
+  th.markview_harmonize()
+  T.eq(vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false }).bg, 0x123456, "explicit wins")
+end)

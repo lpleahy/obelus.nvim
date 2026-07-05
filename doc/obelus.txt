@@ -220,6 +220,12 @@ render.colors                                    *obelus-config-render.colors*
                                          none); kept subtle.
       rule         (0.75)              — divider brightness: blend toward
                                          the turn color (0..1, 1 = full).
+      code         (nil)               — markview code-BLOCK background: nil
+                                         = seamless (exactly the agent
+                                         bubble's bg — the block melts into
+                                         the bubble); true = a recessed box
+                                         blended toward black/white; an hl
+                                         group name or 0xRRGGBB explicit.
       inline_code  (nil)               — markview inline `code` background
                                          inside the bubble: nil = none (fg
                                          only, no dark box); true = a subtle

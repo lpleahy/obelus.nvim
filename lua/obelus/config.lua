@@ -104,6 +104,11 @@ M.defaults = {
       mention = nil,
       tint = 0.08, -- background blend strength (0 = none); kept subtle
       rule = 0.75, -- divider brightness: blend toward the turn colour (0..1, 1 = full)
+      -- markview code-BLOCK background inside the bubble:
+      --   nil   — seamless: exactly the agent bubble's bg (the block melts into the bubble)
+      --   true  — a recessed box blended toward black/white (the old distinct look)
+      --   <hl>/<0xRRGGBB> — an explicit background
+      code = nil,
       -- markview inline `code` background inside the bubble:
       --   nil   — none: inline code inherits the bubble tint (no dark box), just a distinct fg
       --   true  — a subtle recessed box blended from the editor bg (the old look)

@@ -264,7 +264,27 @@ function M.markview_harmonize()
   -- code box reads as "set into" the bubble (like most editors render fenced code),
   -- not a lighter patch. Blended from the neutral bg so it sits on either bubble.
   local sink = (r + g + b) < 384 and 0x000000 or 0xffffff
-  local code_bg = not transparent and blend(sink, base, 0.22) or nil
+  -- code-block bg (render.colors.code):
+  --   nil (default) — SEAMLESS: exactly the agent bubble's bg (code lives in
+  --                   agent turns; the label already matches it), so the block
+  --                   melts into the bubble instead of sitting as a darker,
+  --                   off-hue rectangle (visible on bg-less themes especially)
+  --   true          — the old recessed box, blended toward black/white
+  --   <hl>/<0xRRGGBB> — an explicit background
+  local recessed = blend(sink, base, 0.22)
+  local ccode = ((require("obelus.config").options.render or {}).colors or {}).code
+  local code_bg
+  if transparent then
+    code_bg = nil
+  elseif ccode == true then
+    code_bg = recessed
+  elseif type(ccode) == "number" then
+    code_bg = ccode
+  elseif type(ccode) == "string" then
+    code_bg = color(ccode, "bg")
+  else
+    code_bg = color("ObelusReplyBg", "bg") or recessed
+  end
   local inline_bg = not transparent and blend(sink, base, 0.16) or nil
   local box_bg = not transparent and blend(sink, base, 0.08) or nil
   local function set(name, opts)
