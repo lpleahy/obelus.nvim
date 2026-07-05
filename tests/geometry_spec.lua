@@ -596,3 +596,47 @@ T.it("keys.chat.maximize: the popup toggles to near-full-editor and back to the 
   )
   panel.close()
 end)
+
+T.it("hover maximize: Z binds on the source buffer only while previewing; toggles the overlay", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  require("obelus.panel")._timing.preview_settle = 0
+  local file = ctx.root .. "/pm.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local cbuf = vim.api.nvim_get_current_buf()
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  ctx.store.add_turn(c.id, "agent", "hello there")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.preview(c.id)
+  vim.wait(200)
+  local pwin
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(w).relative ~= "" then
+      pwin = w
+    end
+  end
+  T.ok(pwin, "preview visible")
+  local function z_map()
+    for _, km in ipairs(vim.api.nvim_buf_get_keymap(cbuf, "n")) do
+      if km.lhs == "Z" then
+        return km
+      end
+    end
+  end
+  T.ok(z_map(), "Z bound buffer-locally while the preview shows")
+  panel.toggle_preview_maximize()
+  T.eq(vim.api.nvim_win_get_config(pwin).relative, "editor", "maximized overlay")
+  T.eq(vim.api.nvim_win_get_width(pwin), math.max(40, vim.o.columns - 4), "near-full width")
+  panel.toggle_preview_maximize()
+  T.ok(
+    T.wait_for(function()
+      return vim.api.nvim_win_get_config(pwin).relative == "win"
+    end),
+    "back to the rooted hover geometry"
+  )
+  panel.hide_preview()
+  T.is_nil(z_map(), "Z unbound the moment the hover hides — ZZ elsewhere untouched")
+end)

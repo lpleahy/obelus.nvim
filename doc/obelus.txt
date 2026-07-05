@@ -425,6 +425,8 @@ keys.chat                                            *obelus-config-keys.chat*
     close_esc      `<Esc>`     Same as `close`, via Escape
     wrap           `W`         Toggle wrap in the CHAT window (see |obelus-keymaps|)
     maximize       `Z`         Toggle the chat popup full-screen and back
+                               (also works while HOVERING: bound on the source
+                               buffer only while its preview is showing)
 
     Example: >lua
         keys = { chat = { close = "x", wrap = false } }

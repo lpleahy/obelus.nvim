@@ -2192,8 +2192,71 @@ local function stop_preview_settle_timer()
   end
 end
 
+-- Maximized-preview wcfg: the same near-full overlay as the chat's maximize,
+-- but focusable=false stays (the hover is read-only; <A-d>/<A-u> scroll it).
+local function preview_max_wcfg(title)
+  local W = math.max(40, vim.o.columns - 4)
+  local H = math.max(6, vim.o.lines - vim.o.cmdheight - 6)
+  return {
+    relative = "editor",
+    row = 1,
+    col = math.max(0, math.floor((vim.o.columns - W) / 2)),
+    width = W,
+    height = H,
+    style = "minimal",
+    border = "rounded",
+    title = title,
+    title_pos = "center",
+    focusable = false,
+    zindex = 40,
+  }
+end
+
+-- keys.chat.maximize while HOVERING: the preview is unfocusable and the cursor
+-- sits in the CODE window, so the toggle binds buffer-locally on the SOURCE
+-- buffer only while its preview is showing — unbound the moment the hover hides
+-- (ZZ/ZQ shadowed only during a hover, nowhere else).
+local function unbind_preview_maximize()
+  local m = state.preview_max_map
+  state.preview_max_map = nil
+  if m and vim.api.nvim_buf_is_valid(m.buf) then
+    pcall(vim.keymap.del, "n", m.lhs, { buffer = m.buf })
+  end
+end
+
+local function bind_preview_maximize(srcbuf)
+  local lhs = require("obelus.config").chat_key("maximize", "Z")
+  if not lhs then
+    return
+  end
+  if state.preview_max_map and state.preview_max_map.buf == srcbuf then
+    return -- already bound for this buffer
+  end
+  unbind_preview_maximize()
+  vim.keymap.set("n", lhs, function()
+    M.toggle_preview_maximize()
+  end, { buffer = srcbuf, silent = true, nowait = true })
+  state.preview_max_map = { buf = srcbuf, lhs = lhs }
+end
+
+function M.toggle_preview_maximize()
+  if not (state.preview_win and vim.api.nvim_win_is_valid(state.preview_win)) then
+    return
+  end
+  state.preview_maximized = not state.preview_maximized or nil
+  if state.preview_maximized then
+    local title = float_title(store.get(state.preview_thread))
+    pcall(vim.api.nvim_win_set_config, state.preview_win, preview_max_wcfg(title))
+    pcall(vim.cmd, "redraw")
+  else
+    M.refresh_preview(true) -- re-fit back to the rooted geometry
+  end
+end
+
 function M.hide_preview()
   stop_preview_settle_timer()
+  unbind_preview_maximize()
+  state.preview_maximized = nil
   if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
     pcall(vim.api.nvim_win_close, state.preview_win, true)
   end
@@ -2351,6 +2414,11 @@ local function fill_preview(force)
     local base_h = (okth and th and th.all) or vim.api.nvim_buf_line_count(state.preview_buf)
     base_h = math.max(1, math.min(base_h, math.max(3, math.floor(vim.o.lines * 0.8))))
     local title = float_title(store.get(state.preview_thread))
+    if state.preview_maximized then
+      pcall(vim.api.nvim_win_set_config, w, preview_max_wcfg(title))
+      seat_bottom(w, state.preview_buf, {})
+      return
+    end
     local wcfg, pside = rooted_wincfg(state.preview_root, preview_base_width(), base_h, title, 1, preview_side())
     remember_preview_side(pside)
     wcfg.focusable = false
@@ -2430,6 +2498,10 @@ function M.preview(id)
   remember_preview_side(oside)
   wcfg.focusable = false -- read-only preview: window-nav skips it, cursor stays in code
   wcfg.zindex = 40 -- below the modal input (60); above normal content
+  bind_preview_maximize(cbuf)
+  if state.preview_maximized then
+    wcfg = preview_max_wcfg(float_title(c))
+  end
   if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
     pcall(vim.api.nvim_win_set_config, state.preview_win, wcfg)
   else
