@@ -248,13 +248,16 @@ function M.markview_harmonize()
   -- bubble bg) with a SMALL lift, so a box sits subtly on EITHER the you or the agent
   -- bubble without a visible edge or a clashing hue (the bubbles alternate colour but
   -- the per-window markview remap can only be one colour).
-  -- In a TRANSPARENT theme/terminal an explicit bg becomes an opaque rectangle (e.g. Ghostty's
-  -- background-opacity-cells), so a blended code/inline/icon bg reads as a black box over the
-  -- see-through buffer. When the editor bg is transparent (Normal bg unset, or obelus transparent
-  -- mode) leave these backgrounds UNSET — the per-turn bubble tint (line_hl) shows through the
-  -- code/inline/icon spans instead of a box. Opaque themes keep the subtle recessed boxes.
+  -- render.transparent is the ONE switch for dropping these backgrounds (an
+  -- explicit bg on a truly transparent terminal reads as an opaque rectangle —
+  -- set transparent = true there). A theme leaving Normal's bg unset does NOT
+  -- imply that anymore: the old `or nbg == nil` auto-detect silently stripped
+  -- the code boxes for users whose COLORSCHEME is bg-less but whose obelus
+  -- config says transparent = false — the bubbles honored the flag while the
+  -- code boxes vanished ("the background gets removed"). One flag, everywhere;
+  -- the blend base falls back to NormalFloat / a fixed dark when Normal has none.
   local nbg = color("Normal", "bg")
-  local transparent = (require("obelus.config").options.render or {}).transparent == true or nbg == nil
+  local transparent = (require("obelus.config").options.render or {}).transparent == true
   local base = nbg or color("NormalFloat", "bg") or 0x1e1e2e
   local r, g, b = channels(base)
   -- RECESS code: darken on dark themes (toward black), lighten on light themes — so a

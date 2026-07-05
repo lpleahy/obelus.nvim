@@ -473,3 +473,19 @@ T.it("chat windows always remap Visual to ObelusVisual", function()
   T.contains(vim.wo[panel.geom().win].winhighlight, "Visual:ObelusVisual")
   panel.close()
 end)
+
+T.it("a bg-less colorscheme does NOT strip the code boxes when transparent = false", function()
+  -- the old auto-detect (`Normal bg unset => transparent`) silently removed the
+  -- recessed code-block backgrounds for bg-less themes even with transparent=false
+  vim.api.nvim_set_hl(0, "Normal", { fg = 0xcdd6f4 }) -- no bg, like a transparent theme
+  T.fresh({ render = { transparent = false } })
+  require("obelus.thread").markview_harmonize()
+  local hl = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false })
+  T.ok(hl.bg ~= nil, "the code box keeps its recessed bg (blend base falls back)")
+  -- and the ONE switch still works: transparent = true drops it
+  T.fresh({ render = { transparent = true } })
+  require("obelus.thread").markview_harmonize()
+  local hl2 = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewCode", link = false })
+  T.is_nil(hl2.bg, "transparent = true is the only thing that strips it")
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
+end)

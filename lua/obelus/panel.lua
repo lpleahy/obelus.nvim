@@ -91,11 +91,13 @@ local function mv_render_cfg()
   base.markdown = base.markdown or {}
   base.markdown.tables = base.markdown.tables or {}
   base.markdown.tables.use_virt_lines = false
-  -- Transparent theme/mode: the code-block language label ("Lua") is a right-aligned virt_text
-  -- that doesn't pick up the line's bubble tint, so with no bg it reads as a see-through hole.
-  -- Point its hl at obelus's own Obelus_MarkviewCodeLabel (given the bubble bg in markview_harmonize)
-  -- so it blends. Opaque themes keep markview's language-coloured label (label_hl stays nil).
-  if normal_bg == nil or is_transparent then
+  -- Transparent MODE (render.transparent — the one switch; no Normal-bg sniffing,
+  -- see markview_harmonize): the code-block language label ("Lua") is a
+  -- right-aligned virt_text that doesn't pick up the line's bubble tint, so with
+  -- no bg it reads as a see-through hole. Point its hl at obelus's own
+  -- Obelus_MarkviewCodeLabel (given the bubble bg in markview_harmonize) so it
+  -- blends. Opaque mode keeps markview's language-coloured label (label_hl nil).
+  if is_transparent then
     base.markdown.code_blocks = base.markdown.code_blocks or {}
     base.markdown.code_blocks.label_hl = "Obelus_MarkviewCodeLabel"
   end
