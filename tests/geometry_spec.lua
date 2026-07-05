@@ -640,3 +640,40 @@ T.it("hover maximize: Z binds on the source buffer only while previewing; toggle
   panel.hide_preview()
   T.is_nil(z_map(), "Z unbound the moment the hover hides — ZZ elsewhere untouched")
 end)
+
+T.it("maximized hover is a focusable read-only pager: cursor moves in it; leaving restores", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  require("obelus.panel")._timing.preview_settle = 0
+  local file = ctx.root .. "/pf.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  vim.cmd("edit " .. file)
+  local fabs = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  local srcwin = vim.api.nvim_get_current_win()
+  local c = ctx.store.add(T.comment({ file = fabs, range = { sl = 1, el = 1 } }))
+  ctx.store.add_turn(c.id, "agent", "line one\nline two\nline three\nline four")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  local panel = require("obelus.panel")
+  panel.preview(c.id)
+  vim.wait(200)
+  panel.toggle_preview_maximize()
+  local pwin = vim.api.nvim_get_current_win()
+  T.ok(vim.api.nvim_win_get_config(pwin).relative == "editor", "focus moved INTO the maximized overlay")
+  T.ok(vim.api.nvim_win_get_config(pwin).focusable ~= false, "focusable while browsing")
+  -- native motions: move the cursor up two lines; the hover lifecycle must NOT hide it
+  vim.api.nvim_win_set_cursor(pwin, { 1, 0 })
+  require("obelus.render").on_cursor() -- the CursorMoved handler, fired manually
+  T.ok(vim.api.nvim_win_is_valid(pwin), "browsing inside does not hide the preview")
+  -- toggle back: focus returns to the code, geometry re-roots
+  panel.toggle_preview_maximize()
+  vim.wait(200)
+  T.eq(vim.api.nvim_get_current_win(), srcwin, "focus returned to the source window")
+  T.ok(
+    T.wait_for(function()
+      local cfg = vim.api.nvim_win_get_config(pwin)
+      return cfg.relative == "win" and cfg.focusable == false
+    end),
+    "rooted, unfocusable hover restored"
+  )
+  panel.hide_preview()
+end)

@@ -626,6 +626,12 @@ end
 function M.on_cursor()
   local bufnr = vim.api.nvim_get_current_buf()
   local pok, panel = pcall(require, "obelus.panel")
+  -- the user is BROWSING the maximized hover (it holds the real cursor): every
+  -- CursorMoved/WinEnter in there would otherwise read as "cursor left the
+  -- covered comment" and hide the very window they're reading
+  if pok and panel.preview_focused and panel.preview_focused() then
+    return
+  end
   -- Cheap guard: this runs on EVERY CursorMoved in EVERY buffer, and the scan below is
   -- O(comments) with a per-comment extmark lookup (comment_row). With no comments
   -- anywhere `cover` can only ever end up nil (store.by_file(file) would find nothing

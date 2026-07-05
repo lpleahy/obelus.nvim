@@ -426,7 +426,10 @@ keys.chat                                            *obelus-config-keys.chat*
     wrap           `W`         Toggle wrap in the CHAT window (see |obelus-keymaps|)
     maximize       `Z`         Toggle the chat popup full-screen and back
                                (also works while HOVERING: bound on the source
-                               buffer only while its preview is showing)
+                               buffer only while its preview is showing — the
+                               maximized hover takes the cursor: browse it with
+                               all native motions, select/yank; `Z`/`q`/`<Esc>`
+                               or leaving the window restores the hover)
 
     Example: >lua
         keys = { chat = { close = "x", wrap = false } }

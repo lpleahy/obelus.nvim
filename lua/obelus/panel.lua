@@ -2239,17 +2239,64 @@ local function bind_preview_maximize(srcbuf)
   state.preview_max_map = { buf = srcbuf, lhs = lhs }
 end
 
+-- Is the user BROWSING the maximized preview (it holds the real cursor)?
+-- render.on_cursor consults this: cursor/win events inside the preview must not
+-- trip the hover's own hide-on-leave lifecycle.
+function M.preview_focused()
+  return state.preview_maximized ~= nil
+    and state.preview_win ~= nil
+    and vim.api.nvim_win_is_valid(state.preview_win)
+    and vim.api.nvim_get_current_win() == state.preview_win
+end
+
 function M.toggle_preview_maximize()
   if not (state.preview_win and vim.api.nvim_win_is_valid(state.preview_win)) then
     return
   end
   state.preview_maximized = not state.preview_maximized or nil
   if state.preview_maximized then
+    -- FOCUSED read-only browse mode: the overlay takes the real cursor, so all
+    -- native motions (j/k/h/l, search, visual select, y) just work. Z/q/<Esc>
+    -- inside it (or leaving the window any other way) restores the rooted hover.
     local title = float_title(store.get(state.preview_thread))
-    pcall(vim.api.nvim_win_set_config, state.preview_win, preview_max_wcfg(title))
+    local wcfg = preview_max_wcfg(title)
+    wcfg.focusable = true
+    state.preview_return_win = vim.api.nvim_get_current_win()
+    pcall(vim.api.nvim_win_set_config, state.preview_win, wcfg)
+    pcall(vim.api.nvim_set_current_win, state.preview_win)
+    local pbuf = state.preview_buf
+    if pbuf and vim.api.nvim_buf_is_valid(pbuf) then
+      local lhs = require("obelus.config").chat_key("maximize", "Z")
+      for _, key in ipairs({ lhs, "q", "<Esc>" }) do
+        if key then
+          vim.keymap.set("n", key, function()
+            M.toggle_preview_maximize()
+          end, { buffer = pbuf, silent = true, nowait = true })
+        end
+      end
+      -- leaving the overlay by ANY route (wincmd, mouse) restores the hover too;
+      -- scheduled so the restore's own window ops never run inside the autocmd
+      vim.api.nvim_create_autocmd("WinLeave", {
+        buffer = pbuf,
+        once = true,
+        callback = function()
+          vim.schedule(function()
+            if state.preview_maximized then
+              state.preview_maximized = nil
+              M.refresh_preview(true)
+            end
+          end)
+        end,
+      })
+    end
     pcall(vim.cmd, "redraw")
   else
-    M.refresh_preview(true) -- re-fit back to the rooted geometry
+    local ret = state.preview_return_win
+    state.preview_return_win = nil
+    if ret and vim.api.nvim_win_is_valid(ret) then
+      pcall(vim.api.nvim_set_current_win, ret) -- fires the WinLeave above; the guard sees maximized=nil
+    end
+    M.refresh_preview(true) -- re-fit back to the rooted, unfocusable geometry
   end
 end
 
@@ -2348,9 +2395,10 @@ local function fill_preview(force)
   vim.api.nvim_buf_set_lines(state.preview_buf, 0, -1, false, lines)
   vim.bo[state.preview_buf].modifiable = false
   decorate(decos, state.preview_buf, win)
-  if win and vim.api.nvim_win_is_valid(win) then
+  if win and vim.api.nvim_win_is_valid(win) and not M.preview_focused() then
     -- unfocused: always follow the latest. Bare seat (no redraw, no content_row) —
     -- size_preview below re-seats moments later anyway whenever preview_root is set.
+    -- While the user BROWSES the maximized preview, their cursor position is theirs.
     seat_bottom(win, state.preview_buf, {})
   end
   local pmode = render_mode()
@@ -2415,8 +2463,12 @@ local function fill_preview(force)
     base_h = math.max(1, math.min(base_h, math.max(3, math.floor(vim.o.lines * 0.8))))
     local title = float_title(store.get(state.preview_thread))
     if state.preview_maximized then
-      pcall(vim.api.nvim_win_set_config, w, preview_max_wcfg(title))
-      seat_bottom(w, state.preview_buf, {})
+      local mcfg = preview_max_wcfg(title)
+      mcfg.focusable = true -- keep the browse mode's focusability across re-fits
+      pcall(vim.api.nvim_win_set_config, w, mcfg)
+      if not M.preview_focused() then
+        seat_bottom(w, state.preview_buf, {})
+      end
       return
     end
     local wcfg, pside = rooted_wincfg(state.preview_root, preview_base_width(), base_h, title, 1, preview_side())
