@@ -677,3 +677,27 @@ T.it("maximized hover is a focusable read-only pager: cursor moves in it; leavin
   )
   panel.hide_preview()
 end)
+
+T.it("meta threads open at the comfort width, not the snug content floor", function()
+  local saved = vim.o.columns
+  vim.o.columns = 150
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  local meta = ctx.store.meta_thread()
+  local panel = require("obelus.panel")
+  panel.open_thread(meta.id, true) -- centred (no file anchor)
+  local opened = T.wait_for(function()
+    local g = panel.geom()
+    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+  end)
+  if not opened then
+    vim.o.columns = saved
+  end
+  T.ok(opened, "meta chat opened")
+  local g = panel.geom()
+  local w = vim.api.nvim_win_get_width(g.win)
+  vim.o.columns = saved
+  -- clamp(150*0.8, 100, 120) = 120: the comfort base, not the 50-col snug floor
+  T.eq(w, 120, "comfort width despite a one-line stored label")
+  panel.close()
+end)

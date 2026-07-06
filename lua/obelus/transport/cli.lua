@@ -269,7 +269,11 @@ local function run_stream(payload)
   -- grow the stored turn; the progress timer re-renders bands/sidebar in sync.
   -- (the collector owns the line buffering + delta/result precedence — stream.lua).
   -- final_start() feeds thread.build's live narration-greying (grey while streaming).
-  local col = stream.collector(function(text)
+  -- forward-declared: the callback closure is COMPILED before `local col = …`
+  -- finishes, so referencing col inside it without this captures the GLOBAL col
+  -- (nil) — "attempt to index global 'col'" on the very first delta
+  local col
+  col = stream.collector(function(text)
     vim.schedule(function()
       store.stream_update(target.id, text, col.final_start())
     end)

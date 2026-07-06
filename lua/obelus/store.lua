@@ -389,6 +389,12 @@ end
 -- reply you're drafting). It's what shows as "· draft" and what opens editable in the input box.
 function M.pending_you_text(c)
   local t = M.turns(c)
+  -- a fresh META record's only turn is its synthetic LABEL ("project thread",
+  -- "#tag thread") — that's a name, not a draft; pre-filling the reply box with
+  -- it read as mystery text. A real meta draft is any later trailing you-turn.
+  if c and c.meta and #t <= 1 then
+    return nil
+  end
   local tail = t[#t]
   if tail and tail.author == "you" then
     return tail.text

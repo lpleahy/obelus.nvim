@@ -257,3 +257,42 @@ T.it("collapse: guard — a whitespace-only final block falls back to the full a
   local fs = #"Let me check.\n\n"
   T.eq(M.collapse(acc, fs, nil), acc, "never store an empty reply that had real narration")
 end)
+
+T.it("cli run_stream: the collector callback can call back into the collector (scoping regression)", function()
+  -- `local col = stream.collector(function() … col.final_start() … end)` captured
+  -- the GLOBAL col (nil): the closure compiles before the local enters scope.
+  -- Drive the REAL cli transport with a stubbed vim.system that feeds stdout.
+  local ctx = T.fresh({ transport = { dispatch = "cli", cli = { cmd = { "claude", "-p" } } } })
+  local real_system = vim.system
+  local fed_stdout
+  vim.system = function(cmd, opts, on_exit)
+    fed_stdout = opts.stdout
+    return {
+      kill = function() end,
+      wait = function()
+        return { code = 0, stdout = "" }
+      end,
+      pid = 1,
+    }
+  end
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  require("obelus").chat_send(c.id, "hello", "send")
+  T.ok(fed_stdout, "spawned with a stdout handler")
+  local line = vim.json.encode({
+    type = "stream_event",
+    event = { type = "content_block_delta", delta = { type = "text_delta", text = "streamed!" } },
+  }) .. "\n"
+  local ok, err = pcall(fed_stdout, nil, line)
+  vim.wait(100)
+  vim.system = real_system
+  T.ok(ok, "the delta callback did not error: " .. tostring(err))
+  local turns = ctx.store.turns(ctx.store.get(c.id))
+  local found = false
+  for _, t in ipairs(turns) do
+    if (t.text or ""):find("streamed!", 1, true) then
+      found = true
+    end
+  end
+  T.ok(found, "the streamed delta reached the store")
+  ctx.store.abort(c.id)
+end)

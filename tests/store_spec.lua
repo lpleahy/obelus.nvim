@@ -434,3 +434,15 @@ T.it(
     T.eq(auth_metas, 1, "exactly one #auth meta record after load")
   end
 )
+
+T.it("a fresh meta thread has NO draft — its synthetic label never pre-fills the reply box", function()
+  local ctx = T.fresh()
+  local meta = ctx.store.meta_thread()
+  T.is_nil(ctx.store.pending_you_text(meta), "the label is a name, not a draft")
+  local tagm = ctx.store.tag_meta_thread("auth")
+  T.is_nil(ctx.store.pending_you_text(tagm), "same for a tag meta")
+  -- but a REAL later draft still round-trips
+  ctx.store.add_turn(meta.id, "agent", "hi")
+  ctx.store.set_pending_you(meta.id, "my actual draft")
+  T.eq(ctx.store.pending_you_text(ctx.store.get(meta.id)), "my actual draft")
+end)

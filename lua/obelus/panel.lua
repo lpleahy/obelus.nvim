@@ -261,6 +261,14 @@ local MIN_W = 50
 local function base_width_for(comment)
   local G = 4
   local cap = math.max(40, vim.o.columns - 4) -- never wider than the editor
+  -- meta (project/tag) threads: their STORED content starts as a one-line label,
+  -- so content-sizing would open the centred box at the 50-col floor — but these
+  -- are long-form conversations about the whole project; give them the comfort
+  -- base from the start (they still grow past it for wide content).
+  if comment and comment.meta then
+    local hard_w = (require("obelus.thread").pref_width(comment))
+    return math.max(popup_width(), math.min(hard_w + G, cap))
+  end
   local hard_w, soft_w = require("obelus.thread").pref_width(comment)
   local pref = math.max(hard_w + G, math.min(soft_w + G, popup_width()))
   return math.max(MIN_W, math.min(pref, cap))
