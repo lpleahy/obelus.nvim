@@ -18,7 +18,7 @@ project-relative path.
 lazy.nvim:
 
 ```lua
-{ "lpleahy/obelus", main = "obelus", opts = {} }
+{ "lpleahy/obelus.nvim", main = "obelus", opts = {} }
 ```
 
 Local checkout:

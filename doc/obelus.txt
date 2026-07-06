@@ -35,7 +35,7 @@ Built-in transports: |obelus-transports| ("sidekick", "cli", "file",
 2. SETUP                                                     *obelus-setup*
 
 lazy.nvim: >lua
-    { "lpleahy/obelus", main = "obelus", opts = {} }
+    { "lpleahy/obelus.nvim", main = "obelus", opts = {} }
 <
 Any other manager: call `setup()` yourself. >lua
     require("obelus").setup({
