@@ -1851,12 +1851,41 @@ function M.open_thread(id, as_float)
   end)
 end
 
+-- Park the list view: cursor on `seek_id`'s row (the thread we just left) when
+-- given and found, else the TOP. The sidebar reuses ONE window between chat and
+-- list — without this, the chat's bottom-seated scroll survives the switch and a
+-- short list opens scrolled past its own content (blank view).
+local function seat_list(seek_id)
+  if not (state.win and vim.api.nvim_win_is_valid(state.win)) then
+    return
+  end
+  local row
+  if seek_id then
+    for ln, id in pairs(state.line_map or {}) do
+      if id == seek_id then
+        row = row and math.min(row, ln) or ln
+      end
+    end
+  end
+  pcall(vim.api.nvim_win_call, state.win, function()
+    if row then
+      pcall(vim.api.nvim_win_set_cursor, state.win, { row, 0 })
+      vim.cmd("normal! zz")
+    else
+      pcall(vim.api.nvim_win_set_cursor, state.win, { 1, 0 })
+      vim.cmd("normal! zt")
+    end
+  end)
+end
+
 function M.back()
+  local from = state.thread -- remember which chat we're leaving
   close_input() -- the reply box belongs to the chat, not the list
   state.mode = "list"
   state.thread = nil
   vim.api.nvim_set_current_win(state.win)
   fill()
+  seat_list(from)
 end
 
 -- Jump to the file buffer holding a thread (inline mode: the list is a navigator).
@@ -2150,6 +2179,10 @@ function M.open(as_float)
   vim.wo[state.win].number = false
   vim.wo[state.win].relativenumber = false
   fill() -- fill() now re-fits a rooted float to its live content (see fit_rooted)
+  if state.mode == "list" then
+    seat_list(nil) -- a fresh list opens at the TOP (a recycled window could carry
+    -- a prior chat's bottom-seated scroll — a short list then shows as blank)
+  end
   maps()
   local grp = vim.api.nvim_create_augroup("obelus_panel", { clear = true })
   vim.api.nvim_create_autocmd("WinClosed", {

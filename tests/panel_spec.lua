@@ -260,3 +260,44 @@ T.it("the explorer lists EVERY existing tag meta-conversation, not just the enga
   T.contains(text, "1 turns", "conversation size hinted")
   panel.close()
 end)
+
+T.it("back() from a sidebar chat parks the LIST on that thread's row; fresh opens park at the top", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  ctx.store.set_active_tag(nil)
+  -- enough threads that a bottom-seated scroll would hide the top of the list
+  local ids = {}
+  for i = 1, 12 do
+    local c = ctx.store.add(T.comment({ file = ctx.root .. "/f" .. i .. ".lua", comment = "thread " .. i }))
+    ctx.store.add_turn(c.id, "agent", ("reply line\n"):rep(6))
+    ids[i] = c.id
+  end
+  local panel = require("obelus.panel")
+  panel.open_thread(ids[7], false) -- sidebar chat (seats to the bottom)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  panel.back()
+  local g = panel.geom()
+  T.eq(g.mode, "list", "back in the list")
+  local row = vim.api.nvim_win_get_cursor(g.win)[1]
+  local line = vim.api.nvim_buf_get_lines(g.buf, row - 1, row, false)[1] or ""
+  T.contains(line, "thread 7", "cursor parked on the thread we just left")
+  panel.close()
+
+  panel.open(false) -- fresh open, no prior chat
+  T.ok(
+    T.wait_for(function()
+      return panel.geom() ~= nil
+    end),
+    "list opened"
+  )
+  local g2 = panel.geom()
+  local info = vim.fn.getwininfo(g2.win)[1] or {}
+  T.eq(info.topline, 1, "a fresh list starts at the top, not scrolled past its content")
+  panel.close()
+end)
