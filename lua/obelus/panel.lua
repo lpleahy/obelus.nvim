@@ -503,7 +503,25 @@ local function build_list()
       local text = "  ◆  #" .. tag .. " thread"
       push(text, tm and tm.id or { tag_meta = tag }, { segs = { { 0, #text, "ObelusChrome" } } })
     end
-    if meta or tag then
+    -- every OTHER existing tag meta-conversation stays findable here too — a
+    -- past batch's thread shouldn't vanish from the explorer just because its
+    -- tag isn't the engaged one anymore. Sorted by tag; engaged row deduped.
+    local others = {}
+    for _, c in ipairs(store.all()) do
+      if c.meta and c.meta_tag and c.meta_tag ~= tag then
+        others[#others + 1] = c
+      end
+    end
+    table.sort(others, function(a, b)
+      return (a.meta_tag or "") < (b.meta_tag or "")
+    end)
+    for _, c in ipairs(others) do
+      local turns = #(c.turns or {})
+      local suffix = turns > 1 and ("  · " .. (turns - 1) .. " turns") or ""
+      local text = "  ◆  #" .. c.meta_tag .. " thread" .. suffix
+      push(text, c.id, { segs = { { 0, #text, "ObelusChrome" } } })
+    end
+    if meta or tag or #others > 0 then
       push("")
     end
   end

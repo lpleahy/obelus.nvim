@@ -229,3 +229,34 @@ T.it("tag_thread(): no active tag notifies; a sticky tag opens/creates and toggl
   T.ok(not panel.showing(created.id), "a second call while showing TOGGLES it closed")
   ctx.store.set_active_tag(nil) -- don't leak sticky tagging mode into the next spec (process-wide singleton)
 end)
+
+T.it("the explorer lists EVERY existing tag meta-conversation, not just the engaged tag's", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0 -- fresh open right after a prior test's fill
+  ctx.store.set_active_tag(nil)
+  -- two past tag conversations, neither engaged
+  local a = ctx.store.tag_meta_thread("auth")
+  ctx.store.add_turn(a.id, "agent", "old auth discussion")
+  ctx.store.tag_meta_thread("perf")
+  local panel = require("obelus.panel")
+  panel.open(false)
+  T.ok(
+    T.wait_for(function()
+      return panel.geom() ~= nil
+    end),
+    "list opened"
+  )
+  local g = panel.geom()
+  local text
+  T.ok(
+    T.wait_for(function()
+      text = table.concat(vim.api.nvim_buf_get_lines(g.buf, 0, -1, false), "\n")
+      return text:find("#auth thread", 1, true) ~= nil
+    end, 2000),
+    "list filled"
+  )
+  T.contains(text, "#auth thread", "past tag conversation findable")
+  T.contains(text, "#perf thread", "the other one too")
+  T.contains(text, "1 turns", "conversation size hinted")
+  panel.close()
+end)
