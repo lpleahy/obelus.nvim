@@ -488,7 +488,7 @@ local function build_list()
     local meta = store.get_meta()
     if meta then
       local text = "  ◆  project thread"
-      push(text, meta.id, { segs = { { 0, #text, "ObelusChrome" } } })
+      push(text, meta.id, { segs = { { 0, #text, "ObelusMetaThread" } } })
     end
     -- the ACTIVE tag's meta/batch thread — pinned right under the global row, but
     -- ONLY while a tag is actually engaged (see engaged_tag). Unlike the global
@@ -501,7 +501,7 @@ local function build_list()
     if tag then
       local tm = store.get_meta(tag)
       local text = "  ◆  #" .. tag .. " thread"
-      push(text, tm and tm.id or { tag_meta = tag }, { segs = { { 0, #text, "ObelusChrome" } } })
+      push(text, tm and tm.id or { tag_meta = tag }, { segs = { { 0, #text, "ObelusMetaThread" } } })
     end
     -- every OTHER existing tag meta-conversation stays findable here too — a
     -- past batch's thread shouldn't vanish from the explorer just because its
@@ -517,9 +517,14 @@ local function build_list()
     end)
     for _, c in ipairs(others) do
       local turns = #(c.turns or {})
+      local name = "  ◆  #" .. c.meta_tag .. " thread"
       local suffix = turns > 1 and ("  · " .. (turns - 1) .. " turns") or ""
-      local text = "  ◆  #" .. c.meta_tag .. " thread" .. suffix
-      push(text, c.id, { segs = { { 0, #text, "ObelusChrome" } } })
+      local text = name .. suffix
+      local segs = { { 0, #name, "ObelusMetaThread" } }
+      if #suffix > 0 then
+        segs[#segs + 1] = { #name, #text, "ObelusChrome" } -- the count stays quiet
+      end
+      push(text, c.id, { segs = segs })
     end
     if meta or tag or #others > 0 then
       push("")

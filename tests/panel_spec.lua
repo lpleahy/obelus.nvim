@@ -301,3 +301,38 @@ T.it("back() from a sidebar chat parks the LIST on that thread's row; fresh open
   T.eq(info.topline, 1, "a fresh list starts at the top, not scrolled past its content")
   panel.close()
 end)
+
+T.it("meta rows carry their own accent group, distinct from the grey chrome", function()
+  local ctx = T.fresh()
+  require("obelus.panel")._timing.fill_throttle = 0
+  ctx.store.set_active_tag(nil)
+  ctx.store.meta_thread()
+  local panel = require("obelus.panel")
+  panel.open(false)
+  T.ok(
+    T.wait_for(function()
+      return panel.geom() ~= nil
+    end),
+    "list opened"
+  )
+  local g = panel.geom()
+  local found
+  T.ok(
+    T.wait_for(function()
+      for _, m in
+        ipairs(
+          vim.api.nvim_buf_get_extmarks(g.buf, vim.api.nvim_create_namespace("obelus_panel"), 0, -1, { details = true })
+        )
+      do
+        if (m[4] or {}).hl_group == "ObelusMetaThread" then
+          found = true
+        end
+      end
+      return found
+    end, 2000),
+    "the project-thread row uses ObelusMetaThread, not ObelusChrome"
+  )
+  local hl = vim.api.nvim_get_hl(0, { name = "ObelusMetaThread", link = false })
+  T.ok(hl.bold and hl.fg, "brand accent + bold defined")
+  panel.close()
+end)

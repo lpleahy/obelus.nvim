@@ -179,6 +179,10 @@ function M.setup_highlights()
   set("ObelusChrome", { fg = meta })
   -- the chrome accent (float borders): the distinct brand colour, no box
   set("ObelusBorder", { fg = brand })
+  -- meta-conversation rows in the explorer (project thread / #tag threads): the
+  -- brand accent + bold so they read as DESTINATIONS, not as the grey chrome
+  -- (counts/hints) they used to blend into
+  set("ObelusMetaThread", { fg = brand, bold = true })
   -- tag badge: the distinct brand colour sitting ON the you-bubble tint (bg = band,
   -- NOT the agent tint), so a thread's #tag reads cleanly in the header with no box
   set("ObelusThreadTag", { fg = brand, bg = band })
