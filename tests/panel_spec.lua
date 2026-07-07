@@ -302,6 +302,72 @@ T.it("back() from a sidebar chat parks the LIST on that thread's row; fresh open
   panel.close()
 end)
 
+-- keys.list: LIST-mode buffer-local bindings on the shared panel buffer -------
+
+local function n_cb(buf, lhs)
+  for _, km in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
+    if km.lhs == lhs then
+      return km.callback
+    end
+  end
+end
+
+T.it("keys.list.delete = 'X': X is bound on the panel buffer, dd is not", function()
+  local ctx = T.fresh({ keys = { list = { delete = "X" } } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  ctx.store.add(T.comment({ file = ctx.root .. "/f.lua", comment = "q" }))
+  local panel = require("obelus.panel")
+  panel.open()
+  T.ok(
+    T.wait_for(function()
+      return panel.geom() ~= nil
+    end),
+    "list opened"
+  )
+  local g = panel.geom()
+  T.ok(n_cb(g.buf, "X"), "the rebound lhs is bound")
+  T.is_nil(n_cb(g.buf, "dd"), "the old default is no longer bound")
+  panel.close()
+end)
+
+T.it("keys.list.resolve = false disables the binding entirely", function()
+  local ctx = T.fresh({ keys = { list = { resolve = false } } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  ctx.store.add(T.comment({ file = ctx.root .. "/f.lua", comment = "q" }))
+  local panel = require("obelus.panel")
+  panel.open()
+  T.ok(
+    T.wait_for(function()
+      return panel.geom() ~= nil
+    end),
+    "list opened"
+  )
+  local g = panel.geom()
+  T.is_nil(n_cb(g.buf, "x"), "x is not bound when keys.list.resolve = false")
+  panel.close()
+end)
+
+T.it("keys.list: a dual-mode binding (jump) rebinds ONCE and still works in chat mode too", function()
+  local ctx = T.fresh({ keys = { list = { jump = "J" } } })
+  require("obelus.panel")._timing.fill_throttle = 0
+  local file = ctx.root .. "/f.lua"
+  vim.fn.writefile({ "local a = 1" }, file)
+  local c = ctx.store.add(T.comment({ file = file, range = { sl = 1, el = 1 } }))
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end),
+    "chat opened"
+  )
+  local g = panel.geom()
+  T.ok(n_cb(g.buf, "J"), "the rebound lhs is bound in chat mode too — jump acts in both modes")
+  T.is_nil(n_cb(g.buf, "gd"), "the old default is gone in chat mode too (one binding, one name)")
+  panel.close()
+end)
+
 T.it("meta rows carry their own accent group, distinct from the grey chrome", function()
   local ctx = T.fresh()
   require("obelus.panel")._timing.fill_throttle = 0

@@ -548,3 +548,79 @@ T.it("path-paste: CleanShot-style names (spaces, @2x) sanitize into valid mentio
   T.ok(ms[1][3]:find("2x%.jpg$") ~= nil and not ms[1][3]:find("@"), "no @ inside the token")
   vim.fn.delete(src_dir, "rf")
 end)
+
+-- ---------------------------------------------------------------------------
+-- 9. :ObelusImgClean / mention.img_clean(): delete .ai/img files no stored
+--    comment/turn/draft text references anymore
+-- ---------------------------------------------------------------------------
+
+T.it("img_clean: no .ai/img directory notifies 'nothing to clean' and touches nothing", function()
+  T.fresh()
+  local msg
+  local orig = vim.notify
+  vim.notify = function(m, ...)
+    msg = m
+    return orig(m, ...)
+  end
+  mention.img_clean()
+  vim.notify = orig
+  T.contains(msg or "", "nothing to clean")
+end)
+
+T.it("img_clean: removes unreferenced images; keeps referenced ones AND non-image files", function()
+  local ctx = T.fresh()
+  local dir = ctx.root .. "/.ai/img"
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ "png" }, dir .. "/referenced-short.png")
+  vim.fn.writefile({ "png" }, dir .. "/referenced-expanded.jpg")
+  vim.fn.writefile({ "png" }, dir .. "/orphan.png")
+  vim.fn.writefile({ "notes" }, dir .. "/notes.txt") -- must SURVIVE: not an image extension
+
+  -- referenced via a SHORT mention in a stored comment's first ("you") turn...
+  local c1 = ctx.store.add(T.comment({ comment = "see @referenced-short.png please" }))
+  -- ...and via the EXPANDED .ai/img/ path (the outgoing-prompt rewrite) in an agent turn
+  ctx.store.add_turn(c1.id, "agent", "looked at @.ai/img/referenced-expanded.jpg, looks fine")
+  -- ...and via an unsent DRAFT (the trailing "you" turn, not yet sent) on another thread
+  local c2 = ctx.store.add(T.comment({ comment = "unrelated" }))
+  ctx.store.set_pending_you(c2.id, "one more: @referenced-expanded.jpg is what I meant")
+
+  local msg
+  local orig = vim.notify
+  vim.notify = function(m, ...)
+    msg = m
+    return orig(m, ...)
+  end
+  mention.img_clean()
+  vim.notify = orig
+
+  T.eq(vim.fn.filereadable(dir .. "/referenced-short.png"), 1, "referenced (short mention) survives")
+  T.eq(vim.fn.filereadable(dir .. "/referenced-expanded.jpg"), 1, "referenced (expanded path, via a draft) survives")
+  T.eq(vim.fn.filereadable(dir .. "/orphan.png"), 0, "unreferenced image removed")
+  T.eq(vim.fn.filereadable(dir .. "/notes.txt"), 1, "non-image file always survives")
+  T.contains(msg or "", "removed 1 unreferenced images (2 kept)")
+end)
+
+T.it("img_clean: never touches a same-named file outside .ai/img", function()
+  local ctx = T.fresh()
+  local dir = ctx.root .. "/.ai/img"
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ "png" }, dir .. "/orphan.png")
+  local outside = ctx.root .. "/.ai/orphan.png"
+  vim.fn.writefile({ "png" }, outside)
+  mention.img_clean()
+  T.eq(vim.fn.filereadable(dir .. "/orphan.png"), 0, "the unreferenced file INSIDE .ai/img is removed")
+  T.eq(vim.fn.filereadable(outside), 1, "the same-named file OUTSIDE .ai/img is never touched")
+end)
+
+T.it(":ObelusImgClean / obelus.img_clean() wire straight to mention.img_clean()", function()
+  local ctx = T.fresh()
+  local dir = ctx.root .. "/.ai/img"
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile({ "png" }, dir .. "/orphan.png")
+  vim.cmd("ObelusImgClean")
+  T.eq(vim.fn.filereadable(dir .. "/orphan.png"), 0, ":ObelusImgClean deleted the unreferenced image")
+
+  vim.fn.writefile({ "png" }, dir .. "/orphan2.png")
+  require("obelus").img_clean()
+  T.eq(vim.fn.filereadable(dir .. "/orphan2.png"), 0, "obelus.img_clean() deleted it too")
+end)

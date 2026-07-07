@@ -490,6 +490,76 @@ T.it("keys.chat.send_all = false disables the binding entirely", function()
   panel.close()
 end)
 
+-- ---------------------------------------------------------------------------
+-- 10. keybind-hint footers (render.hints) — built from the RESOLVED keys.chat
+--    lhs, not hardcoded literals: a rebind changes the footer text, a disabled
+--    (false) key drops its segment. Assert on the real float's
+--    nvim_win_get_config().footer chunks (verified: nvim round-trips the
+--    { text, hl } array it was opened with unchanged).
+-- ---------------------------------------------------------------------------
+
+local function footer_text(win)
+  local footer = win and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_config(win).footer
+  if type(footer) ~= "table" or #footer == 0 then
+    return nil
+  end
+  local parts = {}
+  for _, chunk in ipairs(footer) do
+    parts[#parts + 1] = chunk[1]
+  end
+  return table.concat(parts)
+end
+
+T.it("footer: docked reply box builds its hint text from the RESOLVED keys.chat lhs", function()
+  local _, panel = open_wrap_thread({ render = { hints = true } })
+  local g = panel.geom()
+  local text = footer_text(g.input_win)
+  T.ok(text, "footer is set when render.hints is on")
+  T.contains(text, "⏎ send")
+  T.contains(text, "^s save")
+  T.contains(text, "⇥ history")
+  T.contains(text, "q close")
+  panel.close()
+end)
+
+T.it("footer: a rebound keys.chat lhs shows the NEW pretty-printed key, not the old default", function()
+  local _, panel = open_wrap_thread({ render = { hints = true }, keys = { chat = { send = "<C-CR>" } } })
+  local g = panel.geom()
+  local text = footer_text(g.input_win)
+  T.contains(text, "<C-CR> send", "an lhs with no pretty-print entry prints verbatim")
+  T.ok(not text:find("⏎", 1, true), "the old default's glyph is gone")
+  panel.close()
+end)
+
+T.it("footer: a disabled (false) keys.chat entry drops its segment, siblings unaffected", function()
+  local _, panel = open_wrap_thread({ render = { hints = true }, keys = { chat = { save = false } } })
+  local g = panel.geom()
+  local text = footer_text(g.input_win)
+  T.ok(text, "footer still shown")
+  T.ok(not text:find("save", 1, true), "the disabled segment is gone")
+  T.contains(text, "⏎ send", "sibling segments unaffected")
+  panel.close()
+end)
+
+T.it("footer: render.hints = false (the default) sets no footer at all", function()
+  local _, panel = open_wrap_thread()
+  local g = panel.geom()
+  T.is_nil(footer_text(g.input_win), "no footer when hints are off")
+  panel.close()
+end)
+
+T.it("footer: the quick-reply composer float builds the same way (send/save/cancel)", function()
+  T.fresh({ render = { hints = true }, keys = { chat = { close_esc = false } } })
+  local fwin = require("obelus.render").compose({ on_cancel = function() end })
+  T.ok(fwin and vim.api.nvim_win_is_valid(fwin), "the composer float opened")
+  local text = footer_text(fwin)
+  T.ok(text, "footer is set when render.hints is on")
+  T.contains(text, "⏎ send")
+  T.contains(text, "^s save")
+  T.ok(not text:find("cancel", 1, true), "close_esc = false drops the cancel segment")
+  vim.api.nvim_win_close(fwin, true)
+end)
+
 T.it("selection: ObelusVisual derives a contrast boost by default; explicit override wins", function()
   vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e, fg = 0xcdd6f4 })
   vim.api.nvim_set_hl(0, "Visual", { bg = 0x283457 })

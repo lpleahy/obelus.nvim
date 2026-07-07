@@ -4,6 +4,7 @@ local render = require("obelus.render")
 local capture = require("obelus.capture")
 local view = require("obelus.view")
 local review = require("obelus.review")
+local mention = require("obelus.mention")
 
 local M = {}
 
@@ -57,6 +58,10 @@ M.chat_save = review.chat_save
 M.chat_send = review.chat_send
 M.submit_all = review.submit_all
 M.clear = review.clear
+---Delete every unreferenced *.png/jpg/jpeg/gif/webp under <root>/.ai/img (see
+---|obelus-mentions|'s IMAGES paragraph) — a file whose name isn't mentioned in
+---any stored comment/turn/draft text.
+M.img_clean = mention.img_clean
 
 -- Set (or, with no arg, cycle) the chat markdown renderer. Applies live to an open
 -- panel. Writes the session override config.ui.renderer (NOT config.options), so it
@@ -400,6 +405,10 @@ local function commands()
   cmd("ObelusRenderInfo", function()
     vim.print(require("obelus.panel").render_info())
   end, { desc = "obelus: dump the renderer decision inputs for the chat/preview" })
+
+  cmd("ObelusImgClean", function()
+    M.img_clean()
+  end, { desc = "obelus: delete .ai/img files unreferenced by any stored text" })
 end
 
 -- Declarative keymap spec: one row per default mapping (lhs = keys.prefix .. suffix).

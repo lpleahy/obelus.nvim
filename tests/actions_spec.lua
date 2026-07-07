@@ -16,6 +16,35 @@ T.it("instructions(comments, key) names the exact keyed actions file", function(
   T.contains(text, ".ai/review-actions-b-1-1.json")
 end)
 
+T.it('instructions() advertises "reopen" as a valid action, with a reply entry for the explanation', function()
+  local S = T.fresh().store
+  local actions = require("obelus.actions")
+  local c = S.add(T.comment({ comment = "q" }))
+  local text = actions.instructions({ c }, "b-1-1")
+  T.contains(text, '"resolve" | "reopen" | "needs_response" | "reply" | "move"', "reopen is in the action enum")
+  T.contains(
+    text,
+    '- reopen: a RESOLVED comment whose issue is NOT actually fixed — reopen it (explain in "message" via a reply entry too).',
+    "the reopen bullet is present verbatim"
+  )
+end)
+
+T.it("apply(): a reopen entry sets a RESOLVED comment's status back to open", function()
+  local ctx = T.fresh()
+  local S = ctx.store
+  local actions = require("obelus.actions")
+  local c = S.add(T.comment({ comment = "fixed already?" }))
+  S.resolve(c.id)
+  T.eq(S.get(c.id).status, "resolved")
+
+  local key = "reopen-one"
+  write_json(actions.path(key), { { comment_id = c.id, action = "reopen" } })
+  local n = actions.apply(key, { [c.id] = true })
+
+  T.eq(n, 1)
+  T.eq(S.get(c.id).status, "open", "reopen flips a resolved thread back to open")
+end)
+
 T.it("apply(key, allowed): applies resolve/reply/needs_response/move, returns the count, consumes the file", function()
   local ctx = T.fresh()
   local S = ctx.store

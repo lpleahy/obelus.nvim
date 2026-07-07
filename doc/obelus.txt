@@ -144,6 +144,10 @@ render.hints                                      *obelus-config-render.hints*
     |obelus.toggle_hints()|. (A legacy `{ chat = ..., compose = ... }`
     table is still accepted and coerced to a boolean — `true` if either
     was true — with a one-time deprecation warning.)
+    The docked reply box's and the quick-reply composer's footers are built
+    from the RESOLVED |obelus-config-keys.chat| bindings, not fixed text — a
+    rebound key shows its new lhs, and a disabled (`false`) key's segment is
+    simply omitted from the footer.
 
 render.preview_matches_chat        *obelus-config-render.preview_matches_chat*
     Default: `false`
@@ -467,6 +471,42 @@ keys.chat                                            *obelus-config-keys.chat*
         keys = { chat = { close = "x", wrap = false } }
 <
 
+keys.list                                            *obelus-config-keys.list*
+    Default: `{}`
+    Key bindings on the review list/chat SHARED panel buffer (panel.lua's
+    `maps()` — the sidebar/popup window itself, not the docked reply box). A
+    name maps to an lhs string, or `false` to disable; an unset name keeps
+    its default. Several of these act in list mode AND in chat mode through
+    the exact same physical keymap — ONE binding, one name, never
+    duplicated into |obelus-config-keys.chat|; disabling it turns it off in
+    both modes at once.
+
+    Name ~         Default ~   Both modes? ~   Action ~
+    open           `<CR>`      list only        Open the thread at cursor
+    jump           `gd`        both             Jump to source, panel stays put
+    cancel         `C`         both             Cancel the in-flight dispatch
+    close          `q`         both             Close the popup, or back to
+                                                 the list from a sidebar chat
+    close_esc      `<Esc>`     both             Same as `close`, via Escape
+    expand         `<Tab>`     both             List: expand/collapse the
+                                                 thread preview under cursor.
+                                                 Chat: hop to the reply input
+                                                 (same physical key as
+                                                 `keys.chat.cycle`, bound on a
+                                                 different buffer)
+    reply          `r`         both             List: open to reply. Chat:
+                                                 focus the reply input
+    refresh        `R`         both             Refresh the panel
+    resolve        `x`         both             Resolve the thread at cursor
+    reopen         `o`         both             Reopen the thread at cursor
+    dispatch       `D`         both             Dispatch to a background agent
+    delete         `dd`        both             Delete the comment at cursor
+
+    Example: >lua
+        keys = { list = { delete = "X", resolve = false } }
+<   rebinds delete to `X` (`dd` no longer bound) and disables resolve
+    entirely — in BOTH list and chat mode, since it's one shared binding.
+
 ==============================================================================
 4. KEYMAPS                                                  *obelus-keymaps*
 
@@ -543,6 +583,11 @@ with wrap off, native `zl`/`zh`/`$`/`0` pan a long line sideways. The choice
 is session-scoped: it survives further replies/streaming, and clears on
 close or on opening a different thread.
 
+The review list/chat panel's OWN buffer-local keys (open/jump/close/expand/
+reply/refresh/resolve/reopen/dispatch/delete/cancel — separate from both the
+`keys.prefix` group above and the chat-surface keys above) are configured as
+a group via |obelus-config-keys.list|.
+
 ==============================================================================
 5. COMMANDS                                                *obelus-commands*
 
@@ -611,6 +656,8 @@ Every command is one line; `()` marks a cross-reference for more detail.
     Show the last prompt sent to the agent, verbatim (|obelus-debug|).
 :ObelusRenderInfo                                        *:ObelusRenderInfo*
     Dump the renderer decision inputs for the chat/preview (|obelus-debug|).
+:ObelusImgClean                                            *:ObelusImgClean*
+    Delete `.ai/img` files unreferenced by any stored text (|obelus-mentions|).
 
 ==============================================================================
 6. MENTIONS (@files)                                       *obelus-mentions*
@@ -686,7 +733,11 @@ Images ~
     image — it tells the agent to Read the file itself; "inline" mode
     always skips it (the NUL-sniff treats any PNG as a binary file — see
     the `send` policy above). `.ai/img` accumulates pasted screenshots
-    across a session; clean it up yourself when you're done with a review.
+    across a session; |:ObelusImgClean| / `obelus.img_clean()` deletes every
+    image file there whose name isn't a substring of any stored comment/
+    turn/draft text (covers both the short "@name.png" mention and its
+    expanded ".ai/img/name.png" form) — files outside `.ai/img`, non-image
+    files, and a missing `.ai/img` directory are all left alone.
 
 ==============================================================================
 7. RENDERERS                                              *obelus-renderers*
@@ -761,12 +812,18 @@ Write-back actions protocol (`transport.actions`) ~
     agent to write ONE JSON file, `.ai/review-actions-<key>.json` (keyed
     per-batch or per-comment so concurrent dispatches never collide): an
     array with one entry per comment id — `{ comment_id, action, message?,
-    line? }` where `action` is one of "resolve" | "needs_response" |
-    "reply" | "move". After the run, obelus reads and applies that file:
-    resolve marks the thread done, needs_response/reply add an agent turn
-    (needs_response additionally flags the thread), move re-anchors the
-    comment to a new line. Only entries for comment ids the dispatch was
-    actually allowed to touch are applied. This is opt-out
+    line? }` where `action` is one of "resolve" | "reopen" |
+    "needs_response" | "reply" | "move". After the run, obelus reads and
+    applies that file: resolve marks the thread done, reopen re-opens a
+    RESOLVED thread the agent decided isn't actually fixed (it explains why
+    via a separate "reply" entry — `reopen` itself carries no message),
+    needs_response/reply add an agent turn (needs_response additionally
+    flags the thread), move re-anchors the comment to a new line. Only
+    entries for comment ids the dispatch was actually allowed to touch are
+    applied — for the project/tag meta thread's fan-out (|obelus-project-
+    thread|) that allowed set is EVERY real thread, resolved ones included,
+    which is exactly what lets the agent legitimately reopen one it sees in
+    its briefing. This is opt-out
     (`transport.actions = false` falls back to just attaching the raw
     reply and auto-resolving on success/failure). RESTRAINT: the protocol
     explicitly tells the agent to resolve ONLY when it fully made the

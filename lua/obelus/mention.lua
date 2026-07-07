@@ -1095,6 +1095,48 @@ end
 -- absolute path remains). Existence-gated, so half-typed paths never convert.
 local IMAGE_EXT = { png = true, jpg = true, jpeg = true, gif = true, webp = true }
 
+-- :ObelusImgClean / M.img_clean(): delete every *.png/jpg/jpeg/gif/webp file
+-- directly under <root>/.ai/img (no recursion — paste_image/convert_pasted_image_
+-- paths only ever write flat into it) whose NAME is referenced by NO stored text.
+-- "referenced" = the file's bare basename appears as a substring anywhere across
+-- every comment's turns (store.turns already returns the trailing UNSENT "you"
+-- turn — a saved draft — as a real entry, so drafts are scanned too): a SHORT
+-- mention ("@name.png") and an EXPANDED one (".ai/img/name.png" — the outgoing-
+-- prompt rewrite, see M.expand_image_mentions) both contain the bare basename,
+-- so one substring check covers both forms. Never touches anything outside
+-- .ai/img; a missing dir is simply "nothing to clean" (not an error — a review
+-- session that never pasted an image has no folder at all).
+function M.img_clean()
+  local store = require("obelus.store")
+  local root = store.root()
+  local dir = root .. "/.ai/img"
+  if vim.fn.isdirectory(dir) ~= 1 then
+    return vim.notify("obelus: .ai/img — nothing to clean", vim.log.levels.INFO)
+  end
+  local blobs = {}
+  for _, c in ipairs(store.all()) do
+    for _, t in ipairs(store.turns(c)) do
+      blobs[#blobs + 1] = t.text or ""
+    end
+  end
+  local haystack = table.concat(blobs, "\n")
+
+  local removed, kept = 0, 0
+  for _, name in ipairs(vim.fn.readdir(dir)) do
+    local ext = name:match("%.([%w]+)$")
+    if ext and IMAGE_EXT[ext:lower()] and vim.fn.isdirectory(dir .. "/" .. name) == 0 then
+      if haystack:find(name, 1, true) then
+        kept = kept + 1
+      elseif vim.fn.delete(dir .. "/" .. name) == 0 then
+        removed = removed + 1
+      else
+        kept = kept + 1 -- delete failed (permissions?) — still there, count it as kept
+      end
+    end
+  end
+  vim.notify(string.format("obelus: removed %d unreferenced images (%d kept)", removed, kept), vim.log.levels.INFO)
+end
+
 local function convert_pasted_image_paths(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i, line in ipairs(lines) do

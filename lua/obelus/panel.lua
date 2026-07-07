@@ -848,6 +848,27 @@ local function reply_dock()
   return (require("obelus.config").options.render or {}).reply_dock or "pinned"
 end
 
+-- The docked reply box's keybind-hint footer segments, in order: send/save/cycle
+-- ("history")/close — built from the RESOLVED keys.chat lhs (config.chat_hint), so
+-- a rebind or a disabled ("false") key is reflected live instead of a stale
+-- hardcoded literal; a disabled key's segment is simply omitted. Same shape as
+-- render.lua's compose() footer (section C — both surfaces share the idiom).
+local function input_footer_segments()
+  local config = require("obelus.config")
+  local segs = {}
+  local function add(name, default, label)
+    local s = config.chat_hint(name, default, label)
+    if s then
+      segs[#segs + 1] = s
+    end
+  end
+  add("send", "<CR>", "send")
+  add("save", "<C-s>", "save")
+  add("cycle", "<Tab>", "history")
+  add("close", "q", "close")
+  return segs
+end
+
 -- The docked reply box's window config (style is open-only, so it's added at open).
 -- Factored so the box can be repositioned after the float re-fits / the view scrolls.
 local function input_wincfg()
@@ -922,8 +943,11 @@ local function input_wincfg()
     zindex = 60, -- above the chat float so it never renders behind it
   }
   if hints() then -- footer + footer_pos must be set together (or neither)
-    cfg.footer = { { " ⏎ send · <C-s> save · <Tab> history · q close ", "ObelusThreadMeta" } }
-    cfg.footer_pos = "right"
+    local segs = input_footer_segments()
+    if #segs > 0 then
+      cfg.footer = { { " " .. table.concat(segs, " · ") .. " ", "ObelusThreadMeta" } }
+      cfg.footer_pos = "right"
+    end
   end
   return cfg
 end
@@ -1970,6 +1994,17 @@ local function maps()
   local set = function(lhs, fn)
     vim.keymap.set("n", lhs, fn, o)
   end
+  -- LIST-mode bindings (section D; keys.list, config.list_key): `false` disables,
+  -- an unset name keeps the default lhs below. Several of these ALSO act in chat
+  -- mode via this SAME physical binding (jump/cancel/close/expand/reply/refresh/
+  -- resolve/reopen/dispatch/delete) — one keymap, one name, not duplicated into
+  -- keys.chat (see |obelus-config-keys.list|).
+  local function lset(name, default, fn)
+    local lhs = require("obelus.config").list_key(name, default)
+    if lhs then
+      set(lhs, fn)
+    end
+  end
   -- <C-l> from the chat output hops into the docked reply box (a float, so it isn't
   -- reachable via wincmd l) — so "code -> <C-l> -> output -> <C-l> -> input" works
   set("<C-l>", function()
@@ -1977,7 +2012,7 @@ local function maps()
       M.focus_input(false)
     end
   end)
-  set("<CR>", function()
+  lset("open", "<CR>", function()
     if state.mode == "list" then
       local id = cid()
       if id then
@@ -1987,7 +2022,7 @@ local function maps()
       M.jump()
     end
   end)
-  set("gd", function() -- jump to the source line without leaving the panel open/closed state
+  lset("jump", "gd", function() -- jump to the source line without leaving the panel open/closed state
     local id = state.mode == "chat" and state.thread or cid()
     if id then
       M.jump_to(id)
@@ -2009,13 +2044,13 @@ local function maps()
       pcall(vim.cmd, "normal! G")
     end
   end)
-  set("C", function() -- cancel the in-flight dispatch
+  lset("cancel", "C", function() -- cancel the in-flight dispatch
     local id = state.mode == "chat" and state.thread or cid()
     if id then
       require("obelus").cancel(id)
     end
   end)
-  set("q", function()
+  lset("close", "q", function()
     if state.mode == "chat" and not state.is_float then
       M.back() -- split: back to the list
     else
@@ -2033,14 +2068,14 @@ local function maps()
   end)
   -- Esc in the history closes the whole popup (output + docked input together) so it
   -- can't orphan the input box; from the input, Esc hops here first (so Esc-Esc closes)
-  set("<Esc>", function()
+  lset("close_esc", "<Esc>", function()
     if state.is_float then
       M.close()
     elseif state.mode == "chat" then
       M.back()
     end
   end)
-  set("<Tab>", function()
+  lset("expand", "<Tab>", function()
     if state.mode == "list" then
       local id = cid()
       if id then
@@ -2056,7 +2091,7 @@ local function maps()
       M.focus_input(false)
     end
   end)
-  set("r", function()
+  lset("reply", "r", function()
     if state.mode == "chat" then
       M.reply()
     else
@@ -2066,26 +2101,30 @@ local function maps()
       end
     end
   end)
-  set("R", M.refresh)
-  set(
+  lset("refresh", "R", M.refresh)
+  lset(
+    "resolve",
     "x",
     act(function(id)
       require("obelus").resolve(id)
     end)
   )
-  set(
+  lset(
+    "reopen",
     "o",
     act(function(id)
       require("obelus").reopen(id)
     end)
   )
-  set(
+  lset(
+    "dispatch",
     "D",
     act(function(id)
       require("obelus").dispatch(id)
     end)
   )
-  set(
+  lset(
+    "delete",
     "dd",
     act(function(id)
       require("obelus").delete(id)

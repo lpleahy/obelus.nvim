@@ -9,6 +9,7 @@
 :ObelusDispatch	obelus.txt	/*:ObelusDispatch*
 :ObelusEdit	obelus.txt	/*:ObelusEdit*
 :ObelusHints	obelus.txt	/*:ObelusHints*
+:ObelusImgClean	obelus.txt	/*:ObelusImgClean*
 :ObelusJobs	obelus.txt	/*:ObelusJobs*
 :ObelusList	obelus.txt	/*:ObelusList*
 :ObelusLoad	obelus.txt	/*:ObelusLoad*
@@ -40,6 +41,7 @@ obelus-config-keys	obelus.txt	/*obelus-config-keys*
 obelus-config-keys.band_scroll	obelus.txt	/*obelus-config-keys.band_scroll*
 obelus-config-keys.chat	obelus.txt	/*obelus-config-keys.chat*
 obelus-config-keys.disabled	obelus.txt	/*obelus-config-keys.disabled*
+obelus-config-keys.list	obelus.txt	/*obelus-config-keys.list*
 obelus-config-keys.overrides	obelus.txt	/*obelus-config-keys.overrides*
 obelus-config-keys.prefix	obelus.txt	/*obelus-config-keys.prefix*
 obelus-config-mode	obelus.txt	/*obelus-config-mode*

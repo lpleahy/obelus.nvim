@@ -211,6 +211,12 @@ M.defaults = {
     -- name -> lhs string, or `false` to disable. Unset names keep today's default —
     -- see |obelus-config-keys.chat| for the full name -> default table.
     chat = {},
+    -- LIST-mode key bindings — the review list/chat shared panel buffer (section D,
+    -- panel.lua's maps()): name -> lhs string, or `false` to disable. Several of
+    -- these ALSO act in chat mode via the SAME physical binding (one keymap, one
+    -- name — not duplicated into keys.chat). Unset names keep today's default —
+    -- see |obelus-config-keys.list| for the full name -> default table.
+    list = {},
   },
 }
 
@@ -263,6 +269,60 @@ function M.chat_key(name, default)
     return default
   end
   return v
+end
+
+---Resolve one keys.list[name] binding — the review list/chat shared panel
+---buffer's own bindings (panel.lua's maps()), mirroring M.chat_key above.
+---Several names act in BOTH list and chat mode (one keymap on the shared
+---buffer, never duplicated into keys.chat) — see |obelus-config-keys.list| for
+---the full name -> default table and which ones are dual-mode.
+---@param name string
+---@param default string
+---@return string|false
+function M.list_key(name, default)
+  local list = (M.options.keys or {}).list
+  local v = list and list[name]
+  if v == nil then
+    return default
+  end
+  return v
+end
+
+-- Compact glyphs for common special lhs strings in keybind-hint footers
+-- (render.hints); anything not listed here (a plain letter, or a user's own
+-- custom rebind) prints VERBATIM so a hint never lies about the real key.
+local PRETTY_KEY = {
+  ["<CR>"] = "⏎",
+  ["<M-CR>"] = "⌥⏎",
+  ["<C-s>"] = "^s",
+  ["<S-Tab>"] = "⇧⇥",
+  ["<Tab>"] = "⇥",
+  ["<Esc>"] = "esc",
+}
+
+---Pretty-print a keymap lhs for a hint-footer segment.
+---@param lhs string
+---@return string
+function M.pretty_key(lhs)
+  return PRETTY_KEY[lhs] or lhs
+end
+
+---One hint-footer segment ("⏎ send") for keys.chat[name], or nil when that
+---binding is disabled (`false`) — the caller just omits a nil segment, so a
+---disabled key silently drops out of the footer instead of showing a dead
+---hint. Shared by panel.lua's docked reply box footer and render.lua's
+---quick-reply composer footer (section C) — both must reflect a rebound or
+---disabled key, never the hardcoded default.
+---@param name string
+---@param default string
+---@param label string
+---@return string|nil
+function M.chat_hint(name, default, label)
+  local lhs = M.chat_key(name, default)
+  if not lhs then
+    return nil
+  end
+  return M.pretty_key(lhs) .. " " .. label
 end
 
 -- Warn once per distinct bad value (path + value + allowed set both baked into the
@@ -385,6 +445,7 @@ local function ensure_tables(o)
     ensure_table(o, "keys", "keys", M.defaults.keys)
     ensure_table(o.keys, "overrides", "keys.overrides", M.defaults.keys.overrides)
     ensure_table(o.keys, "chat", "keys.chat", M.defaults.keys.chat)
+    ensure_table(o.keys, "list", "keys.list", M.defaults.keys.list)
   end
 end
 
@@ -560,6 +621,7 @@ local function validate(o)
   if o.keys ~= false then
     validate_key_map(o.keys.overrides, "keys.overrides")
     validate_key_map(o.keys.chat, "keys.chat")
+    validate_key_map(o.keys.list, "keys.list")
   end
 end
 

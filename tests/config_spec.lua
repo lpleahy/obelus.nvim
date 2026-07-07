@@ -224,6 +224,26 @@ T.it("keys.overrides/keys.chat: a garbage value warns once and drops only that e
   T.eq(config.options.keys.chat.save, "<C-x>", "sibling entry unaffected by the neighbor's garbage")
 end)
 
+-- keys.list (section D: the review list/chat panel's own bindings) follows the
+-- exact same string|false idiom as keys.chat — same ensure_table/validate_key_map
+-- calls, just a different sparse map.
+
+T.it("keys.list defaults to an empty table; accepts string|false values", function()
+  local config = require("obelus.config")
+  config.setup({})
+  T.eq(config.options.keys.list, {})
+  config.setup({ keys = { list = { delete = "X", resolve = false } } })
+  T.eq(config.options.keys.list.delete, "X")
+  T.eq(config.options.keys.list.resolve, false)
+end)
+
+T.it("keys.list: a garbage value warns once and drops only that entry", function()
+  local config = require("obelus.config")
+  config.setup({ keys = { list = { delete = 5, reopen = "Y" } } })
+  T.is_nil(config.options.keys.list.delete, "garbage list key value dropped")
+  T.eq(config.options.keys.list.reopen, "Y", "sibling entry unaffected by the neighbor's garbage")
+end)
+
 T.it("keys = false stays the bare boolean (overrides/chat validation skipped, not crashed)", function()
   local config = require("obelus.config")
   config.setup({ keys = false })

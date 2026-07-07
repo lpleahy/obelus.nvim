@@ -756,9 +756,21 @@ function M.compose(opts)
   wcfg.border = "rounded"
   wcfg.title = { { " ▎ " .. (opts.title or "you") .. " ", "ObelusInputHeader" } }
   wcfg.title_pos = "left"
-  if M.hints_shown() then
-    wcfg.footer = { { " ⏎ send · <C-s> save · <Esc> cancel ", "ObelusThreadMeta" } }
-    wcfg.footer_pos = "right"
+  if M.hints_shown() then -- footer built from the RESOLVED keys (config.chat_hint) — see panel.lua's twin
+    local segs = {}
+    local function add(name, default, label)
+      local s = config.chat_hint(name, default, label)
+      if s then
+        segs[#segs + 1] = s
+      end
+    end
+    add("send", "<CR>", "send")
+    add("save", "<C-s>", "save")
+    add("close_esc", "<Esc>", "cancel")
+    if #segs > 0 then
+      wcfg.footer = { { " " .. table.concat(segs, " · ") .. " ", "ObelusThreadMeta" } }
+      wcfg.footer_pos = "right"
+    end
   end
   local fwin = vim.api.nvim_open_win(ibuf, true, wcfg)
   vim.wo[fwin].cursorline = false

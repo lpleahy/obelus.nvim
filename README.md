@@ -71,6 +71,8 @@ mentioned file's contents in the outgoing prompt (capped per file and in total).
 
 `<C-y>` (`keys.chat.paste_image`) grabs whatever image is on the system clipboard into
 `.ai/img/` and @-mentions it right there, so the agent can just Read the screenshot you copied.
+`:ObelusImgClean` / `obelus.img_clean()` deletes any `.ai/img` file no stored comment/reply
+mentions anymore.
 
 `oa` / `:ObelusProject` opens the project thread: one meta-level chat with context over every
 other thread, not just one file/range. Its first message is briefed with every open thread in
