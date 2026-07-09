@@ -143,3 +143,50 @@ T.it("thread_full: a brand-new (never-sent) comment is never treated as a draft 
   T.contains(out, "first thought", "the initial comment shows via comment_md regardless of include_drafts")
   T.ok(not out:find("not shown", 1, true), "no 'skipped draft' note for the very first turn")
 end)
+
+-- tag_deltas: unified tag session JOINED/LEFT prompt block ----------------------
+
+T.it("tag_deltas: a join renders the member's FULL identity under a JOINED heading", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local c = ctx.store.add(T.comment({ comment = "fix the auth check" }))
+  ctx.store.tag_comment(c.id, "auth")
+  local out = F.tag_deltas("auth", { joins = { c }, leaves = {} })
+  T.contains(out, "JOINED the #auth conversation:")
+  T.contains(out, "fix the auth check", "the join carries the member's full comment_md")
+end)
+
+T.it("tag_deltas: a join's include_drafts=false skips a trailing unsent draft, same as thread_full", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local c = ctx.store.add(T.comment({ comment = "fix the auth check" }))
+  ctx.store.tag_comment(c.id, "auth")
+  ctx.store.add_turn(c.id, "agent", "looked into it")
+  ctx.store.set_pending_you(c.id, "SECRET unsent draft")
+
+  local excluded = F.tag_deltas("auth", { joins = { c }, leaves = {} }, { include_drafts = false })
+  T.ok(not excluded:find("SECRET unsent draft", 1, true), "respond-mode joins never leak a draft")
+  T.contains(excluded, "not shown")
+
+  local included = F.tag_deltas("auth", { joins = { c }, leaves = {} }, { include_drafts = true })
+  T.contains(included, "SECRET unsent draft", "submit-all's joins DO include a draft")
+end)
+
+T.it("tag_deltas: a leave for a still-existing (untagged) member names its file/range", function()
+  local ctx = T.fresh()
+  local F = require("obelus.format")
+  local c = ctx.store.add(T.comment({ file = ctx.root .. "/f.lua", range = { sl = 3, el = 3 } }))
+  local out = F.tag_deltas("auth", { joins = {}, leaves = { { id = c.id, c = c } } })
+  T.contains(out, "LEFT the conversation (do not act on it): f.lua L3-L3")
+end)
+
+T.it("tag_deltas: a leave for a DELETED member (c = nil) falls back to its bare id", function()
+  local F = require("obelus.format")
+  local out = F.tag_deltas("auth", { joins = {}, leaves = { { id = "1234-1", c = nil } } })
+  T.contains(out, "LEFT the conversation (do not act on it): 1234-1 (deleted)")
+end)
+
+T.it("tag_deltas: nothing to report renders as an empty string (nothing prepended to the prompt)", function()
+  local F = require("obelus.format")
+  T.eq(F.tag_deltas("auth", { joins = {}, leaves = {} }), "")
+end)

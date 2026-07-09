@@ -48,6 +48,7 @@ for _, spec in ipairs({
   "render",
   "geometry",
   "e2e",
+  "tag_session",
   "panel",
   "mention",
   "mention_completion",

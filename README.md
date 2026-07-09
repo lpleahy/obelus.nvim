@@ -80,9 +80,10 @@ full and every resolved one as a one-line summary; `@thread:<id>` mentions (in a
 thread's full history back in, and the agent can reply/resolve/ask individual threads from there
 via the same write-back protocol a batch dispatch uses.
 
-`oA` / `:ObelusTagThread` is its tag-scoped sibling — a meta-thread for whatever batch you're
-working on for one tag, where plain send discusses the tag's threads and `<M-s>` instead folds
-member drafts into a real batch round.
+A tag is ONE agent conversation: `oA` / `:ObelusTagThread` opens it directly, and replying to any
+tagged thread (`or`) or running a batch round (`os`/`oS`, `<M-s>`) all resume that SAME session,
+scoped to just what changed since the last message. Untagging a thread forks it onto its own
+fresh session, so its history stays out of a tag it no longer belongs to.
 
 Popup geometry is one knob: `render.preview_matches_chat`. Off (default), the boxes adapt —
 every pass re-picks the roomier side of the commented lines and each surface sizes its own

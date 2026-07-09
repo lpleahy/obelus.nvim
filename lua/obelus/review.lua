@@ -278,10 +278,53 @@ local TAG_META_PREAMBLE = 'You are the batch-level reviewer for the tag "#%s": y
   .. " ask it a question) you MUST use the write-back protocol — keyed by that thread's comment id — rather"
   .. " than just describing the change in prose."
 
+-- A reply on a TAGGED member thread X routes over its tag's shared session (see
+-- tag_session_prompt below) — the session holds the WHOLE tag's context (every
+-- JOINED/LEFT thread it's seen), but this one message is scoped to X alone. Says
+-- so; the write-back scope (actions_comments = { X }, see do_respond) enforces it.
+local SCOPING_PREAMBLE = "This message concerns ONLY the thread below — you have the broader #%s context, but"
+  .. " reply to and act on THIS thread alone."
+
+-- Unified tag session: build a tag-session send's prompt = the membership delta
+-- (JOINED/LEFT blocks — store.tag_membership_delta) since the tag meta's last
+-- committed baseline, THEN (only on `founding` — this session's very first-ever
+-- send) `opts.preamble`, THEN `body`. The join blocks in the delta ARE the
+-- founding briefing now — this REPLACES the old one-shot format.meta_context()
+-- call for tag metas; don't call both (see review.do_respond's two tag-session
+-- branches below, neither of which calls meta_context).
+-- `opts.include_drafts` governs the JOIN blocks' own thread_full call — respond
+-- modes (both branches below) pass false; obelus.batch's submit-all rounds pass
+-- true, matching format.meta_context's existing respond-vs-submit-all split.
+---@param tag string
+---@param founding boolean
+---@param body string
+---@param opts? { include_drafts?: boolean, preamble?: string }
+local function tag_session_prompt(tag, founding, body, opts)
+  opts = opts or {}
+  local parts = {}
+  local delta = store.tag_membership_delta(tag)
+  local delta_block = require("obelus.format").tag_deltas(tag, delta, { include_drafts = opts.include_drafts })
+  if delta_block ~= "" then
+    parts[#parts + 1] = delta_block
+  end
+  if founding and opts.preamble then
+    parts[#parts + 1] = opts.preamble
+  end
+  parts[#parts + 1] = body
+  return table.concat(parts, "\n\n")
+end
+
 -- Add a follow-up user turn and continue the agent conversation (--resume).
 -- mode: "send" (default → cli.models.send) | "fast" (→ cli.models.fast, falling back to send)
 local function do_respond(c, text, mode)
-  if M.busy(c.id) then
+  -- the tag this send concerns, if any (mutually exclusive: a meta record only
+  -- ever carries meta_tag, a real thread only ever carries tag) — used by the
+  -- busy guard below AND by the tag-session branches further down.
+  local tag = c.meta_tag or (not c.meta and c.tag or nil)
+  -- a tag's shared session can be resumed from THREE entry points (the tag
+  -- thread, a member reply, or a batch round) — serialize against ALL of them,
+  -- not just this thread's own dispatching flag (obelus.batch.tag_busy).
+  if M.busy(c.id) or (tag and require("obelus.batch").tag_busy(tag)) then
     return vim.notify("obelus: the agent is still replying — wait for it to finish", vim.log.levels.WARN)
   end
   store.set_pending_you(c.id, text) -- update the draft turn in place (no duplicate), then dispatch
@@ -291,65 +334,139 @@ local function do_respond(c, text, mode)
   require("obelus.panel").on_send(c.id) -- modal popup/sidebar: re-arm its auto-scroll
   local cli = config.options.transport.cli or {}
   local models = cli.models or {}
-  local model = (mode == "fast") and (models.fast or models.send) or models.send
-  -- No session to resume = the agent has never seen this comment (the user typed
-  -- into a thread that was never dispatched). Sending only `text` would reach the
-  -- model with ZERO file/selection context — prepend the serialized comment,
-  -- which also carries the @path so the mention send policy applies to it.
-  -- The project (meta) thread is the SAME idea at project scope: prepend the
-  -- whole-project briefing (every other thread, full or summarized) instead of one
-  -- comment's own markdown.
-  local prompt = text
-  if not c.session_id then
-    if c.meta_tag then
-      -- a TAG meta: scope the briefing to this tag's threads only, and NEVER
-      -- include a member's unsent draft (plain RESPOND vs SUBMIT-ALL — see
-      -- M.submit_all and TAG_META_PREAMBLE above).
-      prompt = require("obelus.format").meta_context({ tag = c.meta_tag, include_drafts = false })
-        .. "\n\n"
-        .. string.format(TAG_META_PREAMBLE, c.meta_tag)
-        .. "\n\n"
-        .. text
-    elseif c.meta then
-      prompt = require("obelus.format").meta_context() .. "\n\n" .. META_PREAMBLE .. "\n\n" .. text
-    else
-      prompt = require("obelus.format").comment_md(c) .. "\n" .. text
-    end
-  end
-  local submit_opts = {
-    comments = { c },
-    resume = c.session_id,
-    prompt = prompt,
-    stream = true, -- replies stream live into the thread
-    model = model, -- per send-mode model (nil = the cmd / account default)
-  }
-  if c.meta then
-    -- fan-out: the write-back protocol must cover every REAL thread (not just the
-    -- meta record itself, which cli.lua's run_stream would otherwise scope
-    -- `allowed` to) — this is how the project chat can reply/resolve/needs_response
-    -- on any thread in the project, not only the one it's nominally "about". A tag
-    -- meta narrows the fan-out to THAT tag's threads only.
+  local format = require("obelus.format")
+
+  -- Unified tag session: EVERY send concerning tag T — the tag thread's own
+  -- message (c.meta_tag ~= nil, case A below) or a reply on a TAGGED member
+  -- thread (c.tag ~= nil, case B) — resumes the ONE shared session owned by the
+  -- tag meta record (tag_meta.session_id is canonical; see doc/obelus.txt's "Tag
+  -- threads"). `tag_ctx` (nil for the untouched global-meta/plain-thread cases)
+  -- carries what the post-dispatch bookkeeping below needs: which tag, and the
+  -- member-reply cross-reference line (case B only — case A's OWN message IS the
+  -- tag-level conversation, nothing to cross-reference).
+  local model, prompt, submit_opts, tag_ctx
+
+  if c.meta_tag then
+    -- case A: the tag thread's OWN message. `c` IS the tag meta record, so
+    -- `c.session_id` doubles as the tag session's id — no separate lookup.
+    model = (mode == "fast") and (models.fast or models.send) or (models.batch or models.send)
+    prompt = tag_session_prompt(tag, c.session_id == nil, text, {
+      include_drafts = false, -- plain RESPOND never leaks a member's unsent draft (see SUBMIT-ALL below)
+      preamble = string.format(TAG_META_PREAMBLE, tag),
+    })
+    submit_opts = {
+      comments = { c },
+      resume = c.session_id,
+      prompt = prompt,
+      stream = true,
+      model = model,
+      session_owner_id = c.id,
+      -- the mention policy must see ONLY the user's text: the delta's join blocks
+      -- carry real "@path" mentions on purpose and must NOT be re-scanned (see
+      -- transport/init.lua's choke point)
+      mention_text = text,
+      mention_include_drafts = false, -- same promise as plain RESPOND: no leaking a draft via @thread pull-back
+    }
+    -- fan-out: the write-back protocol covers every member of THIS tag (not just
+    -- the meta record itself — cli.lua's run_stream would otherwise scope
+    -- `allowed` to just the meta id).
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      if x.meta then
-        return false
-      end
-      return c.meta_tag == nil or x.tag == c.meta_tag
+      return not x.meta and x.tag == tag
     end, store.all())
-    -- the mention policy must see ONLY the user's text: the briefing's resolved
-    -- summaries are @thread tokens on purpose and must NOT self-expand (see
-    -- transport/init.lua's choke point)
-    submit_opts.mention_text = text
-    -- a tag meta's RESPOND promises member drafts stay unseen — that policy also
-    -- governs explicit @thread pull-backs in the user's own text
-    if c.meta_tag ~= nil then
-      submit_opts.mention_include_drafts = false
+    tag_ctx = { tag = tag }
+  elseif tag then
+    -- case B: a reply on a TAGGED member thread X — routes over X's tag's shared
+    -- session (get-or-create the meta record), scoped to X alone. The write-back
+    -- scope below (actions_comments = { c }) ENFORCES that scoping, not just states it.
+    local tag_meta = store.tag_meta_thread(tag)
+    model = (mode == "fast") and (models.fast or models.send) or (models.batch or models.send)
+    local body = string.format(SCOPING_PREAMBLE, tag) .. "\n\n" .. text
+    prompt = tag_session_prompt(tag, tag_meta.session_id == nil, body, { include_drafts = false })
+    submit_opts = {
+      comments = { c },
+      resume = tag_meta.session_id,
+      prompt = prompt,
+      stream = true,
+      model = model,
+      session_owner_id = tag_meta.id, -- captured session lands on the TAG META, never on c
+      actions_comments = { c },
+      mention_text = text,
+      mention_include_drafts = false,
+    }
+    local first = (vim.split(text, "\n")[1] or ""):sub(1, 120)
+    tag_ctx = {
+      tag = tag,
+      -- cross-reference: note this reply in the tag meta's own transcript, so
+      -- reading #<tag> alone still shows every member send that happened
+      crossref = string.format("↳ re %s %s: %s", format.relpath(c.file), format.range_label(c), first),
+    }
+  elseif c.meta then
+    -- case C: the GLOBAL project thread — untouched.
+    model = (mode == "fast") and (models.fast or models.send) or models.send
+    prompt = text
+    if not c.session_id then
+      prompt = format.meta_context() .. "\n\n" .. META_PREAMBLE .. "\n\n" .. text
     end
+    submit_opts = {
+      comments = { c },
+      resume = c.session_id,
+      prompt = prompt,
+      stream = true,
+      model = model,
+      mention_text = text,
+    }
+    -- fan-out: the write-back protocol must cover every REAL thread (not just the
+    -- meta record itself) — this is how the project chat can reply/resolve/
+    -- needs_response on any thread in the project, not only the one it's
+    -- nominally "about".
+    submit_opts.actions_comments = vim.tbl_filter(function(x)
+      return not x.meta
+    end, store.all())
+  else
+    -- case D: an ordinary thread — untouched for one that was NEVER tagged (see
+    -- below). No session to resume = the agent has never seen this comment;
+    -- prepend the thread's own serialization so it isn't sent with zero file/
+    -- selection context (also carries the @path so the mention send policy
+    -- applies to it). format.thread_full, not the older comment_md: for a
+    -- genuinely brand-new comment (its only turn IS c.comment) the two produce
+    -- IDENTICAL output — but a thread UNTAGGED/RETAGGED just now (store.
+    -- tag_comment clears c.session_id, forcing this same "no session" founding
+    -- path) may already hold turns from its tagged life, and those belong in the
+    -- fresh session too (own turns only — no tag-chat commentary; see
+    -- store.tag_comment's doc comment).
+    model = (mode == "fast") and (models.fast or models.send) or models.send
+    prompt = text
+    if not c.session_id then
+      -- include_drafts="omit": set_pending_you already wrote `text` onto the
+      -- turns as the trailing draft — serializing it AND appending it sent the
+      -- user's message twice ("You (draft, unsent): X … X")
+      prompt = format.thread_full(c, { include_drafts = "omit" }) .. "\n" .. text
+    end
+    submit_opts = {
+      comments = { c },
+      resume = c.session_id,
+      prompt = prompt,
+      stream = true,
+      model = model,
+    }
   end
+
   -- transport.submit pcalls the backend and RETURNS FALSE on failure (unknown
   -- transport name, backend threw) — and this pcall is belt-and-braces for anything
   -- thrown before that catch. Either way the send never started: unstick the panel's
   -- streaming bridge (on_send above armed it) or the chat stays in plain-text
   -- streaming mode with a spinner nothing will ever clear.
+  if tag_ctx then
+    -- membership commits ride the RUN-success hook, not dispatch start: a
+    -- spawned-but-failed run advancing known_ids would make the retry skip the
+    -- join briefings the agent never received (a silent, permanent context hole)
+    submit_opts.on_success = function()
+      store.commit_tag_known_ids(tag_ctx.tag)
+      if tag_ctx.crossref then
+        store.add_tag_crossref(tag_ctx.tag, tag_ctx.crossref)
+      end
+    end
+  end
   local ok, ret = pcall(require("obelus.transport").submit, config.options.transport.dispatch or "cli", submit_opts)
   if not ok or ret == false then
     store.abort(c.id)

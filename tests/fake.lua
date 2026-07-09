@@ -94,9 +94,53 @@ function F.finish(ok, session)
   local mode = (require("obelus.config").options.render or {}).narration
   local acc = stream.collapse(F.col.text(), F.col.final_start(), mode)
   F.acc = acc
-  store.stream_finish(F.target.id, acc, session, ok ~= false)
+  -- unified tag session (opts.session_owner_id — review.do_respond's tagged
+  -- branches): mirrors cli.lua's run_stream exactly — a captured session lands on
+  -- the OWNER (the tag meta) when it differs from the streaming target, never on
+  -- the target's own session_id
+  local owner_id = (F.payload and F.payload.opts and F.payload.opts.session_owner_id) or F.target.id
+  store.stream_finish(F.target.id, acc, owner_id == F.target.id and session or nil, ok ~= false)
+  if session and owner_id ~= F.target.id then
+    store.update(owner_id, { session_id = session })
+  end
+  -- run-level success hook, mirroring cli.lua: tag membership commits ride this
+  if ok ~= false and F.payload and F.payload.opts and F.payload.opts.on_success then
+    pcall(F.payload.opts.on_success)
+  end
   pcall(progress.finish, F.job, ok ~= false, acc)
   require("obelus.render").render_all()
+end
+
+-- Simulate a ONE-SHOT (batch) dispatch's exit-callback SESSION CAPTURE — same
+-- owner-id branching as cli.lua's run_oneshot: a captured session lands on
+-- opts.session_owner_id (a TAGGED batch, deferring to its tag meta) when present,
+-- else on the batch record itself (an UNTAGGED batch, unchanged). Targets the
+-- MOST RECENT oneshot payload (F.oneshots[#F.oneshots]) — batch.create/continue's
+-- own dispatch. Turn/write-back bookkeeping (the .ai/review-actions-*.json file)
+-- is a separate concern real specs don't need to simulate for session-focused
+-- assertions; this only covers session capture.
+---@param session? string
+function F.finish_batch(session)
+  local payload = F.oneshots[#F.oneshots]
+  if not payload then
+    return
+  end
+  for _, cm in ipairs(payload.comments or {}) do
+    require("obelus.jobs").clear(cm.id)
+    store.clear_dispatching(cm.id)
+  end
+  if not (session and payload.opts and payload.opts.batch) then
+    return
+  end
+  local owner_id = payload.opts.session_owner_id
+  if payload.opts.on_success then
+    pcall(payload.opts.on_success) -- run-level success hook (cli.lua parity)
+  end
+  if owner_id then
+    store.update(owner_id, { session_id = session })
+  else
+    store.update_batch(payload.opts.batch.id, { session_id = session })
+  end
 end
 
 -- Clear all recorded state between specs.

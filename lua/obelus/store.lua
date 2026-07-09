@@ -151,6 +151,13 @@ function M.tag_meta_thread(tag)
     id = M.next_id(),
     created_at = os.time(),
     status = "open",
+    -- unified tag session (see M.tag_membership_delta below): every id currently
+    -- tagged `tag` as of the last successful tag-session dispatch — the baseline
+    -- the NEXT send's join/leave delta is computed against. A record loaded from
+    -- before this field existed has none (nil), which M.tag_membership_delta
+    -- treats as empty — safe: it just over-briefs (everyone looks like a fresh
+    -- join) rather than under-briefing.
+    known_ids = {},
   }
   table.insert(M.comments, rec)
   if opts().persist.auto then
@@ -642,6 +649,15 @@ end
 
 -- Set or clear (nil/"") a single thread's tag. Direct field write so clearing
 -- works (M.update can't unset a key — nil values vanish from the fields table).
+--
+-- Unified tag session: a tagged thread's replies route over ITS TAG'S shared
+-- session (tag_meta.session_id), never its own c.session_id (see
+-- review.do_respond) — so c.session_id just sits there stale while tagged.
+-- UNTAGGING (or RETAGGING to a different tag) FORKS the thread: clear that stale
+-- session_id so the next respond founds a genuinely fresh one (comment_md/
+-- thread_full framing, not a resume into a conversation the new context no longer
+-- matches). A thread that was never tagged (nil -> some tag) keeps its session
+-- untouched — it isn't a fork, just a join (see M.tag_membership_delta).
 function M.tag_comment(id, tag)
   local c = M.get(id)
   if not c then
@@ -650,11 +666,92 @@ function M.tag_comment(id, tag)
   if c.meta then
     return -- the project thread is never batch-curated; a tag on it would be a phantom
   end
-  c.tag = (tag and tag ~= "") and tag or nil
+  local new_tag = (tag and tag ~= "") and tag or nil
+  local old_tag = c.tag
+  c.tag = new_tag
+  if old_tag ~= nil and old_tag ~= new_tag then
+    c.session_id = nil -- fork: untag or retag-elsewhere invalidates the old tag-session resume
+  end
   if opts().persist.auto then
     M.save_soon()
   end
   return c
+end
+
+-- Every thread currently tagged `tag` (any status — a resolved member is still
+-- part of the tag's session membership). The tag session's member set.
+---@param tag string
+function M.tag_members(tag)
+  return vim.tbl_filter(function(c)
+    return not c.meta and c.tag == tag
+  end, M.comments)
+end
+
+-- Unified tag session membership delta: what's changed since the tag meta's
+-- last-committed `known_ids` baseline. `joins` = currently-tagged comments not yet
+-- known (new threads to brief, or the very first send ever — when known_ids is
+-- still empty, EVERY current member is a join, which is how the founding briefing
+-- happens now — see review.do_respond's tag_session_prompt). `leaves` = ids that
+-- WERE known but are no longer tagged here — untagged, retagged elsewhere, or
+-- deleted outright (`c` is nil for a deleted member; the caller formats that
+-- case distinctly — see format.tag_deltas). Pure/read-only; pair with
+-- M.commit_tag_known_ids to advance the baseline after a successful dispatch.
+---@param tag string
+---@return { joins: table[], leaves: { id: string, c: table? }[] }
+function M.tag_membership_delta(tag)
+  local meta = M.get_meta(tag)
+  local known = (meta and meta.known_ids) or {}
+  local known_set = {}
+  for _, id in ipairs(known) do
+    known_set[id] = true
+  end
+  local current_set = {}
+  local joins = {}
+  for _, c in ipairs(M.tag_members(tag)) do
+    current_set[c.id] = true
+    if not known_set[c.id] then
+      joins[#joins + 1] = c
+    end
+  end
+  local leaves = {}
+  for _, id in ipairs(known) do
+    if not current_set[id] then
+      leaves[#leaves + 1] = { id = id, c = M.get(id) }
+    end
+  end
+  return { joins = joins, leaves = leaves }
+end
+
+-- Advance the tag meta's known_ids baseline to the CURRENT full membership.
+-- Call ONLY after a tag-session dispatch has successfully STARTED (create the
+-- meta record first if needed — same idempotent get-or-create as any other
+-- tag_meta_thread call).
+---@param tag string
+function M.commit_tag_known_ids(tag)
+  local meta = M.tag_meta_thread(tag)
+  local ids = {}
+  for _, c in ipairs(M.tag_members(tag)) do
+    ids[#ids + 1] = c.id
+  end
+  meta.known_ids = ids
+  if opts().persist.auto then
+    M.save_soon()
+  end
+  return meta
+end
+
+-- Note a tag-session send in the tag meta's OWN transcript — e.g. "↳ re
+-- lua/x.lua L4-L9: fix the thing" for a member reply, or "round 3 sent — 2
+-- threads" for a batch round (see review.do_respond / obelus.batch). Always
+-- AGENT-authored: `line` must never read as a "you" turn — store.pending()
+-- already excludes meta records outright, but an agent-authored tail also keeps
+-- it from ever looking like an unsent draft (M.pending_you_text) or a fresh
+-- reply the next round's classify() would mistake for the user replying.
+---@param tag string
+---@param line string
+function M.add_tag_crossref(tag, line)
+  local meta = M.tag_meta_thread(tag)
+  return M.add_turn(meta.id, "agent", line)
 end
 
 -- Pending threads carrying a given tag (the batch set for that tag).

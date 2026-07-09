@@ -449,35 +449,41 @@ T.it(
   end
 )
 
+-- SUPERSEDES the old "rides its OWN session — independent of the batch's" MVP
+-- test: unified tag conversations (feat/tag-sessions) make the tag meta's session
+-- the ONE canonical session for its whole tag — the batch now resumes THIS same
+-- session (see obelus.batch.create's doc comment) rather than keeping an
+-- independent one. The global meta stays independent (untouched design point).
 T.it(
-  "tag meta send: rides its OWN session — independent of the batch's and the global meta's (MVP decision)",
+  "tag meta send: founds/rides the UNIFIED tag session — the tag's batch resumes the SAME session, independent of the global meta",
   function()
-    local ctx, F = fresh_stream_ctx()
+    local ctx, F = fresh_stream_ctx({ transport = { batch = { transport = "fake" } } })
     local c = ctx.store.add(T.comment({ comment = "some auth thing" }))
     ctx.store.tag_comment(c.id, "auth")
     local global = ctx.store.meta_thread()
     global.session_id = "sess-global"
-    local batch = ctx.store.add_batch({
-      status = "open",
-      tag = "auth",
-      comment_ids = { c.id },
-      session_id = "sess-batch-auth",
-    })
 
     local tagmeta = ctx.store.tag_meta_thread("auth")
-    T.is_nil(tagmeta.session_id, "a fresh tag meta has no session of its own yet")
+    T.is_nil(tagmeta.session_id, "a fresh tag meta has no session yet")
 
     require("obelus").chat_send(tagmeta.id, "hello", "send")
-    T.is_nil(F.payload.opts.resume, "first send: nothing to resume yet (its OWN session, not the batch's)")
-    F.finish(true, "sess-tag-own")
+    T.is_nil(F.payload.opts.resume, "first send: nothing to resume yet")
+    T.eq(F.payload.opts.session_owner_id, tagmeta.id, "a captured session is owned by the tag meta")
+    F.finish(true, "sess-tag-auth")
 
-    T.eq(ctx.store.get(tagmeta.id).session_id, "sess-tag-own", "the tag meta recorded its OWN session")
-    T.eq(ctx.store.get_batch(batch.id).session_id, "sess-batch-auth", "the batch's session is untouched")
-    T.eq(ctx.store.get_meta().session_id, "sess-global", "the global meta's session is untouched")
+    T.eq(ctx.store.get(tagmeta.id).session_id, "sess-tag-auth", "the tag meta recorded the session")
+    T.eq(ctx.store.get_meta().session_id, "sess-global", "the global meta's session is untouched — independent")
 
     require("obelus").chat_send(tagmeta.id, "follow-up", "send")
-    T.eq(F.payload.opts.resume, "sess-tag-own", "the SECOND send resumes the tag meta's own session, not the batch's")
-    F.finish(true, "sess-tag-own")
+    T.eq(F.payload.opts.resume, "sess-tag-auth", "the SECOND send resumes the SAME (unified) tag session")
+    F.finish(true, "sess-tag-auth")
+
+    -- a batch created for this tag afterward resumes THIS session — unified, not
+    -- independent — and never captures one of its own on the batch record.
+    local created = require("obelus.batch").create({ c }, { tag = "auth" })
+    T.ok(created, "batch created")
+    T.eq(F.oneshots[1].opts.resume, "sess-tag-auth", "round 1 resumes the tag meta's already-established session")
+    T.is_nil(created.session_id, "the batch record itself never gets its own session_id — it defers to the tag meta")
   end
 )
 
@@ -495,11 +501,19 @@ T.it("tag meta SUBMIT-ALL: continues the tag's own open batch, folding in a memb
   local batch = require("obelus.batch")
   local created = batch.create({ c1 }, { tag = "auth" })
   T.ok(created, "the tag's batch was created (one-shot, non-stream dispatch — see F.oneshots)")
-  -- the fake transport doesn't simulate session capture for a one-shot (non-
-  -- streamed) batch dispatch — record one by hand so the round below takes the
-  -- normal resumed-session "diff" path (round_prompt, which labels members by
-  -- id) instead of falling back to a full re-serialization (no ids to grep for).
-  ctx.store.update_batch(created.id, { session_id = "sess-batch-fake-1" })
+  -- unified tag session: a TAGGED batch defers session CAPTURE to its tag meta,
+  -- never the batch record (obelus.batch.create's session_owner_id) — simulate
+  -- that capture (F.finish_batch mirrors cli.lua's run_oneshot owner-id branch)
+  -- so the round below takes the normal resumed-session "diff" path
+  -- (round_prompt, which labels members by id) instead of a full re-serialization
+  -- (no ids to grep for).
+  T.eq(
+    created.session_id,
+    nil,
+    "the batch record itself never captures a session for a TAGGED batch — it defers to the tag meta"
+  )
+  F.finish_batch("sess-tag-auth-1")
+  T.eq(ctx.store.tag_meta_thread("auth").session_id, "sess-tag-auth-1", "the captured session landed on the tag meta")
 
   -- c2 is NOT yet a batch member and carries a saved-but-unsent draft reply —
   -- SUBMIT-ALL must fold it in as a new member of the round, same as any other

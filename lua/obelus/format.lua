@@ -75,7 +75,7 @@ end
 ---turn IS c.comment) is never treated as a "draft" here — it's always shown via
 ---comment_md's own Feedback line, before this loop even starts.
 ---@param c table
----@param opts? { include_drafts?: boolean }
+---@param opts? { include_drafts?: boolean|"omit" } -- "omit" = skip the trailing draft with NO note (the caller sends it as the live message)
 function M.thread_full(c, opts)
   opts = opts or {}
   local include_drafts = opts.include_drafts
@@ -89,7 +89,12 @@ function M.thread_full(c, opts)
   local lines = {}
   for i = 2, #turns do
     local t = turns[i]
-    if trailing_draft and i == n and not include_drafts then
+    if trailing_draft and i == n and include_drafts == "omit" then
+      -- silently skipped: the caller is about to send this very draft AS the
+      -- message (do_respond's founding prompt) — serializing it here too sent
+      -- the user's text TWICE, once mislabeled "draft, unsent"
+      lines[#lines + 1] = nil
+    elseif trailing_draft and i == n and not include_drafts then
       lines[#lines + 1] = "- (has an unsent draft, not shown)"
       lines[#lines + 1] = ""
     else
@@ -154,6 +159,36 @@ function M.meta_context(opts)
     parts[#parts + 1] = ""
   end
   return table.concat(parts, "\n")
+end
+
+---Membership deltas for a unified tag session's prompt (store.tag_membership_delta
+---— see review.do_respond / obelus.batch): one "JOINED" block per newly-tagged
+---member, giving its FULL identity (M.thread_full — `include_drafts` forwarded,
+---same respond-vs-submit-all split as M.meta_context), and one "LEFT" line per
+---member no longer tagged here (untagged, retagged elsewhere, or — when `l.c` is
+---nil — deleted outright, identified by id since there's nothing left to look up).
+---"" when there's nothing to report (nothing prepended to the prompt that send).
+---@param tag string
+---@param delta { joins: table[], leaves: { id: string, c: table? }[] }
+---@param opts? { include_drafts?: boolean|"omit" } -- "omit" = skip the trailing draft with NO note (the caller sends it as the live message)
+function M.tag_deltas(tag, delta, opts)
+  opts = opts or {}
+  local lines = {}
+  for _, c in ipairs(delta.joins or {}) do
+    lines[#lines + 1] = "JOINED the #" .. tag .. " conversation:"
+    lines[#lines + 1] = M.thread_full(c, { include_drafts = opts.include_drafts })
+  end
+  for _, l in ipairs(delta.leaves or {}) do
+    if l.c then
+      lines[#lines + 1] = "LEFT the conversation (do not act on it): "
+        .. M.relpath(l.c.file)
+        .. " "
+        .. M.range_label(l.c)
+    else
+      lines[#lines + 1] = "LEFT the conversation (do not act on it): " .. l.id .. " (deleted)"
+    end
+  end
+  return table.concat(lines, "\n")
 end
 
 return M

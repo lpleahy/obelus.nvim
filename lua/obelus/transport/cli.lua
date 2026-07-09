@@ -153,12 +153,14 @@ local function run_oneshot(payload)
       -- clear `dispatching` FIRST (so a throw in the spinner job can't strand the
       -- thread on "thinking…"), then finish the spinner under pcall
       local is_batch = payload.opts and payload.opts.batch ~= nil
+      local owner_id = payload.opts and payload.opts.session_owner_id
       for _, cm in ipairs(payload.comments or {}) do
         store.clear_dispatching(cm.id)
         -- a per-comment session is for ISOLATED per-thread replies; a batch's session
-        -- belongs to the batch alone (stored below), so don't stamp it on the members —
-        -- that would make a <CR> reply silently resume (and fork) the shared session
-        if session and not is_batch then
+        -- belongs to the batch (or, tagged, its tag meta — see below), so don't stamp
+        -- it on the members — that would make a <CR> reply silently resume (and fork)
+        -- the shared session
+        if session and not is_batch and not owner_id then
           store.update(cm.id, { session_id = session })
         end
         -- With the actions protocol, per-comment outcomes come from the file;
@@ -175,10 +177,27 @@ local function run_oneshot(payload)
           end
         end
       end
-      -- batch conversation: store the ONE shared session on the batch (not per
-      -- comment) so later rounds can --resume it (obelus.batch.continue)
+      -- batch conversation: store the ONE shared session so later rounds can
+      -- --resume it (obelus.batch.continue) — on the batch record itself for an
+      -- UNTAGGED batch, or (session_owner_id present) on the TAGGED batch's tag
+      -- meta record instead — a unified tag session defers session ownership to
+      -- the tag meta, never the batch (see obelus.batch.create/continue)
       if payload.opts and payload.opts.batch and session then
-        store.update_batch(payload.opts.batch.id, { session_id = session })
+        if owner_id then
+          if store.get(owner_id) then
+            store.update(owner_id, { session_id = session })
+          else
+            vim.notify(
+              "obelus: the tag conversation record was deleted mid-run — its session was not saved",
+              vim.log.levels.WARN
+            )
+          end
+        else
+          store.update_batch(payload.opts.batch.id, { session_id = session })
+        end
+      end
+      if ok and payload.opts and payload.opts.on_success then
+        pcall(payload.opts.on_success) -- run-level success hook (see run_stream's note)
       end
       -- actions mode: the streamed text was only a live preview — drop the transient
       -- turn BEFORE actions.apply() seeds the real per-comment turns from the file
@@ -303,7 +322,32 @@ local function run_stream(payload)
       end
       -- clear `dispatching` FIRST so a throw in the spinner job can't strand the
       -- thread on "thinking…"; then finish the spinner (pcall: never let it strand)
-      store.stream_finish(target.id, acc, session, ok)
+      -- unified tag session (opts.session_owner_id — review.do_respond's tagged
+      -- branches): the captured session lands on the TAG META, never on `target`
+      -- itself, when the owner differs (a reply on a tagged member thread X
+      -- streams into X's transcript, but the session it just spoke through
+      -- belongs to X's tag, not X)
+      local owner_id = (payload.opts and payload.opts.session_owner_id) or target.id
+      store.stream_finish(target.id, acc, owner_id == target.id and session or nil, ok)
+      if session and owner_id ~= target.id then
+        if store.get(owner_id) then
+          store.update(owner_id, { session_id = session })
+        else
+          -- the tag conversation's record was deleted mid-run: the session has
+          -- nowhere to land — say so instead of silently dropping continuity
+          vim.notify(
+            "obelus: the tag conversation record was deleted mid-run — its session was not saved",
+            vim.log.levels.WARN
+          )
+        end
+      end
+      if ok and payload.opts and payload.opts.on_success then
+        -- run-level success hook (tag membership commits ride this: a spawned-
+        -- but-FAILED run must not advance known_ids, or the retry would skip the
+        -- join briefings the agent never actually received — a silent,
+        -- permanent context hole)
+        pcall(payload.opts.on_success)
+      end
       if use_actions then
         local allowed = { [target.id] = true }
         if actions_comments then

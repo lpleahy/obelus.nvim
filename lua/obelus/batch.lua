@@ -45,6 +45,28 @@ function M.busy(batch)
   return false
 end
 
+-- Is tag T's shared session mid-dispatch ANYWHERE — the tag thread itself, or ANY
+-- of its member threads (a plain reply on one, or another round)? Widens M.busy
+-- (which only checks THIS batch's own current members) to the whole tag: a
+-- unified tag session (see review.do_respond) can be resumed from three
+-- different entry points — the tag thread, a member reply, or a batch round —
+-- and all three must serialize against each other, not just against their own
+-- kind, or a second dispatch would --resume a session a live subprocess hasn't
+-- finished writing to yet.
+---@param tag string
+function M.tag_busy(tag)
+  local tag_meta = store.get_meta(tag)
+  if tag_meta and jobs.busy(tag_meta.id) then
+    return true
+  end
+  for _, m in ipairs(store.tag_members(tag)) do
+    if jobs.busy(m.id) then
+      return true
+    end
+  end
+  return false
+end
+
 -- Snapshot the members' state so the NEXT round can diff against it.
 local function snapshot(members)
   local snap = {}
@@ -150,37 +172,76 @@ function M.round_prompt(batch, working, message)
 end
 
 -- Round 1: create a Batch from these comments and dispatch it through the
--- session-capable transport (cli), which captures the shared session id onto the
--- batch. Returns the new Batch.
+-- session-capable transport (cli). For a TAGGED batch (opts.tag), this is a
+-- unified tag-session send like any other (review.do_respond) — it resumes the
+-- tag meta's OWN session (get-or-create; may already hold history from tag-thread
+-- chats or earlier rounds) rather than starting fresh, prepends that tag's
+-- membership delta (JOINED/LEFT — store.tag_membership_delta) ahead of the round
+-- markdown, and defers session CAPTURE to the tag meta (never the batch record —
+-- see cli.lua's owner_id branch). An UNTAGGED batch is untouched: its own
+-- session_id captures the shared session as before. Returns the new Batch.
 function M.create(comments, opts)
   opts = opts or {}
+  local tag = opts.tag
+  if tag and M.tag_busy(tag) then
+    return vim.notify(
+      "obelus: the #" .. tag .. " session is still working — wait for it to finish",
+      vim.log.levels.WARN
+    )
+  end
   local ids = {}
   for _, c in ipairs(comments) do
     ids[#ids + 1] = c.id
   end
+  local tag_meta = tag and store.tag_meta_thread(tag) or nil -- get-or-create the session owner
   local batch = store.add_batch({
     comment_ids = ids,
     round = 1,
     transport = bcfg().transport or "cli",
     model = opts.model,
-    tag = opts.tag, -- when present, membership stays scoped to this tag across rounds
+    tag = tag, -- when present, membership stays scoped to this tag across rounds
     status = "open",
     snapshot = snapshot(comments),
   })
   for _, c in ipairs(comments) do
     store.set_comment_batch(c.id, batch.id) -- claim it; detach from any prior open batch
   end
-  local ok = require("obelus.transport").submit(batch.transport, {
-    comments = comments,
-    model = opts.model,
-    batch = batch,
-  })
+
+  local prompt = format.to_markdown(comments)
+  local resume
+  local submit_opts = { comments = comments, model = opts.model, batch = batch }
+  if tag then
+    resume = tag_meta.session_id
+    if bcfg().mode == "stateless" or bcfg().prompt == "full" then
+      resume = nil
+    end
+    -- submit-all's round briefs a JOINING member's draft too (unlike a plain
+    -- respond) — the round's own write-back is what settles a draft into a real
+    -- turn, same policy as any other pending thread in this round
+    local delta = store.tag_membership_delta(tag)
+    local delta_block = format.tag_deltas(tag, delta, { include_drafts = true })
+    if delta_block ~= "" then
+      prompt = delta_block .. "\n\n" .. prompt
+    end
+    submit_opts.resume = resume
+    submit_opts.session_owner_id = tag_meta.id
+    local round_n, size_n = batch.round, #comments
+    submit_opts.on_success = function()
+      store.commit_tag_known_ids(tag)
+      store.add_tag_crossref(tag, string.format("round %d sent — %d threads", round_n, size_n))
+    end
+  end
+  submit_opts.prompt = prompt
+
+  local ok = require("obelus.transport").submit(batch.transport, submit_opts)
   if ok == false then
     -- transport.submit already notified the error; undo the batch record so it
     -- doesn't linger as a dead continue target with nothing dispatched behind it
     store.remove_batch(batch.id)
     return nil
   end
+  -- (membership commit + crossref moved to submit_opts.on_success — a spawned-
+  -- but-failed run must not advance known_ids; see review.do_respond's note)
   vim.notify(
     string.format(
       "obelus: batch #%d%s submitted (%d threads) — <prefix>S to continue",
@@ -206,7 +267,10 @@ function M.continue(message, target)
   if not batch then
     return vim.notify("obelus: no open batch to continue — submit one first (<prefix>s)", vim.log.levels.WARN)
   end
-  if M.busy(batch) then
+  -- for a TAGGED batch, widen the check to the whole tag session (the tag thread
+  -- itself, or a plain reply on any of its members, may be mid-dispatch too —
+  -- see M.tag_busy)
+  if M.busy(batch) or (batch.tag and M.tag_busy(batch.tag)) then
     return vim.notify("obelus: the batch agent is still working — wait for it to finish", vim.log.levels.WARN)
   end
   local working = working_set(batch)
@@ -230,8 +294,22 @@ function M.continue(message, target)
     end
   end
 
-  -- resume only when we actually captured a session and aren't forced to re-serialize
-  local resume = batch.session_id
+  -- resume only when we actually captured a session and aren't forced to re-serialize.
+  -- A TAGGED batch defers to its tag meta's OWN session (unified tag session —
+  -- get-or-create; it may already hold history from tag-thread chats or earlier
+  -- rounds) instead of the batch's own session_id — see obelus.batch.create.
+  local tag = batch.tag
+  local tag_meta = tag and store.tag_meta_thread(tag) or nil
+  -- NOT `tag and tag_meta.session_id or batch.session_id` — that's the classic
+  -- Lua "and/or" trap: a tagged batch with no session CAPTURED yet (tag_meta.
+  -- session_id nil/false) would silently fall through to batch.session_id, which
+  -- a unified tag session must NEVER resume (see obelus.batch.create's doc comment)
+  local resume
+  if tag then
+    resume = tag_meta.session_id
+  else
+    resume = batch.session_id
+  end
   if bcfg().mode == "stateless" or bcfg().prompt == "full" then
     resume = nil
   end
@@ -244,19 +322,36 @@ function M.continue(message, target)
       prompt = "Instruction for this round: " .. message .. "\n\n" .. prompt
     end
   end
+  if tag then
+    local delta = store.tag_membership_delta(tag)
+    local delta_block = format.tag_deltas(tag, delta, { include_drafts = true })
+    if delta_block ~= "" then
+      prompt = delta_block .. "\n\n" .. prompt
+    end
+  end
 
   -- Persist MEMBERSHIP before the dispatch attempt: set_comment_batch already
   -- claimed the folded-in members away from other batches, so comment_ids must
   -- reflect that immediately — a failed dispatch previously left a new member
   -- claimed but unlisted (self-healing via the next fold-in, but a lie on disk).
   store.update_batch(batch.id, { comment_ids = ids })
-  local ok = require("obelus.transport").submit(batch.transport or "cli", {
+  local submit_opts = {
     comments = working,
     prompt = prompt,
     model = batch.model,
     batch = batch,
     resume = resume,
-  })
+  }
+  if tag then
+    submit_opts.session_owner_id = tag_meta.id
+    -- the round being DISPATCHED: the bump commits only after submit succeeds
+    local round_n, size_n = (batch.round or 1) + 1, #working
+    submit_opts.on_success = function()
+      store.commit_tag_known_ids(tag)
+      store.add_tag_crossref(tag, string.format("round %d sent — %d threads", round_n, size_n))
+    end
+  end
+  local ok = require("obelus.transport").submit(batch.transport or "cli", submit_opts)
   -- Commit the round bump + snapshot ONLY on submit success (transport.submit
   -- already notified any failure) — an exit-callback-timed snapshot would bake in
   -- agent-resolved statuses from a run that never happened. On failure we return
@@ -271,6 +366,7 @@ function M.continue(message, target)
     round = (batch.round or 1) + 1,
     snapshot = snapshot(working),
   })
+  -- (membership commit + crossref moved to submit_opts.on_success — see above)
 
   vim.notify(
     string.format(

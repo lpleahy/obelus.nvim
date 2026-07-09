@@ -446,3 +446,110 @@ T.it("a fresh meta thread has NO draft — its synthetic label never pre-fills t
   ctx.store.set_pending_you(meta.id, "my actual draft")
   T.eq(ctx.store.pending_you_text(ctx.store.get(meta.id)), "my actual draft")
 end)
+
+-- unified tag session: membership deltas, known_ids, the untag/retag fork --------
+
+T.it(
+  "tag_membership_delta: everyone currently tagged is a join when known_ids is still empty (the founding case)",
+  function()
+    local S = T.fresh().store
+    local a = S.add(T.comment({ comment = "a" }))
+    S.tag_comment(a.id, "auth")
+    local b = S.add(T.comment({ comment = "b" }))
+    S.tag_comment(b.id, "auth")
+    S.tag_meta_thread("auth") -- created, but known_ids is still the default {}
+
+    local delta = S.tag_membership_delta("auth")
+    T.eq(#delta.joins, 2, "both currently-tagged threads are joins")
+    T.eq(#delta.leaves, 0)
+  end
+)
+
+T.it("commit_tag_known_ids then tag_membership_delta again: no repeat joins (no double-briefing)", function()
+  local S = T.fresh().store
+  local a = S.add(T.comment({ comment = "a" }))
+  S.tag_comment(a.id, "auth")
+  S.commit_tag_known_ids("auth")
+
+  local delta = S.tag_membership_delta("auth")
+  T.eq(#delta.joins, 0, "already-known members are never joins again")
+  T.eq(#delta.leaves, 0)
+
+  local b = S.add(T.comment({ comment = "b" }))
+  S.tag_comment(b.id, "auth")
+  local delta2 = S.tag_membership_delta("auth")
+  T.eq(#delta2.joins, 1, "only the NEWLY tagged thread joins")
+  T.eq(delta2.joins[1].id, b.id)
+end)
+
+T.it("tag_membership_delta: untagging produces a leave; a deleted member's leave carries only its id", function()
+  local S = T.fresh().store
+  local a = S.add(T.comment({ comment = "a" }))
+  S.tag_comment(a.id, "auth")
+  local b = S.add(T.comment({ comment = "b" }))
+  S.tag_comment(b.id, "auth")
+  S.commit_tag_known_ids("auth")
+
+  S.tag_comment(a.id, nil) -- untag: a should leave
+  S.remove(b.id) -- delete outright: b should leave too, with no comment record left
+
+  local delta = S.tag_membership_delta("auth")
+  T.eq(#delta.joins, 0)
+  T.eq(#delta.leaves, 2)
+  local by_id = {}
+  for _, l in ipairs(delta.leaves) do
+    by_id[l.id] = l
+  end
+  T.ok(by_id[a.id] and by_id[a.id].c ~= nil, "the untagged (still-existing) member's leave carries its comment")
+  T.ok(by_id[b.id] and by_id[b.id].c == nil, "the deleted member's leave has no comment (nothing left to look up)")
+end)
+
+T.it("tag_comment: untagging clears the member's OWN session_id (the untag -> fork)", function()
+  local S = T.fresh().store
+  local c = S.add(T.comment({ comment = "x" }))
+  S.tag_comment(c.id, "auth")
+  S.update(c.id, { session_id = "stale-from-tag-session" })
+
+  S.tag_comment(c.id, nil)
+  T.is_nil(S.get(c.id).session_id, "untagging clears the stale session_id")
+end)
+
+T.it("tag_comment: retagging a -> b ALSO clears the member's session_id", function()
+  local S = T.fresh().store
+  local c = S.add(T.comment({ comment = "x" }))
+  S.tag_comment(c.id, "auth")
+  S.update(c.id, { session_id = "stale-from-auth-session" })
+
+  S.tag_comment(c.id, "perf")
+  T.is_nil(S.get(c.id).session_id, "retagging elsewhere clears the old tag's stale session_id too")
+end)
+
+T.it("tag_comment: a never-tagged thread being tagged for the FIRST time keeps its own session_id untouched", function()
+  local S = T.fresh().store
+  local c = S.add(T.comment({ comment = "x" }))
+  S.update(c.id, { session_id = "own-per-thread-session" })
+
+  S.tag_comment(c.id, "auth") -- nil -> "auth": a join, not a fork
+  T.eq(S.get(c.id).session_id, "own-per-thread-session", "tagging (not RE-tagging) is not a fork")
+end)
+
+T.it("add_tag_crossref appends an AGENT-authored turn — never flips the tag meta's pending/draft state", function()
+  local ctx = T.fresh()
+  local S = ctx.store
+  S.tag_meta_thread("auth")
+  S.add_tag_crossref("auth", "↳ re f.lua L1-L1: fix it")
+
+  local meta = S.get_meta("auth")
+  local turns = S.turns(meta)
+  T.eq(turns[#turns].author, "agent", "the cross-ref is agent-authored")
+  T.eq(turns[#turns].text, "↳ re f.lua L1-L1: fix it")
+  T.is_nil(S.pending_you_text(meta), "it never reads as a draft you're mid-typing")
+  local pending_ids = {}
+  for _, c in ipairs(S.pending()) do
+    pending_ids[c.id] = true
+  end
+  T.is_nil(
+    pending_ids[meta.id],
+    "a cross-ref never flips the tag meta into store.pending() (meta records are excluded outright, and an agent-authored tail can't look like one either)"
+  )
+end)

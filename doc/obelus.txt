@@ -901,16 +901,17 @@ Fan-out (acting on individual threads from the project chat) ~
     entire point of this chat.
 
 Tag threads ~                                        *obelus-tag-thread*
-    A TAG-LEVEL sibling of the project thread above: "for whatever batch
-    you're working on for a tag, one meta-thread you can engage for the
-    active tag" — scoped to the threads carrying ONE tag (|obelus-keymaps|'s
-    `g`/`G`), instead of the whole project. `<prefix>A` / |:ObelusTagThread|
-    / |obelus.tag_thread()| get-or-creates and opens it — the sticky tag
-    (`store.active_tag`, `<prefix>G`) if set, else the tag on the thread at
-    cursor; with neither, it notifies instead of doing nothing. Pressing it
-    again while that thread is already showing closes it (a toggle, like
-    |:ObelusPanel|). With no tag context, `<prefix>a`'s own project thread is
-    unaffected — this is purely additive.
+    A tag is ONE agent conversation, not a family of related-but-separate
+    ones: everything concerning tag T — the tag thread's own messages, a
+    reply on ANY thread carrying tag T, and every batch round submitted for
+    T — resumes THAT SAME session, owned by the tag's meta record (not by
+    the batch, and not by any member thread). `<prefix>A` / |:ObelusTagThread|
+    / |obelus.tag_thread()| get-or-creates and opens the tag thread itself —
+    the sticky tag (`store.active_tag`, `<prefix>G`) if set, else the tag on
+    the thread at cursor; with neither, it notifies instead of doing
+    nothing. Pressing it again while that thread is already showing closes
+    it (a toggle, like |:ObelusPanel|). With no tag context, `<prefix>a`'s
+    own project thread is unaffected — this is purely additive.
 
     Unlike the project thread's pinned sidebar row (which only ever shows an
     ALREADY-created record), the tag thread's row appears the moment a tag
@@ -919,30 +920,79 @@ Tag threads ~                                        *obelus-tag-thread*
     thread"; `<CR>` opens it (get-or-creating it there too). Only the one
     ACTIVE tag ever gets a row, never one per tag in use.
 
-    Two engagement modes, both sent from the SAME reply box ~
+    Membership: JOIN and LEAVE ~
+        Every message that concerns tag T carries a membership delta ahead
+        of it: any thread newly carrying tag T that the session hasn't
+        briefed yet is JOINED in full ("JOINED the #<tag> conversation:" —
+        its comment, code, and conversation so far); any thread the session
+        HAD briefed but no longer carries the tag — untagged, retagged
+        elsewhere, or deleted outright — gets one "LEFT the conversation (do
+        not act on it): ..." line. This is how the session stays current
+        without re-briefing everything on every send. The very FIRST message
+        ever sent in a tag's session — whichever entry point sends it, the
+        tag thread itself or a reply on one of its member threads — JOINS
+        every currently-tagged thread this way; that founding briefing is
+        what used to be a one-shot project-thread-style briefing.
+
+    Replying on a tagged thread ~
+        `<prefix>r` (or any reply) on a thread carrying a tag routes over
+        that tag's shared session instead of a session of its own — the
+        session already has the tag's full context, but the message is
+        SCOPED to that one thread alone: the prompt says so explicitly
+        ("This message concerns ONLY the thread below..."), and the
+        write-back protocol is restricted to that thread's id, so the agent
+        cannot act on a sibling thread from a single-thread reply. The reply
+        still streams into the replied-to thread's own transcript — only the
+        SESSION (and the model, see below) come from the tag; a captured
+        session lands back on the tag thread, never on the member's own
+        record. A one-line cross-reference ("↳ re <path> <range>: <first
+        line of your message>") is appended to the tag thread's OWN
+        transcript, agent-authored so it can never read as an unanswered
+        message there.
+
+    Two engagement modes from the tag thread's OWN reply box ~
         plain RESPOND (`<CR>`, same as any thread) — a discussion ABOUT the
         tag's threads that does NOT send or commit any member thread's
-        unsent draft reply: the briefing (`format.meta_context({ tag = ...,
-        include_drafts = false })`) SKIPS a trailing draft turn entirely,
+        unsent draft: a JOIN block skips a trailing draft turn entirely,
         leaving a "(has an unsent draft, not shown)" note in its place. The
         global project thread's own briefing is unaffected except that it
         now LABELS a draft turn ("You (draft, unsent):") instead of showing
         it unmarked.
 
         SUBMIT-ALL (`keys.chat.send_all`, default `<M-s>`) — the opposite:
-        folds EVERY pending thread carrying the tag into a batch round (the
-        same machinery `<prefix>s`/`<prefix>S` use — continues the tag's own
-        open batch if it's idle, else starts a new one), including one
-        sitting on a saved-but-unsent draft reply (a draft is just a
-        trailing "you" turn — the round already treats that as a real reply
-        to address, same as any other pending thread), carrying the typed
-        text as this round's instruction. In the GLOBAL project thread or an
-        ordinary thread — neither has a "tag" or "member drafts" concept —
-        `send_all` is just a plain send.
+        folds EVERY pending thread carrying the tag into a FORMAL batch
+        round (the same machinery `<prefix>s`/`<prefix>S` use — continues
+        the tag's own open batch if it's idle, else starts a new one, now
+        resuming this SAME unified session), including one sitting on a
+        saved-but-unsent draft reply (a draft is just a trailing "you" turn
+        — the round already treats that as a real reply to address, same as
+        any other pending thread), carrying the typed text as this round's
+        instruction. A one-line cross-reference ("round <n> sent — <k>
+        threads") is appended the same way a member reply's is. In the
+        GLOBAL project thread or an ordinary thread — neither has a "tag" or
+        "member drafts" concept — `send_all` is just a plain send.
 
-    Session: a tag thread keeps its OWN independent agent session (like the
-    project thread), separate from its tag's batch session — replying in it
-    does not resume or fork the batch's conversation, and vice versa.
+        A plain reply is INTERSTITIAL: it never bumps the batch's round
+        counter or takes a new snapshot — only a FORMAL round
+        (create/continue, i.e. submit-all) does that bookkeeping.
+
+    Untag forks the thread ~
+        Untagging a thread (or retagging it to a different tag) clears its
+        own session — the tag session it was routing through no longer
+        applies to it. Its NEXT reply founds a genuinely fresh session,
+        prompted with the thread's OWN conversation so far (comment, code,
+        and every turn it already has, no tag-chat commentary) rather than
+        resuming anything — it just no longer shares the tag's session, not
+        that its own history is forgotten. Retagging from tag A to tag B is
+        a leave from A (A's next message reports it) and a join into B (B's
+        founding or next message briefs it) — falling straight out of the
+        JOIN/LEAVE mechanism above, plus the session fork.
+
+    Model: every tag-session send — the tag thread's own messages, a reply
+    on any tagged thread, and batch rounds — defaults to
+    `transport.cli.models.batch` (falling back to `models.send`), the same
+    heavier model a batch submit already used. An ordinary (never-tagged)
+    thread keeps using `models.send`, as before.
 
 ==============================================================================
 10. API                                                           *obelus-api*
