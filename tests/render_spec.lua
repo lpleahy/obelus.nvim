@@ -281,3 +281,33 @@ T.it("file_buf_map resolves the edited file's bufnr; is_expanded agrees with/wit
   T.eq(render.is_expanded(c), false) -- no panel open
   T.eq(render.is_expanded(c, map), render.is_expanded(c))
 end)
+
+T.it("inline dispatch spinner: outranks the DEFAULT extmark priority (diagnostics virt text)", function()
+  -- a long eol diagnostic reaching the right edge draws over lower-priority
+  -- right_align text cell-for-cell; the live job indicator must win its line
+  local ctx = T.fresh()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "local x = 1" })
+  vim.api.nvim_buf_set_name(buf, "/tmp/obelus-spinner-prio-probe.lua")
+  -- use the buffer's RESOLVED name (macOS turns /tmp into /private/tmp) so
+  -- nav.buf_for_file's name match actually finds it
+  local fname = vim.api.nvim_buf_get_name(buf)
+  local c = ctx.store.add(T.comment({ file = fname, comment = "check" }))
+  local progress = require("obelus.progress")
+  local job = progress.start({ label = "probe", comments = { c } })
+  vim.wait(50)
+  local found
+  for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+    if name:find("belus", 1, true) or name:find("progress", 1, true) then
+      for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+        if (m[4] or {}).virt_text_pos == "right_align" then
+          found = m[4]
+        end
+      end
+    end
+  end
+  pcall(progress.finish, job, true, "")
+  T.ok(found, "the inline spinner extmark landed on the comment's buffer")
+  T.ok((found.priority or 0) > 4096, "spinner priority beats the diagnostics default (4096)")
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)

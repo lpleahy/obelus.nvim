@@ -75,10 +75,13 @@ M.defaults = {
     --              reappears when you scroll back to the bottom.
     reply_dock = "pinned",
     -- Markdown renderer for the sidebar/popup turn bodies (inside obelus's bars/
-    -- dividers/headers). Toggle live with :ObelusRenderer [markview|builtin|treesitter].
-    --   "markview"   — markview.nvim renders tables/code/links (prettiest; needs the plugin)
-    --   "builtin"    — obelus's own light in-house styling (no deps; always-clean bubble bg)
-    --   "treesitter" — raw Markdown + treesitter syntax highlighting (real lines, no conceal)
+    -- dividers/headers). Toggle live with
+    -- :ObelusRenderer [markview|builtin|treesitter|render-markdown].
+    --   "markview"        — markview.nvim renders tables/code/links (prettiest; needs the plugin)
+    --   "builtin"         — obelus's own light in-house styling (no deps; always-clean bubble bg)
+    --   "treesitter"      — raw Markdown + treesitter syntax highlighting (real lines, no conceal)
+    --   "render-markdown" — render-markdown.nvim draws the boxes/tables/icons (needs the plugin;
+    --                       opt-in only — auto never picks it)
     -- nil = auto: markview if installed, else builtin.
     renderer = nil,
     -- A stream interleaves prose with tool work ("let me check X…" [tools] "…the
@@ -615,7 +618,7 @@ local function validate(o)
     o.render,
     "renderer",
     "render.renderer",
-    { "markview", "builtin", "treesitter" },
+    { "markview", "builtin", "treesitter", "render-markdown" },
     M.defaults.render.renderer,
     true -- nil == auto: legal, not a typo
   )

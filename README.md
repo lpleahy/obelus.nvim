@@ -58,7 +58,9 @@ also has an `:Obelus*` command.
 | `ox` | Clear all threads |
 | `<A-d>` / `<A-u>` | Scroll a long inline band in place (global default; `keys.band_scroll`) |
 
-Chat rendering: `:ObelusRenderer markview|builtin|treesitter` (no argument cycles through them).
+Chat rendering: `:ObelusRenderer markview|builtin|treesitter|render-markdown` (no argument cycles
+through them; `render-markdown` needs [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim)
+and is opt-in — auto prefers markview).
 Skip specific default mappings with `keys.disabled = { "x", "T" }` (a list of suffixes);
 `keys = false` skips all of them.
 
@@ -167,10 +169,12 @@ make test   # headless test suite
 make lint   # stylua --check
 ```
 
-The markview specs are skipped unless markview.nvim and nvim-treesitter are on the runtimepath:
+The renderer-plugin specs (markview, render-markdown) are skipped unless the plugin (and
+nvim-treesitter, for markview) is on the runtimepath — a lazy.nvim install under
+`stdpath("data")/lazy` is picked up automatically, or point at checkouts explicitly:
 
 ```sh
-OBELUS_TEST_RTP=/path/to/markview.nvim:/path/to/nvim-treesitter make test
+OBELUS_TEST_RTP=/path/to/markview.nvim:/path/to/nvim-treesitter:/path/to/render-markdown.nvim make test
 ```
 
 ## License

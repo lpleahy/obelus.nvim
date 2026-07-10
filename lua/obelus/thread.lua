@@ -437,6 +437,195 @@ function M.markview_winhl()
   return table.concat(p, ",")
 end
 
+-- render-markdown harmonization ---------------------------------------------
+-- The render-markdown.nvim twin of markview_harmonize above: the plugin defines
+-- its RenderMarkdown* groups as default-links to editor groups (Code → ColorColumn,
+-- H1Bg → DiffText, TableHead → @markup.heading, … — see its core/colors.lua), which
+-- clash with obelus's tinted bubbles exactly the way markview's Normal-derived
+-- boxes did. Same cure: Obelus_RenderMd* twins blended from the live obelus tint
+-- (SAME recipes as markview_harmonize — seamless code bg = agent bubble bg by
+-- default, recess knobs honored, every bg nil under render.transparent), remapped
+-- per-window via render_md_winhl below so the user's own markdown buffers keep
+-- their global render-markdown colours untouched.
+--
+-- The bg-derivation block is DELIBERATELY duplicated from markview_harmonize, not
+-- factored out — same precedent as fit_table_cells' fence walk: markview's pinned
+-- blends must not be disturbable by a shared-helper change made for this renderer
+-- (and vice versa). Keep the two recipes in sync BY HAND when one changes.
+--
+-- One derived-group wrinkle markview doesn't have: render-markdown BAKES colours
+-- into generated groups at mark time (core/colors.lua's bg_as_fg — the code-block
+-- language strip's '█' fill uses RenderMarkdown_RenderMarkdownCodeBorder_bg_as_fg,
+-- whose fg is the GLOBAL CodeBorder bg). The generated NAME is deterministic
+-- (prefix .. "_" .. source .. "_bg_as_fg"), so it's remapped per-window like any
+-- other group — to a twin whose fg is obelus's own code bg (the exact trick
+-- Obelus_MarkviewCodeFg uses for markview's code border).
+
+-- (re)define the Obelus_RenderMd* twins from the live obelus tint + plugin FGs.
+function M.render_md_harmonize()
+  -- blend base + transparent gating: byte-for-byte the markview_harmonize recipe
+  -- (see its doc comment for the WHY of every branch; duplication is deliberate).
+  local nbg = color("Normal", "bg")
+  local transparent = (require("obelus.config").options.render or {}).transparent == true
+  local base = nbg or color("NormalFloat", "bg") or 0x1e1e2e
+  local r, g, b = channels(base)
+  local sink = (r + g + b) < 384 and 0x000000 or 0xffffff
+  local recessed = blend(sink, base, 0.22)
+  local ccode = ((require("obelus.config").options.render or {}).colors or {}).code
+  local code_bg
+  if transparent then
+    code_bg = nil
+  elseif ccode == true then
+    code_bg = recessed
+  elseif type(ccode) == "number" then
+    code_bg = ccode
+  elseif type(ccode) == "string" then
+    code_bg = color(ccode, "bg")
+  else
+    code_bg = color("ObelusReplyBg", "bg") or recessed
+  end
+  local inline_bg = not transparent and blend(sink, base, 0.16) or nil
+  local box_bg = not transparent and (color("ObelusReplyBg", "bg") or blend(sink, base, 0.08)) or nil
+  local function set(name, opts)
+    vim.api.nvim_set_hl(0, name, opts)
+  end
+  local meta_fallback = color("Comment", "fg") or 0x6c7086
+  -- BG-ONLY, same rule as Obelus_MarkviewCode: this is the whole code-block REGION
+  -- highlight (hl_eol real-line bg). A fallback fg here would wash every fence
+  -- token grey; the treesitter injections own the token colours.
+  set("Obelus_RenderMdCode", { bg = code_bg, fg = color("RenderMarkdownCode", "fg") })
+  set("Obelus_RenderMdCodeInfo", { bg = code_bg, fg = color("Comment", "fg") })
+  -- the language-strip row bg (highlight_border) + its bg_as_fg '█' fill glyphs —
+  -- fg must equal the strip bg so the fill melts into it (nil = none, transparent)
+  set("Obelus_RenderMdCodeBorder", { bg = code_bg })
+  set("Obelus_RenderMdCodeBorderFg", { fg = code_bg })
+  -- language-name fallback fg (RenderMarkdownCodeFallback links to Normal; a test/
+  -- lazy env where the plugin's colors.init never ran leaves it undefined → invisible)
+  set(
+    "Obelus_RenderMdCodeFallback",
+    { fg = color("RenderMarkdownCodeFallback", "fg") or color("Normal", "fg") or meta_fallback }
+  )
+  -- inline `code`: same knob + fg fallback chain as Obelus_MarkviewInlineCode —
+  -- RenderMarkdownCodeInline links through RenderMarkdownCode to ColorColumn, whose
+  -- bg is exactly the clashing box the knob's default (no bg) avoids
+  local ic = ((require("obelus.config").options.render or {}).colors or {}).inline_code
+  local icfg = color("RenderMarkdownCodeInline", "fg")
+    or color("@markup.raw", "fg")
+    or color("String", "fg")
+    or meta_fallback
+  local ibg
+  if ic == true then
+    ibg = inline_bg
+  elseif type(ic) == "number" then
+    ibg = ic
+  elseif type(ic) == "string" then
+    ibg = color(ic, "bg")
+  end
+  set("Obelus_RenderMdCodeInline", { bg = ibg, fg = icfg })
+  -- inline-code EDGE decorations (a user's global inline_left/right/inline_pad
+  -- config) colour themselves via the derived bg_as_fg group that bakes the
+  -- GLOBAL CodeInline bg — twin fg = the harmonized inline bg instead, nil-gated
+  -- exactly like the box it frames (boxless default / transparent → no fg, so
+  -- the edges melt away with the box)
+  set("Obelus_RenderMdCodeInlineFg", { fg = ibg })
+  -- headings: fg from the plugin's own group (→ @markup.heading.N.markdown) with a
+  -- themed fallback; the strip bg is the seamless agent-bubble box_bg. The HnBg
+  -- groups default-link to Diff*/Visual — the single worst bubble clash — so their
+  -- twins carry ONLY box_bg (fg rides the companion Hn group in the plugin's marks).
+  for i = 1, 6 do
+    local hfg = color("RenderMarkdownH" .. i, "fg")
+      or color("@markup.heading." .. i .. ".markdown", "fg")
+      or color("@markup.heading", "fg")
+      or color("Title", "fg")
+      or meta_fallback
+    set("Obelus_RenderMdH" .. i, { bg = box_bg, fg = hfg })
+    set("Obelus_RenderMdH" .. i .. "Bg", { bg = box_bg })
+  end
+  -- user-global heading borders (heading.border=true) fill their ▄/▀ rows via the
+  -- derived RenderMarkdown_RenderMarkdownH<n>Bg_bg_as_fg groups (baked global
+  -- Diff* bgs): ONE twin serves all six levels — obelus's harmonized heading
+  -- strips share the single box_bg — with the same transparent nil-gating
+  set("Obelus_RenderMdHeadBorderFg", { fg = box_bg })
+  -- table borders/pads are OVERLAY virt_text in these two groups (head = header
+  -- rows + delimiter + top border, row = everything else): fg-only with the same
+  -- defined-fg insurance as Obelus_MarkviewPunctuationSpecial
+  set("Obelus_RenderMdTableHead", {
+    fg = color("RenderMarkdownTableHead", "fg")
+      or color("@markup.heading", "fg")
+      or color("Title", "fg")
+      or meta_fallback,
+  })
+  set("Obelus_RenderMdTableRow", {
+    fg = color("RenderMarkdownTableRow", "fg") or color("Normal", "fg") or meta_fallback,
+  })
+  set("Obelus_RenderMdBullet", {
+    fg = color("RenderMarkdownBullet", "fg") or color("Normal", "fg") or meta_fallback,
+  })
+  -- '▋' blockquote bar: muted like Obelus_MarkviewBlockQuoteDefault, one colour for
+  -- every nesting level (Quote1-6 all remap here — a rainbow of bars inside a tinted
+  -- bubble reads as noise next to the turn's own accent bar)
+  set("Obelus_RenderMdQuote", { fg = color("Comment", "fg") or 0x6c7086 })
+  -- '─' thematic break: LineNr-ish like the plugin's own default, themed fallback
+  set("Obelus_RenderMdDash", { fg = color("RenderMarkdownDash", "fg") or color("LineNr", "fg") or meta_fallback })
+  -- links/wiki-links: same Underlined-family fallback chain as Obelus_MarkviewHyperlink
+  local link_fg = color("RenderMarkdownLink", "fg")
+    or color("@markup.link.label.markdown_inline", "fg")
+    or color("Underlined", "fg")
+    or meta_fallback
+  set("Obelus_RenderMdLink", { fg = link_fg })
+  set("Obelus_RenderMdLinkTitle", { fg = color("RenderMarkdownLinkTitle", "fg") or link_fg })
+  -- checkboxes: the plugin's sources are @markup.list.* captures many themes never
+  -- define — the Diagnostic fallbacks keep ☐/☑ visible AND semantically coloured
+  set("Obelus_RenderMdUnchecked", {
+    fg = color("RenderMarkdownUnchecked", "fg") or color("@markup.list.unchecked", "fg") or meta_fallback,
+  })
+  set("Obelus_RenderMdChecked", {
+    fg = color("RenderMarkdownChecked", "fg")
+      or color("@markup.list.checked", "fg")
+      or color("DiagnosticOk", "fg")
+      or meta_fallback,
+  })
+end
+
+-- per-window winhighlight remap string retargeting render-markdown's bg-bearing
+-- (and undefined-fg-prone) groups to their Obelus_* twins — the render_md
+-- counterpart of markview_winhl, applied to obelus chat windows only.
+function M.render_md_winhl()
+  local p = {
+    "RenderMarkdownCode:Obelus_RenderMdCode",
+    "RenderMarkdownCodeInfo:Obelus_RenderMdCodeInfo",
+    "RenderMarkdownCodeBorder:Obelus_RenderMdCodeBorder",
+    -- the DERIVED bg_as_fg group render-markdown generates for the language-strip
+    -- fill ('█' glyphs whose fg is the GLOBAL CodeBorder bg, baked at mark time) —
+    -- deterministic name, remapped like any other group; see render_md_harmonize
+    "RenderMarkdown_RenderMarkdownCodeBorder_bg_as_fg:Obelus_RenderMdCodeBorderFg",
+    -- ...and its siblings for elements only a USER-GLOBAL config lights up
+    -- (inline-code edge icons/pads, heading borders): without the remap their
+    -- baked global bgs paint through as fgs inside the harmonized bubbles
+    "RenderMarkdown_RenderMarkdownCodeInline_bg_as_fg:Obelus_RenderMdCodeInlineFg",
+    "RenderMarkdownCodeFallback:Obelus_RenderMdCodeFallback",
+    "RenderMarkdownCodeInline:Obelus_RenderMdCodeInline",
+    "RenderMarkdownInlineHighlight:Obelus_RenderMdCodeInline", -- ==text== links to CodeInline anyway
+    "RenderMarkdownTableHead:Obelus_RenderMdTableHead",
+    "RenderMarkdownTableRow:Obelus_RenderMdTableRow",
+    "RenderMarkdownBullet:Obelus_RenderMdBullet",
+    "RenderMarkdownQuote:Obelus_RenderMdQuote",
+    "RenderMarkdownDash:Obelus_RenderMdDash",
+    "RenderMarkdownLink:Obelus_RenderMdLink",
+    "RenderMarkdownLinkTitle:Obelus_RenderMdLinkTitle",
+    "RenderMarkdownWikiLink:Obelus_RenderMdLink",
+    "RenderMarkdownUnchecked:Obelus_RenderMdUnchecked",
+    "RenderMarkdownChecked:Obelus_RenderMdChecked",
+  }
+  for i = 1, 6 do
+    p[#p + 1] = ("RenderMarkdownH%d:Obelus_RenderMdH%d"):format(i, i)
+    p[#p + 1] = ("RenderMarkdownH%dBg:Obelus_RenderMdH%dBg"):format(i, i)
+    p[#p + 1] = ("RenderMarkdown_RenderMarkdownH%dBg_bg_as_fg:Obelus_RenderMdHeadBorderFg"):format(i)
+    p[#p + 1] = ("RenderMarkdownQuote%d:Obelus_RenderMdQuote"):format(i)
+  end
+  return table.concat(p, ",")
+end
+
 -- text helpers -------------------------------------------------------------
 
 -- Incremental width tracking (was O(len²): re-measure the whole accumulated line
@@ -1089,6 +1278,16 @@ end
 -- own concealed markers), not a sum of column maxima — that distinction is what
 -- keeps narrow-sidebar tables from being over-shrunk; the span-pad term does use
 -- column maxima, because alignment pads lift every row up to them.
+--
+-- The SAME margin serves render-markdown mode, where it strictly OVER-covers
+-- (measured empirically, headless probe on a fitted table in a wrapped float):
+-- render-markdown draws its `│` borders and delimiter row as OVERLAY virt_text
+-- (zero wrap capacity, unlike markview's inline glyphs — the whole ncol+1 term is
+-- unused) and its inline alignment pads lift every row exactly to the WIDEST
+-- row's raw width, so a fitted row's rendered capacity is chrome + Σ(stripped
+-- maxima) + worst-row conceal — the margin's span-pad + border + slack terms
+-- (≥ ncol+3 cells) are pure headroom there. A per-renderer margin would only buy
+-- back those few cells of table width; not worth two tuned constants.
 local function measure_table(block)
   local header, _, body = parse_table(block)
   local ncol = #header

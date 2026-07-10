@@ -2,18 +2,25 @@ local store = require("obelus.store")
 local format = require("obelus.format")
 local nav_util = require("obelus.nav")
 
--- Use markview to render the conversation *content* as Markdown? render.renderer
--- can force on/off; default auto = on iff markview is installed. When on, obelus
--- still draws the structure (bars/dividers/headers) but leaves the turn bodies raw
--- so markview renders them (tables, syntax-highlighted code, links, …).
--- Which markdown renderer drives the chat bodies: "markview" | "builtin" | "treesitter".
+-- Use an external plugin to render the conversation *content* as Markdown?
+-- render.renderer can force on/off; default auto = on iff markview is installed.
+-- When on, obelus still draws the structure (bars/dividers/headers) but leaves the
+-- turn bodies raw so the plugin renders them (tables, syntax-highlighted code, links, …).
+-- Which markdown renderer drives the chat bodies:
+--   "markview" | "builtin" | "treesitter" | "render-markdown".
 -- Resolves the `render.renderer` setting (with a markview-if-installed auto-default),
--- and downgrades "markview" to "builtin" when the plugin isn't available so a bad
--- config never leaves the chat unrendered.
+-- and downgrades a plugin-backed choice to "builtin" when that plugin isn't
+-- available so a bad config never leaves the chat unrendered. Auto NEVER resolves
+-- to render-markdown — it's strictly opt-in (markview stays the preferred default);
+-- its availability probe is therefore lazy, so non-users never pay a require()
+-- (which would trigger a full lazy.nvim plugin load) on this hot path.
 local function render_mode()
   local config = require("obelus.config")
   local cfg = config.options.render or {}
   local has_mv = pcall(require, "markview.actions")
+  local function rm_or_builtin()
+    return (pcall(require, "render-markdown")) and "render-markdown" or "builtin"
+  end
 
   -- config.ui.renderer (the :ObelusRenderer session override) resolves FIRST.
   -- nil = never toggled → fall through to options below. "auto" is an EXPLICIT
@@ -25,6 +32,8 @@ local function render_mode()
     return ui
   elseif ui == "markview" then
     return has_mv and "markview" or "builtin"
+  elseif ui == "render-markdown" then
+    return rm_or_builtin()
   end
 
   local m = cfg.renderer
@@ -32,6 +41,8 @@ local function render_mode()
     return m
   elseif m == "markview" then
     return has_mv and "markview" or "builtin"
+  elseif m == "render-markdown" then
+    return rm_or_builtin()
   end
   -- nil == auto: markview if installed, else builtin
   return has_mv and "markview" or "builtin"
@@ -130,6 +141,228 @@ local function mv_render_scoped(buf, win)
   end
 end
 
+-- render-markdown.nvim ------------------------------------------------------
+-- The fourth renderer, driven the same way as markview above: obelus renders it
+-- manually per fill pass with a SCOPED per-buffer config instead of letting the
+-- plugin's event-driven manager own the buffer. The per-buffer mechanism is the
+-- plugin's own: api.render's ctx.config / state.get(buf, custom) — a partial
+-- config deep-extended over the user's global one for THIS buffer only, so the
+-- user's global render-markdown setup is never mutated.
+
+-- The one scoped config for obelus chat/preview buffers. A shared table —
+-- Config.new deep-extends FROM it and never mutates it — with the chat-specific
+-- overrides:
+--   render_modes = true   — render in EVERY mode: typing in the docked reply input
+--                           is insert mode, and the plugin's default {n,c,t} would
+--                           strip the chat's rendering on each ModeChanged tick
+--   anti_conceal off      — the hybrid_mode=false twin: the cursor line must stay
+--                           rendered (the chat is read-only history, not an editor)
+--   debounce = 0          — obelus already throttles/coalesces its own fill passes
+--   signs off             — the chat's statuscolumn is obelus's accent bar
+--   win_options           — rendered conceallevel 3 / concealcursor "nvic" match
+--                           what apply_winopts asserts for this mode, and default 0
+--                           matches the builtin/treesitter modes, so the plugin's
+--                           own option writes never fight obelus's
+-- Memoized on render.transparent (the one input that changes the built table, same
+-- pattern as mv_render_cfg's cache): transparent mode additionally suppresses the
+-- code-block border FILL — the '█' strip above each block colours itself via a
+-- bg_as_fg-derived group whose harmonized twin fg is code_bg, and code_bg is NIL
+-- under render.transparent, so the fill glyphs fell back to the default fg and
+-- rendered as a solid bright bar. highlight_border=false is the plugin's own
+-- switch for "no fill": the language label keeps its colours, the fill cells
+-- become plain spaces (code.lua: border_hl=nil → language_border degrades to ' ').
+local rm_render_cfg_cache = {}
+local function rm_render_cfg()
+  local is_transparent = (require("obelus.config").options.render or {}).transparent == true
+  local c = rm_render_cfg_cache
+  if c.built and c.transparent == is_transparent then
+    return c.built
+  end
+  local built = {
+    -- sentinel: survives Config.new's deep-extend, marking the plugin's
+    -- per-buffer cache entry as obelus-built AND which variant built it —
+    -- a transparent-flag flip invalidates the cached entry (see rm_render_scoped)
+    _obelus = is_transparent and "transparent" or "opaque",
+    enabled = true,
+    render_modes = true,
+    debounce = 0,
+    anti_conceal = { enabled = false },
+    sign = { enabled = false },
+    win_options = {
+      conceallevel = { default = 0, rendered = 3 },
+      concealcursor = { default = "nvic", rendered = "nvic" },
+    },
+  }
+  if is_transparent then
+    built.code = { highlight_border = false }
+  end
+  c.built, c.transparent = built, is_transparent
+  return built
+end
+
+-- render-markdown's extmarks all live in this one namespace (core/ui.lua). Looked
+-- up by NAME so counting marks never require()s the plugin (a require would
+-- trigger a full lazy.nvim load for users who never chose this renderer).
+local function rm_marks(buf)
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+    return 0
+  end
+  local ns = vim.api.nvim_get_namespaces()["render-markdown.nvim"]
+  if not ns then
+    return 0
+  end
+  local ok, ms = pcall(vim.api.nvim_buf_get_extmarks, buf, ns, 0, -1, {})
+  return ok and #ms or 0
+end
+
+-- Make sure the plugin is usable: require it (under lazy.nvim this loads the full
+-- plugin, whose plugin/ file runs setup + colors + manager init) and, if the user
+-- NEVER called setup() (detected via the plugin's own `initialized` flag — its
+-- documented guard against double-init), run the minimal `setup({})` so state has
+-- a config to build per-buffer configs from. Idempotent; a later user setup()
+-- simply replaces the global config and resets the per-buffer cache, which
+-- rm_render_scoped re-primes on its next pass.
+local function ensure_render_md_setup()
+  local ok, rm = pcall(require, "render-markdown")
+  if not ok then
+    return false
+  end
+  if not rm.initialized then
+    pcall(rm.setup, {})
+  end
+  return true
+end
+
+-- The one scoped render — the moral twin of mv_render_scoped above, and like it
+-- SYNCHRONOUS: the plugin's public api.render defers the actual parse/display
+-- through vim.schedule (lib/decorator.lua), which would land the marks one loop
+-- tick AFTER fill()'s seat/reposition measured the buffer — code-block fence rows
+-- conceal (conceal_lines) and shift the geometry under the input box. Driving
+-- ui.updater directly runs the identical pipeline (config resolve → win_options →
+-- parse → display; request/view.lua's parse is plain synchronous parser calls)
+-- with no scheduler hop, so the geometry every later step measures is final.
+-- Wrapped in pcall with the public async api.render as the fallback — an honest
+-- caveat: api.render funnels through the SAME core/ui updater, so most internal
+-- reshapes kill both paths (verified: deleting ui.updater errors api.render's
+-- ui.update too) and the chat then degrades to raw markdown text, contained by
+-- the pcalls. The fallback only catches the narrow drift where updater.new/:run
+-- change shape while ui.update survives — there it degrades to a one-tick-late
+-- render.
+--
+-- No wrap-bracketing, unlike mv_render_scoped: render-markdown computes marks
+-- from treesitter ranges, not window geometry — probed empirically, it produces
+-- identical full marks (overlay borders, conceals) in a wrapped window, even for
+-- rows that physically wrap.
+local function rm_render_scoped(buf, win)
+  if not ensure_render_md_setup() then
+    return
+  end
+  local ok = pcall(function()
+    local st = require("render-markdown.state")
+    local scoped = rm_render_cfg()
+    -- Cache bust — a deliberate, load-bearing touch of the plugin's private
+    -- state.cache: state.get(buf, custom) applies `custom` on FIRST call only,
+    -- and the plugin's own manager auto-attaches any ft=markdown buffer when the
+    -- user has it loaded (its should_attach has no nofile guard, unlike
+    -- markview's auto-attach), priming the cache with the user's GLOBAL config
+    -- before obelus's first pass — the scoped config above would be silently
+    -- ignored forever. The _obelus sentinel identifies our entries (and their
+    -- transparent/opaque variant); anything else is evicted and rebuilt scoped.
+    -- If a future plugin version drops the field, the pcall degrades this to
+    -- "global config wins", not a breakage.
+    if st.cache[buf] ~= nil and st.cache[buf]._obelus ~= scoped._obelus then
+      st.cache[buf] = nil
+    end
+    local cfg = st.get(buf, scoped)
+    -- re-assert per pass: a global :RenderMarkdown disable walks the attached
+    -- buffers flipping their enabled flags — that's aimed at the user's own
+    -- markdown files; obelus's chat keeps rendering while this mode is chosen
+    cfg.enabled = true
+    st.attach() -- ts injections/completions init — the same idempotent call api.render makes
+    require("render-markdown.core.ui").updater.new(buf, win, true):run()
+  end)
+  if not ok then
+    pcall(function()
+      require("render-markdown.api").render({ buf = buf, win = win, config = rm_render_cfg() })
+    end)
+  end
+end
+
+-- render-markdown parses only the window's VISIBLE range (its request/view.lua
+-- takes the view ± a 10-row offset), so one render pass decorates exactly what
+-- the window showed at that moment — and each pass CLEARS the namespace first,
+-- so marks never accumulate beyond the current view (the plugin's manager works
+-- the same way, re-rendering per scroll). obelus deliberately doesn't rely on
+-- that manager (it isn't even initialized when obelus's own require() was what
+-- loaded the plugin — the common lazy-spec case), so obelus must re-render on
+-- every view move itself: fill() calls this after SEATING (the seat moves the
+-- view to the bottom, past whatever the reconcile pass rendered), and M.open's
+-- WinScrolled handler calls it as the user scrolls. Coalesced on
+-- (buf, win, topline, changedtick): WinScrolled fires in bursts (our own
+-- render's geometry shift can emit one too), but an unchanged view parses to
+-- the same marks — skip it.
+local rm_view_sig
+local function rm_render_view(buf, win)
+  if not (buf and vim.api.nvim_buf_is_valid(buf) and win and vim.api.nvim_win_is_valid(win)) then
+    return
+  end
+  local top = 0
+  pcall(vim.api.nvim_win_call, win, function()
+    top = vim.fn.line("w0")
+  end)
+  local sig = buf .. "|" .. win .. "|" .. top .. "|" .. vim.api.nvim_buf_get_changedtick(buf)
+  if sig == rm_view_sig then
+    return
+  end
+  rm_view_sig = sig
+  rm_render_scoped(buf, win)
+end
+
+-- Evict render-markdown's decorations from `buf` (builtin/treesitter/markview/
+-- streaming passes). Going through the plugin's own updater with enabled=false —
+-- rather than a bare nvim_buf_clear_namespace — lets its decorator hide the marks
+-- properly (extmark ids nil'ed, so a later re-enable re-places them) and restores
+-- the 'default' win_options. package.loaded-gated: if the plugin was never
+-- loaded, no marks can exist and no require must happen. The raw namespace wipe
+-- after is defense-in-depth for an internals drift breaking the pcall'd path.
+local function rm_clear(buf, win)
+  if not package.loaded["render-markdown"] then
+    return
+  end
+  pcall(function()
+    local st = require("render-markdown.state")
+    if st.cache[buf] ~= nil then
+      st.cache[buf].enabled = false
+    end
+    require("render-markdown.core.ui").updater.new(buf, win, true):run()
+  end)
+  if rm_marks(buf) > 0 then
+    pcall(function()
+      local ns = vim.api.nvim_get_namespaces()["render-markdown.nvim"]
+      vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+    end)
+  end
+end
+
+-- Quarantine a freshly created ft=markdown chat/preview buffer against the
+-- plugin's OWN manager: setting the filetype just fired its global FileType
+-- autocmd (when the user has the plugin loaded), which attached buffer autocmds
+-- and primed the per-buffer config cache with the user's GLOBAL config — those
+-- autocmds would then decorate the buffer with anti-conceal/normal-mode-only
+-- defaults in EVERY obelus renderer mode. Re-prime with the scoped config,
+-- DISABLED — reconcile_renderer/fill_preview enable it when this renderer is
+-- actually active. package.loaded-gated like rm_clear.
+local function rm_quarantine(buf)
+  if not package.loaded["render-markdown"] then
+    return
+  end
+  pcall(function()
+    local st = require("render-markdown.state")
+    st.cache[buf] = nil
+    st.get(buf, rm_render_cfg()).enabled = false
+  end)
+end
+
 local function transparent()
   return (require("obelus.config").options.render or {}).transparent == true
 end
@@ -141,10 +374,11 @@ local function hints()
   return require("obelus.render").hints_shown()
 end
 
--- append markview's per-window highlight remap to a base winhighlight (markview's
--- code/heading/table boxes then use obelus-tinted twins inside this window only).
--- A neutral base (no Normal remap) lets the per-turn tinted bubbles stand out like
--- the inline band; transparent mode keeps the NONE base so the editor shows through.
+-- append the active external renderer's per-window highlight remap to a base
+-- winhighlight (its code/heading/table boxes then use obelus-tinted twins inside
+-- this window only). A neutral base (no Normal remap) lets the per-turn tinted
+-- bubbles stand out like the inline band; transparent mode keeps the NONE base so
+-- the editor shows through.
 local function chat_winhl(base)
   base = base or ""
   local parts = {}
@@ -156,8 +390,11 @@ local function chat_winhl(base)
   -- taller than the window). Keep the affordance but in the dim chrome colour —
   -- theme-bright NonText reads as stray text glued to the first message.
   parts[#parts + 1] = "NonText:ObelusChrome"
-  if markview_on() then
+  local rmode = render_mode()
+  if rmode == "markview" then
     parts[#parts + 1] = require("obelus.thread").markview_winhl()
+  elseif rmode == "render-markdown" then
+    parts[#parts + 1] = require("obelus.thread").render_md_winhl()
   end
   -- per-window Visual remap: ObelusVisual is the contrast-boosted (or user-set)
   -- selection colour — ALWAYS mapped now; the theme's Visual blends into the
@@ -355,10 +592,17 @@ local function apply_winopts(win, buf, mode, streaming, wrap_override)
   vim.wo[win].breakindent = false
   vim.wo[win].showbreak = ""
   vim.wo[win].cursorline = mode == "list" -- no cursorline bleed through bubbles
-  -- conceal is markview-only; treesitter/builtin show raw/styled real text (no
-  -- conceal). markview is detached while streaming (body is plain in-house), so no
-  -- conceal then either.
-  vim.wo[win].conceallevel = (mode == "chat" and rmode == "markview" and not streaming) and 2 or 0
+  -- conceal powers the plugin renderers: markview's marks assume conceallevel 2,
+  -- render-markdown's assume 3 (its own win_options 'rendered' value — our scoped
+  -- config pins the same numbers, so the plugin's async option writes and this
+  -- assertion always agree). treesitter/builtin show raw/styled real text (no
+  -- conceal), and both plugins are detached while streaming (body is plain
+  -- in-house), so no conceal then either.
+  local lvl = 0
+  if mode == "chat" and not streaming then
+    lvl = (rmode == "markview" and 2) or (rmode == "render-markdown" and 3) or 0
+  end
+  vim.wo[win].conceallevel = lvl
   vim.wo[win].concealcursor = "nvic"
   -- a split inherits the user's gutter; clear number/fold so the bar sits flush (the
   -- statuscolumn set above owns the left gutter now)
@@ -623,16 +867,22 @@ end
 -- band's cap_rows behaviour). Pure (no panel state); exported for specs — the
 -- divider-classification bugs used to live in exactly this split, back when it had
 -- to sniff hl-group NAME substrings to tell a divider from content.
--- opts.external: an external renderer (markview/treesitter) colours the body, so
--- keep only "header"/"meta" role chunks and drop "body"/"code"/"tag". The #tag
--- seg stays dropped in markview mode ON PURPOSE: markview's inline tag handler
--- conceals the '#' and injects its own virt cells, and it wins the same-priority
--- highlight fight — an obelus seg underneath produces a broken hybrid. The pill
--- look comes from the per-window MarkviewPalette7 remap instead (markview's tag
--- palette — see markview_harmonize's brand-pill override in thread.lua).
+-- opts.external: an external renderer (markview/treesitter/render-markdown)
+-- colours the body, so keep only "header"/"meta" role chunks and drop
+-- "body"/"code"/"tag". The #tag seg stays dropped in markview mode ON PURPOSE:
+-- markview's inline tag handler conceals the '#' and injects its own virt cells,
+-- and it wins the same-priority highlight fight — an obelus seg underneath
+-- produces a broken hybrid. The pill look comes from the per-window
+-- MarkviewPalette7 remap instead (markview's tag palette — see
+-- markview_harmonize's brand-pill override in thread.lua).
+-- opts.renderer: which external renderer (the render_mode() string) — the drop is
+-- per-renderer: render-markdown has NO obsidian-style tag handler (probed: zero
+-- marks on a "#tag" line), so there the obelus ObelusThreadTag seg is KEPT, same
+-- chip as the builtin renderer draws. treesitter keeps the historical drop.
 -- Returns a list of { text = <buffer line>, deco = <decorate() entry> } in order.
 function M._rows_to_chat(rows, opts)
   local mv = (opts or {}).external == true
+  local keep_tag = (opts or {}).renderer == "render-markdown"
   local out = {}
   local pending_rule = nil
   for _, row in ipairs(rows) do
@@ -645,9 +895,10 @@ function M._rows_to_chat(rows, opts)
         text = text .. (ch[1] or "")
         -- Both modes draw the SAME chrome — tinted bubble bg, bright bar, you/agent
         -- header + range meta — so the sidebar/popup look like the inline band.
-        -- markview mode only drops the BODY/code/tag segs so markview colours the
-        -- body (and renders the #tag itself — see the note above).
-        if not mv or ch.role == "header" or ch.role == "meta" then
+        -- external mode only drops the BODY/code/tag segs so the plugin colours the
+        -- body (markview renders the #tag itself; render-markdown doesn't, so the
+        -- tag seg survives there — see the note above).
+        if not mv or ch.role == "header" or ch.role == "meta" or (keep_tag and ch.role == "tag") then
           segs[#segs + 1] = { s, #text, ch[2] }
         end
       end
@@ -726,12 +977,13 @@ local function build_chat(id, opts)
   -- dispatching==true forever, which kept these bodies on the in-house renderer
   -- (and the spinner alive) until the next send. busy() self-heals that flag.
   local streaming = require("obelus.jobs").busy(c.id) or (id == state.thread and state.streaming == true)
-  -- `ext` = an EXTERNAL renderer (markview or treesitter) colours the body, so leave it raw
-  -- Markdown and drop obelus's own body segments. markview mode falls back to the in-house
-  -- styling WHILE streaming (markview is detached then); treesitter is stable so it stays raw
+  -- `ext` = an EXTERNAL renderer (markview/treesitter/render-markdown) colours the body, so
+  -- leave it raw Markdown and drop obelus's own body segments. The plugin modes fall back to
+  -- the in-house styling WHILE streaming (their decorations are cleared then — the live-turn
+  -- gate, renderer-agnostic by construction); treesitter is stable so it stays raw
   -- throughout; builtin always uses the in-house styling.
   local mode = render_mode()
-  local ext = (mode == "treesitter") or (mode == "markview" and not streaming)
+  local ext = (mode == "treesitter") or ((mode == "markview" or mode == "render-markdown") and not streaming)
   local rows = require("obelus.thread").build(c, width - 1, {
     markdown = not ext,
     rules = true,
@@ -747,7 +999,7 @@ local function build_chat(id, opts)
     live = require("obelus.jobs").live(c),
     spinner = require("obelus.progress").frame(),
   })
-  for _, e in ipairs(M._rows_to_chat(rows, { external = ext })) do
+  for _, e in ipairs(M._rows_to_chat(rows, { external = ext, renderer = mode })) do
     push(e.text, e.deco)
   end
 
@@ -1106,16 +1358,35 @@ end
 -- Bring the active markdown decorator into line with the config mode for state.buf, computed
 -- fresh each pass (no transition-diffing) so a live switch or a stream edge can't leave a stale
 -- decorator running. At most one paints the bodies:
---   markview   — DETACHED, rendered manually with the scoped config. markview must NOT be
+--   markview        — DETACHED, rendered manually with the scoped config. markview must NOT be
 --                attached: its own auto-render fires on cursor/scroll (e.g. G) using the user's
 --                GLOBAL config, which re-adds table virt_lines (undoing use_virt_lines=false) and
 --                reflows/clears decorations. Detached, our scoped render STICKS. A markdown ts
 --                highlighter runs alongside for code-block syntax injections.
+--   render-markdown — rendered manually per pass through the plugin's own per-buffer-config
+--                pipeline (rm_render_scoped), synchronously; actively CLEARED in every other
+--                mode — not just after a live switch: the plugin's manager auto-attaches any
+--                ft=markdown buffer when the user has it loaded (no nofile guard, unlike
+--                markview), so builtin/treesitter chats must evict its decorations too.
+--                Shares markview's ts-highlighter need (it draws boxes/labels, not tokens).
 --   treesitter — plain treesitter markdown highlighting on the raw body (real lines, no conceal).
 --   builtin    — obelus's own in-house styling; neither decorator.
--- While streaming, ALL modes show the plain in-house markdown (stable, no flash), so markview and
--- the ts highlighter are both off until the stream settles.
+-- While streaming, ALL modes show the plain in-house markdown (stable, no flash), so the plugin
+-- decorators and the ts highlighter are all off until the stream settles — the live-turn gate
+-- keys on the mode STRING here plus build_chat's `ext`, both renderer-agnostic.
 local function reconcile_renderer(mode, streaming, force)
+  -- Live :ObelusRenderer switches: the winhighlight applied at window creation
+  -- embeds ONE renderer's twin remap (chat_winhl reads render_mode() then), so
+  -- switching markview↔render-markdown with the chat open left the NEW
+  -- renderer's marks resolving through the GLOBAL groups — DiffText heading
+  -- strips etc. inside the bubbles, the exact clash the harmonize twins exist to
+  -- prevent (this also fixes the pre-existing builtin→markview staleness, which
+  -- shipped un-harmonized boxes after a live switch). Rebuild the same
+  -- chat_winhl expression from the remembered base whenever the mode changed.
+  if mode ~= state._winhl_mode and state.win and vim.api.nvim_win_is_valid(state.win) then
+    vim.wo[state.win].winhighlight = chat_winhl(state._winhl_base or "")
+    state._winhl_mode = mode
+  end
   local mvok, mv = pcall(require, "markview.actions")
   -- markview stays detached no matter what (it's only ever attached transiently at buffer create)
   if mvok and state._mv_attached then
@@ -1123,7 +1394,8 @@ local function reconcile_renderer(mode, streaming, force)
     state._mv_attached = false
   end
   local want_mv = mode == "markview" and mvok and not streaming
-  local want_ts = mode == "treesitter" or want_mv -- markview needs ts for code-block injections
+  local want_rm = mode == "render-markdown" and not streaming
+  local want_ts = mode == "treesitter" or want_mv or want_rm -- both plugins need ts for code-block injections
   if mvok then
     if want_mv then
       require("obelus.thread").markview_harmonize() -- fresh twins from the live palette
@@ -1132,6 +1404,16 @@ local function reconcile_renderer(mode, streaming, force)
     else
       pcall(mv.clear, state.buf) -- builtin/treesitter/streaming: no markview decorations
     end
+  end
+  if want_rm then
+    require("obelus.thread").render_md_harmonize() -- fresh twins, same per-pass rationale as markview's
+    rm_render_scoped(state.buf, state.win)
+    state._rm_on = true
+  elseif state._rm_on or rm_marks(state.buf) > 0 then
+    -- the marks probe (namespace lookup, no require) catches decorations the
+    -- plugin's own manager placed without obelus ever enabling this mode
+    rm_clear(state.buf, state.win)
+    state._rm_on = false
   end
   if want_ts then
     if not state._ts_on then
@@ -1221,6 +1503,17 @@ local function fill()
   decorate(decos)
   if state.mode == "chat" then
     reconcile_renderer(mode, streaming, force)
+  elseif state._rm_on or rm_marks(state.buf) > 0 then
+    -- LIST mode on the SAME buffer (M.back flips state.mode without recreating
+    -- it) never runs the reconcile above, so a render-markdown chat's
+    -- decorations survived into the list — overlay '█'/icon strips painted over
+    -- list rows (overlay virt_text ignores the list's conceallevel 0), and the
+    -- per-buffer cache left enabled=true let the plugin's own manager re-render
+    -- the LIST and write conceallevel=3 back on its next CursorMoved. Evict AND
+    -- disable (rm_clear does both; package.loaded-gated inside, so free for
+    -- non-users); apply_winopts below then re-asserts the list's conceallevel 0.
+    rm_clear(state.buf, state.win)
+    state._rm_on = false
   end
   -- winopts AFTER the renderer reconcile: markview's detach (fired once, on the
   -- first chat pass) restores the window options it saved at attach time —
@@ -1229,19 +1522,37 @@ local function fill()
   -- as raw text. Setting the options last makes every executed pass authoritative.
   apply_winopts(state.win, state.buf, state.mode, streaming, state.wrap_override)
   fit_rooted(force) -- re-fit the rooted float (+ reposition the reply box) BEFORE scrolling
-  if jump and state.win and vim.api.nvim_win_is_valid(state.win) then
-    -- pin the LAST line to the window bottom in ONE wrap-aware step (zb) — the old
-    -- winrestview+set_cursor pair overshot then corrected, which is what made the view
-    -- jitter up/down while streaming. zb also re-pins when the cursor is already at the
-    -- end (so a reused/list-scrolled window isn't left stranded). markview-off pre-wraps,
-    -- so geometry's already final — skip the redraw then.
+  -- pin the LAST line to the window bottom in ONE wrap-aware step (zb) — the old
+  -- winrestview+set_cursor pair overshot then corrected, which is what made the view
+  -- jitter up/down while streaming. zb also re-pins when the cursor is already at the
+  -- end (so a reused/list-scrolled window isn't left stranded). The plugin renderers
+  -- (markview/render-markdown) rendered SYNCHRONOUSLY in the reconcile above, so a
+  -- redraw here computes their conceal geometry before the seat; builtin/treesitter
+  -- pre-wrap plain text — geometry's already final — skip the redraw then.
+  local function seat()
     seat_bottom(state.win, state.buf, {
-      redraw = hard and state.mode == "chat" and markview_on() and not streaming,
+      redraw = hard and state.mode == "chat" and (mode == "markview" or mode == "render-markdown") and not streaming,
       -- rest the cursor on the last OUTPUT line (just above the divider), not inside the
       -- reserved input rows — so re-seating lands you at the end of the chat, and you don't
       -- have to scroll the cursor back up out of the input box to read the latest reply.
       content_row = state.mode == "chat" and math.max(#lines - box_rows(), 1) or nil,
     })
+  end
+  if jump and state.win and vim.api.nvim_win_is_valid(state.win) then
+    seat()
+  end
+  -- render-markdown is VIEW-scoped (see rm_render_view): the reconcile's render
+  -- above covered the PRE-seat view — for a long chat the seat just jumped past
+  -- every mark it placed, leaving the visible bottom raw. Render the SEATED view,
+  -- then seat AGAIN: the fresh marks conceal code-fence rows, which shifts what
+  -- "bottom" is (the exact geometry race the synchronous updater exists to keep
+  -- inside one fill pass). markview needs none of this — it renders the whole
+  -- buffer in one pass.
+  if state._rm_on and state.mode == "chat" then
+    rm_render_view(state.buf, state.win)
+    if jump and state.win and vim.api.nvim_win_is_valid(state.win) then
+      seat()
+    end
   end
   -- keep the chat flush-left — a stray horizontal scroll shows "<<<" precedes-listchars
   -- at the start of a line (seen in the popup); wrap is on, so leftcol should be 0
@@ -1323,6 +1634,7 @@ function M.render_info()
       jobs_busy = (c and jobs.busy(c.id)) or false,
       state_streaming = state.streaming or false,
       markview_marks = mvmarks(buf),
+      render_markdown_marks = rm_marks(buf),
       conceallevel = (win and vim.api.nvim_win_is_valid(win)) and vim.wo[win].conceallevel or nil,
       winhl = (win and vim.api.nvim_win_is_valid(win)) and vim.wo[win].winhighlight:sub(1, 120) or nil,
       ts = ts_facts(buf),
@@ -1332,6 +1644,7 @@ function M.render_info()
     nvim = tostring(vim.version()),
     render_mode = render_mode(),
     markview_loaded = (pcall(require, "markview.actions")),
+    render_markdown_loaded = package.loaded["render-markdown"] ~= nil,
     ui_renderer_override = config.ui.renderer,
     options_renderer = (config.options.render or {}).renderer,
     chat = state.thread and surface("chat", state.thread, state.win, state.buf) or nil,
@@ -2173,9 +2486,13 @@ function M.open(as_float)
   state.buf = buf -- auto-detaches nofile buffers on a buftype/filetype OptionSet)
   state._mv_attached = false
   state._ts_on = false
+  state._rm_on = false
   -- ft=markdown can trigger nvim-treesitter's own FileType highlight; cancel it so exactly one
   -- renderer owns the buffer (reconcile_renderer re-enables treesitter for that mode).
   pcall(vim.treesitter.stop, buf)
+  -- …and render-markdown's global FileType auto-attach just primed this buffer with
+  -- the user's GLOBAL config — swap in the disabled scoped one (see rm_quarantine)
+  rm_quarantine(buf)
   -- attach markview directly (its auto-attach skips nofile buffers; attach() doesn't),
   -- with hybrid OFF for THIS buffer only so the cursor line never reverts to raw md
   if markview_on() then
@@ -2213,9 +2530,13 @@ function M.open(as_float)
     end
     state.win = vim.api.nvim_open_win(buf, true, wcfg)
     -- NEUTRAL base (theme NormalFloat) so the per-turn tinted bubbles stand out like
-    -- the inline band; only transparent mode maps Normal→NONE for the editor to show
+    -- the inline band; only transparent mode maps Normal→NONE for the editor to show.
+    -- The base is REMEMBERED (state._winhl_base): chat_winhl embeds the ACTIVE
+    -- renderer's twin remap, so a live :ObelusRenderer switch must rebuild the same
+    -- expression later — see reconcile_renderer's winhl reapply.
     local fbase = transparent() and "Normal:ObelusThreadText,NormalFloat:ObelusThreadText," or ""
-    vim.wo[state.win].winhighlight = chat_winhl(fbase .. "FloatBorder:ObelusBorder,EndOfBuffer:NormalFloat")
+    state._winhl_base = fbase .. "FloatBorder:ObelusBorder,EndOfBuffer:NormalFloat"
+    vim.wo[state.win].winhighlight = chat_winhl(state._winhl_base)
     vim.wo[state.win].winblend = require("obelus.config").options.render.winblend or 0
   else
     vim.cmd("botright vsplit")
@@ -2224,9 +2545,12 @@ function M.open(as_float)
     vim.api.nvim_win_set_width(state.win, math.min(76, math.floor(vim.o.columns * 0.42)))
     vim.wo[state.win].winfixwidth = true
     vim.wo[state.win].winbar = " ◆ obelus review "
-    -- neutral split base so the tinted bubbles stand out (markview boxes harmonized)
-    vim.wo[state.win].winhighlight = chat_winhl(transparent() and "Normal:ObelusThreadText" or "")
+    -- neutral split base so the tinted bubbles stand out (markview boxes harmonized);
+    -- remembered for the live-switch reapply, same as the float branch above
+    state._winhl_base = transparent() and "Normal:ObelusThreadText" or ""
+    vim.wo[state.win].winhighlight = chat_winhl(state._winhl_base)
   end
+  state._winhl_mode = render_mode() -- the renderer chat_winhl just embedded (see reconcile)
   vim.wo[state.win].number = false
   vim.wo[state.win].relativenumber = false
   fill() -- fill() now re-fits a rooted float to its live content (see fit_rooted)
@@ -2275,6 +2599,13 @@ function M.open(as_float)
       local last = vim.api.nvim_buf_line_count(state.buf)
       -- follow predicate (b) — see the three-predicates comment above state{}
       state.follow = cur >= last - box_rows() -- the trailing reply area (divider + box rows)
+      -- cursor-driven scrolling (j/k/G/gg) can move the view before a WinScrolled
+      -- lands — same view-scoped re-render as the WinScrolled hook below, and the
+      -- shared signature inside rm_render_view makes the double hook coalesce to
+      -- one render per actual view move
+      if state._rm_on then
+        rm_render_view(state.buf, state.win)
+      end
     end,
   })
   -- Merged into ONE pattern-less WinScrolled handler (was two adjacent autocmds on the
@@ -2296,6 +2627,24 @@ function M.open(as_float)
         -- box (dim/hide).
         state.follow = reply_following()
         reposition_input()
+        -- render-markdown renders VIEW-SCOPED — scrolling exposes rows the last
+        -- pass never parsed (and each pass drops marks outside the new view), so
+        -- the view must re-render as it moves. _rm_on is true exactly when the
+        -- last reconcile wanted render-markdown (chat, not streaming); the view
+        -- signature inside rm_render_view coalesces the burst this event fires in.
+        if state._rm_on then
+          rm_render_view(state.buf, state.win)
+        end
+      end
+      -- the maximized (focusable) hover preview scrolls too — same view-scoped rule
+      if
+        state.preview_win
+        and vim.api.nvim_win_is_valid(state.preview_win)
+        and state.preview_buf
+        and vim.api.nvim_buf_is_valid(state.preview_buf)
+        and render_mode() == "render-markdown"
+      then
+        rm_render_view(state.preview_buf, state.preview_win)
       end
     end,
   })
@@ -2573,11 +2922,17 @@ local function fill_preview(force)
     seat_bottom(win, state.preview_buf, {})
   end
   local pmode = render_mode()
-  if pmode == "markview" or pmode == "treesitter" then
+  -- live-switch winhl rebuild, the preview twin of reconcile_renderer's (see the
+  -- rationale comment there): the creation-time remap embedded one renderer's twins
+  if pmode ~= state._pwinhl_mode and win and vim.api.nvim_win_is_valid(win) then
+    vim.wo[win].winhighlight = chat_winhl(state._pwinhl_base or "")
+    state._pwinhl_mode = pmode
+  end
+  if pmode == "markview" or pmode == "treesitter" or pmode == "render-markdown" then
     -- the markdown TS highlighter supplies the CODE-BLOCK token colours (language
-    -- injections) — markview only draws the box/label around them. The chat path
-    -- starts it in reconcile_renderer; without this the preview's fences render
-    -- as an all-grey box while the modal shows them coloured.
+    -- injections) — markview/render-markdown only draw the box/label around them.
+    -- The chat path starts it in reconcile_renderer; without this the preview's
+    -- fences render as an all-grey box while the modal shows them coloured.
     if state._pts_buf ~= state.preview_buf then
       pcall(vim.treesitter.start, state.preview_buf, "markdown")
       state._pts_buf = state.preview_buf -- once per buffer (bufhidden=wipe recreates)
@@ -2604,9 +2959,19 @@ local function fill_preview(force)
       mv_render_scoped(state.preview_buf, win) -- wrap-bracketed: full table marks
     end)
   end
+  if pmode == "render-markdown" then
+    require("obelus.thread").render_md_harmonize() -- per-pass, same ColorScheme-race rationale as markview's
+    rm_render_scoped(state.preview_buf, win)
+  elseif rm_marks(state.preview_buf) > 0 then
+    -- evict decorations from a live renderer switch OR the plugin manager's own
+    -- ft=markdown auto-attach — same rule as reconcile_renderer's clear branch
+    rm_clear(state.preview_buf, win)
+  end
   -- winopts AFTER the markview block: the detach above restores markview's saved
   -- window options (clobbering conceallevel to 0), so setting ours last keeps the
-  -- conceal marks displayable — same ordering fix as fill()'s.
+  -- conceal marks displayable — same ordering fix as fill()'s. (render-markdown's
+  -- own win_options write happens inside rm_render_scoped's synchronous updater
+  -- run, with the same values apply_winopts asserts — order-independent there.)
   apply_winopts(win, state.preview_buf, "chat", false)
   -- size SNUG to content and GROW with streaming, like the modal's fit_rooted —
   -- EXCEPT the preview must still SHRINK for shorter threads (its sizing here is
@@ -2706,6 +3071,7 @@ function M.preview(id)
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].swapfile = false
     vim.bo[buf].filetype = "markdown" -- before attach; never changed (markview nofile detach)
+    rm_quarantine(buf) -- same FileType auto-attach eviction as the chat buffer's
     if markview_on() then
       ensure_markview_config()
       pcall(function()
@@ -2733,8 +3099,12 @@ function M.preview(id)
     wcfg.noautocmd = true
     state.preview_win = vim.api.nvim_open_win(state.preview_buf, false, wcfg)
     wcfg.noautocmd = nil
+    -- base remembered for the live-switch winhl reapply, like the modal's (see
+    -- fill_preview's rebuild + reconcile_renderer's rationale comment)
     local pbase = transparent() and "Normal:ObelusThreadText,NormalFloat:ObelusThreadText," or ""
-    vim.wo[state.preview_win].winhighlight = chat_winhl(pbase .. "FloatBorder:ObelusBorder,EndOfBuffer:NormalFloat")
+    state._pwinhl_base = pbase .. "FloatBorder:ObelusBorder,EndOfBuffer:NormalFloat"
+    state._pwinhl_mode = render_mode()
+    vim.wo[state.preview_win].winhighlight = chat_winhl(state._pwinhl_base)
     vim.wo[state.preview_win].winblend = require("obelus.config").options.render.winblend or 0
     vim.wo[state.preview_win].number = false
     vim.wo[state.preview_win].relativenumber = false

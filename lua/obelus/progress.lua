@@ -62,7 +62,11 @@ local function set_inline(t, label, glyph, hl)
     id = t.extmark_id,
     virt_text = { { " " .. glyph .. " " .. label, hl or "DiagnosticInfo" } },
     virt_text_pos = "right_align",
-    priority = 250,
+    -- above the DEFAULT extmark priority (4096) that diagnostics virtual text
+    -- rides: a long eol diagnostic reaching the right edge would otherwise draw
+    -- OVER the spinner cell-for-cell — the live job indicator must win the line
+    -- while it's running (the diagnostic text resumes untouched once it clears)
+    priority = 4500,
   })
   if ok then
     t.extmark_id = id

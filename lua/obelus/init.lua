@@ -85,10 +85,11 @@ end
 -- Set (or, with no arg, cycle) the chat markdown renderer. Applies live to an open
 -- panel. Writes the session override config.ui.renderer (NOT config.options), so it
 -- survives a re-run of setup() — panel.render_mode() resolves it first.
---   "markview" | "builtin" | "treesitter" | "auto" (auto = markview if installed, else builtin)
----@param mode? "markview"|"builtin"|"treesitter"|"auto"
+--   "markview" | "builtin" | "treesitter" | "render-markdown" | "auto"
+--   (auto = markview if installed, else builtin — render-markdown is opt-in only)
+---@param mode? "markview"|"builtin"|"treesitter"|"render-markdown"|"auto"
 function M.set_renderer(mode)
-  local order = { "markview", "builtin", "treesitter" }
+  local order = { "markview", "builtin", "treesitter", "render-markdown" }
   if not mode then -- cycle from whatever is effectively active
     local cur = config.ui.renderer
     if cur == "auto" then
@@ -97,7 +98,7 @@ function M.set_renderer(mode)
     if cur == nil then
       cur = config.options.render.renderer
     end
-    if cur ~= "markview" and cur ~= "builtin" and cur ~= "treesitter" then
+    if not vim.tbl_contains(order, cur) then
       cur = pcall(require, "markview.actions") and "markview" or "builtin"
     end
     local i = 1
@@ -109,8 +110,11 @@ function M.set_renderer(mode)
     end
     mode = order[(i % #order) + 1]
   end
-  if mode ~= "markview" and mode ~= "builtin" and mode ~= "treesitter" and mode ~= "auto" then
-    return vim.notify("obelus: renderer must be markview | builtin | treesitter | auto", vim.log.levels.WARN)
+  if not vim.tbl_contains(order, mode) and mode ~= "auto" then
+    return vim.notify(
+      "obelus: renderer must be markview | builtin | treesitter | render-markdown | auto",
+      vim.log.levels.WARN
+    )
   end
   config.ui.renderer = mode -- "auto" stored literally: an explicit auto override
   pcall(function()
@@ -305,9 +309,9 @@ local function commands()
   end, {
     nargs = "?",
     complete = function()
-      return { "markview", "builtin", "treesitter", "auto" }
+      return { "markview", "builtin", "treesitter", "render-markdown", "auto" }
     end,
-    desc = "obelus: set the chat markdown renderer (markview|builtin|treesitter|auto)",
+    desc = "obelus: set the chat markdown renderer (markview|builtin|treesitter|render-markdown|auto)",
   })
 
   cmd("ObelusTag", function(a)
@@ -825,6 +829,10 @@ local function highlights()
   require("obelus.thread").setup_highlights()
   pcall(function() -- harmonize markview's bg groups with obelus's tint (no-op if absent)
     require("obelus.thread").markview_harmonize()
+  end)
+  pcall(function() -- and render-markdown's — always defined, like markview's twins:
+    -- ColorScheme re-derivation must not depend on which renderer happens to be active
+    require("obelus.thread").render_md_harmonize()
   end)
 end
 

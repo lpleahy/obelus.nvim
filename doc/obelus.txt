@@ -180,10 +180,12 @@ render.reply_dock                            *obelus-config-render.reply_dock*
 
 render.renderer                                *obelus-config-render.renderer*
     Default: `nil` (auto)
-    Enum: `"markview"` | `"builtin"` | `"treesitter"` | nil
+    Enum: `"markview"` | `"builtin"` | `"treesitter"` | `"render-markdown"`
+    | nil
     Markdown renderer for sidebar/popup turn bodies (inside obelus's own
     bars/dividers/headers — see |obelus-renderers|). `nil` = auto: markview
-    if installed, else builtin. Toggle/cycle live with |:ObelusRenderer|.
+    if installed, else builtin (`"render-markdown"` is opt-in only — auto
+    never picks it). Toggle/cycle live with |:ObelusRenderer|.
 
 render.narration                              *obelus-config-render.narration*
     Default: `"collapse"`     Enum: `"collapse"` | `"keep"`
@@ -610,7 +612,8 @@ Every command is one line; `()` marks a cross-reference for more detail.
     Submit the batch (|obelus-transports|); a name forces one-shot.
 :ObelusContinue [text]                                      *:ObelusContinue*
     Continue the open batch conversation (next round).
-:ObelusRenderer [markview / builtin / treesitter / auto]    *:ObelusRenderer*
+:ObelusRenderer [markview / builtin / treesitter / render-markdown / auto]
+                                                            *:ObelusRenderer*
     Set/cycle the chat renderer (|obelus-renderers|).
 :ObelusTag [name]                                                *:ObelusTag*
     Tag/untag the thread at cursor; no argument prompts.
@@ -766,32 +769,45 @@ Images ~
 `render.renderer` (|obelus-config-render.renderer|) selects how sidebar/
 popup turn BODIES render inside obelus's own chrome (bars, dividers,
 headers, which obelus always draws itself):
-    "markview"    — markview.nvim renders tables/code/links (prettiest;
-                    needs the plugin installed).
-    "builtin"     — obelus's own light in-house styling; no dependency,
-                    and always a clean bubble background.
-    "treesitter"  — raw Markdown text with treesitter syntax highlighting
-                    (real lines, no conceal).
-    nil ("auto")  — markview if installed, else builtin.
+    "markview"        — markview.nvim renders tables/code/links
+                        (prettiest; needs the plugin installed).
+    "builtin"         — obelus's own light in-house styling; no
+                        dependency, and always a clean bubble background.
+    "treesitter"      — raw Markdown text with treesitter syntax
+                        highlighting (real lines, no conceal).
+    "render-markdown" — render-markdown.nvim
+                        (MeanderingProgrammer/render-markdown.nvim) draws
+                        the code boxes, table borders, heading strips and
+                        list/checkbox icons (needs the plugin installed).
+                        obelus drives it with a buffer-scoped config —
+                        the plugin's global setup for your own markdown
+                        files is untouched — and harmonizes its
+                        RenderMarkdown* highlights with the chat bubbles
+                        per-window, like markview's.
+    nil ("auto")      — markview if installed, else builtin.
+                        "render-markdown" is strictly opt-in; auto never
+                        resolves to it.
 
-A `:ObelusRenderer markview` request downgrades to "builtin" automatically
-when markview.nvim isn't actually on the runtimepath, so a stale/bad
-config setting never leaves the chat unrendered.
+A `:ObelusRenderer markview` (or `render-markdown`) request downgrades to
+"builtin" automatically when that plugin isn't actually on the
+runtimepath, so a stale/bad config setting never leaves the chat
+unrendered.
 
 While a reply is STREAMING, every mode shows the plain in-house (builtin)
 markdown regardless of the configured renderer — this avoids a
-flash/reflow as markview's async render or treesitter's parse catches up
+flash/reflow as the plugin's render or treesitter's parse catches up
 mid-stream — then swaps to the configured renderer once the turn finishes.
 The whole streaming turn (interleaved "let me check X…" narration AND the
 in-progress latest block) renders grey, and — per `render.narration`
 (|obelus-config-render.narration|) — collapse out of the stored reply, or
 stay, once the turn finishes.
 
-Toggle/cycle live with |:ObelusRenderer| `[markview / builtin / treesitter]`
-(no argument cycles through the three) or |obelus.set_renderer()|; the
-choice is a session override (`config.ui.renderer`) that survives a
-`setup()` re-run. |:ObelusRenderInfo| dumps the live decision inputs (which
-mode resolved, markview extmark counts, treesitter parser/highlighter
+Toggle/cycle live with |:ObelusRenderer|
+`[markview / builtin / treesitter / render-markdown]` (no argument cycles
+through the four) or |obelus.set_renderer()|; the choice is a session
+override (`config.ui.renderer`) that survives a `setup()` re-run.
+|:ObelusRenderInfo| dumps the live decision inputs (which mode resolved,
+markview/render-markdown extmark counts, treesitter parser/highlighter
 state) for debugging a renderer that looks wrong — see |obelus-debug|.
 
 ==============================================================================
@@ -1123,9 +1139,10 @@ Test suite ~
     `make test` runs the headless Lua spec suite
     (`nvim --headless -u NONE -i NONE -c "luafile tests/run.lua"`), loading
     every `tests/*_spec.lua` and setting the process exit code from the
-    tally. Markview-dependent specs are skipped unless markview.nvim and
-    nvim-treesitter are reachable — either via `OBELUS_TEST_RTP=<path>:
-    <path>` or an existing lazy.nvim install under `stdpath("data")/lazy`.
+    tally. Renderer-plugin specs (markview, render-markdown) are skipped
+    unless the plugin (and nvim-treesitter, for markview) is reachable —
+    either via `OBELUS_TEST_RTP=<path>:<path>` or an existing lazy.nvim
+    install under `stdpath("data")/lazy`.
     `make lint` runs `stylua --check` over `lua/` and `tests/`.
 
 ==============================================================================

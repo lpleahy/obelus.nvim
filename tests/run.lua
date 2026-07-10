@@ -7,16 +7,17 @@ local root = vim.fn.fnamemodify(testdir, ":h")
 vim.opt.runtimepath:append(root)
 package.path = testdir .. "/?.lua;" .. package.path
 
--- Optional extra runtimepath (markview.nvim, nvim-treesitter, …) so markview_spec can run:
+-- Optional extra runtimepath (markview.nvim, nvim-treesitter, render-markdown.nvim, …)
+-- so the renderer-plugin specs can run:
 --   OBELUS_TEST_RTP=/abs/markview.nvim:/abs/nvim-treesitter make test
 -- With no OBELUS_TEST_RTP, fall back to the usual lazy.nvim install dirs when they
--- exist — a plain `make test` on a dev machine then still runs the markview specs
--- (the single most bug-prone integration) instead of silently skipping them.
+-- exist — a plain `make test` on a dev machine then still runs the renderer specs
+-- (the most bug-prone integrations) instead of silently skipping them.
 local extra = vim.env.OBELUS_TEST_RTP
 if not extra or extra == "" then
   local lazy = vim.fn.stdpath("data") .. "/lazy"
   local found = {}
-  for _, name in ipairs({ "markview.nvim", "nvim-treesitter" }) do
+  for _, name in ipairs({ "markview.nvim", "nvim-treesitter", "render-markdown.nvim" }) do
     if vim.fn.isdirectory(lazy .. "/" .. name) == 1 then
       found[#found + 1] = lazy .. "/" .. name
     end
@@ -54,6 +55,7 @@ for _, spec in ipairs({
   "mention",
   "mention_completion",
   "markview",
+  "render_markdown",
 }) do
   local ok, err = pcall(require, spec .. "_spec")
   if not ok then
