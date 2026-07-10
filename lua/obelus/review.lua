@@ -49,6 +49,15 @@ M.delete = with_comment(function(c)
   )
 end)
 
+-- The model for tag/batch-scoped agent work: a per-tag override first
+-- (transport.cli.models.tags[tag]), else the batch model, else send. Tag-session
+-- sends, tag batch rounds, and untagged batches all resolve through here so "one
+-- tag, one model" holds across every entry point.
+local function tag_model(tag)
+  local models = (config.options.transport.cli or {}).models or {}
+  return (tag and (models.tags or {})[tag]) or models.batch or models.send
+end
+
 -- Batch submit: ALL pending comments go to ONE agent that shares their context and
 -- addresses each (resolve / reply / needs_response). Uses the batch model when set.
 --
@@ -59,11 +68,6 @@ end)
 ---@param opts? table
 function M.submit(name, opts)
   opts = opts or {}
-  if opts.model == nil then
-    local cli = config.options.transport.cli or {}
-    local models = cli.models or {}
-    opts.model = models.batch or models.send
-  end
   local bc = config.options.transport.batch
   if not name and bc and bc.enabled then
     -- scope the batch to a tag when there's a tag context: the active sticky tag, or
@@ -80,7 +84,11 @@ function M.submit(name, opts)
       local msg = tag and ("obelus: no pending threads tagged #" .. tag) or "obelus: no pending comments to submit"
       return vim.notify(msg, vim.log.levels.WARN)
     end
-    return require("obelus.batch").create(comments, { model = opts.model, tag = tag })
+    -- model resolves AFTER the tag does: a per-tag override must see the tag
+    return require("obelus.batch").create(comments, { model = opts.model or tag_model(tag), tag = tag })
+  end
+  if opts.model == nil then
+    opts.model = tag_model(opts.tag)
   end
   require("obelus.transport").submit(name, opts)
 end
@@ -193,9 +201,7 @@ function M.submit_all(id, text)
   if #comments == 0 then
     return vim.notify("obelus: no pending threads tagged #" .. tag .. " to submit", vim.log.levels.WARN)
   end
-  local cli = config.options.transport.cli or {}
-  local models = cli.models or {}
-  batch.create(comments, { model = models.batch or models.send, tag = tag })
+  batch.create(comments, { model = tag_model(tag), tag = tag })
 end
 
 -- Per-comment modality: fire the comment at cursor (or `id`) off to a
@@ -207,6 +213,47 @@ M.dispatch = with_comment(function(c)
   end
   require("obelus.transport").submit(config.options.transport.dispatch or "cli", { comments = { c } })
 end)
+
+-- All-parallel modality: every pending thread gets its OWN background agent, all
+-- at once — the third dispatch mode next to <prefix>s's ONE shared batch agent
+-- and <prefix>D's dispatch-one. Same tag scoping as submit: the active sticky
+-- tag, else the tag under the cursor, else all pending. Each dispatch is the
+-- exact single-dispatch path (own job, own spinner, own actions file), so
+-- cancel/cancel-at-cursor and write-backs behave per thread.
+---@param tag? string scope to one tag ("" forces ALL pending, ignoring tag context)
+function M.dispatch_all(tag)
+  if tag == nil then
+    local at = render.at_cursor()
+    tag = store.active_tag or (at and at.tag)
+  elseif tag == "" then
+    tag = nil
+  end
+  local comments = tag and store.pending_by_tag(tag) or store.pending()
+  local n = 0
+  for _, c in ipairs(comments) do
+    -- count SUCCESSES, not attempts: submit() returns false on a failed spawn
+    -- (it already notified the error) — claiming those were dispatched would lie
+    if not M.busy(c.id) then
+      local ok = require("obelus.transport").submit(config.options.transport.dispatch or "cli", { comments = { c } })
+      if ok ~= false then
+        n = n + 1
+      end
+    end
+  end
+  if n == 0 then
+    local msg = tag and ("obelus: no pending threads tagged #" .. tag) or "obelus: no pending comments to dispatch"
+    return vim.notify(msg, vim.log.levels.WARN)
+  end
+  vim.notify(
+    string.format(
+      "obelus: dispatched %d thread%s in parallel — one agent each%s",
+      n,
+      n == 1 and "" or "s",
+      tag and (" (#" .. tag .. ")") or ""
+    ),
+    vim.log.levels.INFO
+  )
+end
 
 -- Cancel an in-flight dispatch (kills the subprocess; the thread is left as it was).
 ---@param id? string
@@ -349,7 +396,11 @@ local function do_respond(c, text, mode)
   if c.meta_tag then
     -- case A: the tag thread's OWN message. `c` IS the tag meta record, so
     -- `c.session_id` doubles as the tag session's id — no separate lookup.
-    model = (mode == "fast") and (models.fast or models.send) or (models.batch or models.send)
+    if mode == "fast" then
+      model = models.fast or models.send -- fast stays cheap: never the tag/batch model
+    else
+      model = tag_model(tag)
+    end
     prompt = tag_session_prompt(tag, c.session_id == nil, text, {
       include_drafts = false, -- plain RESPOND never leaks a member's unsent draft (see SUBMIT-ALL below)
       preamble = string.format(TAG_META_PREAMBLE, tag),
@@ -379,7 +430,11 @@ local function do_respond(c, text, mode)
     -- session (get-or-create the meta record), scoped to X alone. The write-back
     -- scope below (actions_comments = { c }) ENFORCES that scoping, not just states it.
     local tag_meta = store.tag_meta_thread(tag)
-    model = (mode == "fast") and (models.fast or models.send) or (models.batch or models.send)
+    if mode == "fast" then
+      model = models.fast or models.send -- fast stays cheap: never the tag/batch model
+    else
+      model = tag_model(tag)
+    end
     local body = string.format(SCOPING_PREAMBLE, tag) .. "\n\n" .. text
     prompt = tag_session_prompt(tag, tag_meta.session_id == nil, body, { include_drafts = false })
     submit_opts = {

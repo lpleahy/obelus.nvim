@@ -48,6 +48,7 @@ M.tag_mode = review.tag_mode
 M.continue_batch = review.continue_batch
 M.batch_advance = review.batch_advance
 M.dispatch = review.dispatch
+M.dispatch_all = review.dispatch_all
 M.cancel = review.cancel
 M.resolve = review.resolve
 M.reopen = review.reopen
@@ -62,6 +63,24 @@ M.clear = review.clear
 ---|obelus-mentions|'s IMAGES paragraph) — a file whose name isn't mentioned in
 ---any stored comment/turn/draft text.
 M.img_clean = mention.img_clean
+
+-- Global on-the-fly EDITS toggle (:ObelusEdits / <prefix>e): whether agents may
+-- apply edits. Session-scoped like the renderer/mode toggles (config.ui, never
+-- mutates options); read-only swaps every NEW cli spawn to claude's `plan`
+-- permission mode (see transport/cli.lua's base_cmd) — in-flight agents keep
+-- the mode they started with. `on` non-nil sets it explicitly; nil toggles.
+---@param on? boolean
+function M.toggle_edits(on)
+  if on == nil then
+    on = not config.edits_enabled()
+  end
+  config.ui.edits = on
+  vim.notify(
+    on and "obelus: agent edits ON — the configured permission mode applies to new agents"
+      or "obelus: agent edits OFF — new agents run read-only (--permission-mode plan)",
+    vim.log.levels.INFO
+  )
+end
 
 -- Set (or, with no arg, cycle) the chat markdown renderer. Applies live to an open
 -- panel. Writes the session override config.ui.renderer (NOT config.options), so it
@@ -314,6 +333,30 @@ local function commands()
   cmd("ObelusDispatch", function()
     M.dispatch()
   end, { desc = "obelus: dispatch comment at cursor to a background agent" })
+
+  cmd("ObelusDispatchAll", function(a)
+    -- optional tag arg scopes it; "!" (bang) ignores any tag context (all pending)
+    M.dispatch_all(a.args ~= "" and a.args or (a.bang and "" or nil))
+  end, { nargs = "?", bang = true, desc = "obelus: dispatch every pending thread — one parallel agent each" })
+
+  cmd("ObelusEdits", function(a)
+    -- explicit branches: `x and true or y and false or nil` swallows the false —
+    -- ":ObelusEdits off" while already off would TOGGLE back on
+    local arg = a.args:lower()
+    if arg == "on" then
+      M.toggle_edits(true)
+    elseif arg == "off" then
+      M.toggle_edits(false)
+    else
+      M.toggle_edits()
+    end
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "on", "off" }
+    end,
+    desc = "obelus: toggle whether agents may apply edits (global; new agents only)",
+  })
 
   cmd("ObelusCancel", function()
     M.cancel()
@@ -618,6 +661,22 @@ local MAPSPEC = {
       M.dispatch()
     end,
     desc = "obelus: dispatch one (background)",
+  },
+  {
+    suffix = "P",
+    modes = "n",
+    rhs = function()
+      M.dispatch_all()
+    end,
+    desc = "obelus: dispatch all in parallel (one agent each)",
+  },
+  {
+    suffix = "e",
+    modes = "n",
+    rhs = function()
+      M.toggle_edits()
+    end,
+    desc = "obelus: toggle agent edits (global)",
   },
   {
     suffix = "g",
@@ -926,6 +985,17 @@ local function whichkey(k)
     "toggle keybind hints",
     function()
       return sw(render.hints_shown())
+    end
+  )
+
+  add(
+    "e",
+    function()
+      M.toggle_edits()
+    end,
+    "toggle agent edits (global)",
+    function()
+      return sw(config.edits_enabled())
     end
   )
 

@@ -31,6 +31,15 @@ end
 local function base_cmd(resume, model)
   local c = config.options.transport.cli or {}
   local cmd = strip_flags(vim.deepcopy(c.cmd or { "claude", "-p" }), { "--output-format", "--model" })
+  -- the global edits toggle (:ObelusEdits): read-only means every NEW spawn runs
+  -- in claude's `plan` permission mode — the configured mode (acceptEdits etc.)
+  -- is swapped out here rather than edited in the user's config, so toggling back
+  -- restores their cmd exactly
+  if not config.edits_enabled() then
+    cmd = strip_flags(cmd, { "--permission-mode" })
+    table.insert(cmd, "--permission-mode")
+    table.insert(cmd, "plan")
+  end
   if model and model ~= "" then
     table.insert(cmd, "--model")
     table.insert(cmd, tostring(model))
@@ -70,7 +79,12 @@ local function run_oneshot(payload)
       allowed[cm.id] = true
     end
   end
-  local use_actions = config.options.transport.actions ~= false
+  -- edits OFF (:ObelusEdits) forces the NON-actions path: plan mode can't write
+  -- the actions file, so demanding it would lose the whole reply (the transient
+  -- preview is discarded and apply() finds nothing) — fall back to attaching the
+  -- streamed result as a plain reply instead
+  local edits_ok = config.edits_enabled()
+  local use_actions = config.options.transport.actions ~= false and edits_ok
   local prompt = payload.markdown
   if use_actions then
     prompt = prompt .. "\n\n" .. actions.instructions(payload.comments, akey)
@@ -168,12 +182,15 @@ local function run_oneshot(payload)
         -- comment already streamed the result into its transient turn — finalize
         -- that in place instead of appending a duplicate.
         if not use_actions then
+          -- read-only runs (edits toggled off) never auto-resolve: the agent
+          -- couldn't act on anything, it only answered — keep the thread open
+          local status = (ok and edits_ok) and "resolved" or "open"
           if first and cm.id == first.id then
             store.stream_finish(cm.id, (text or ""):sub(1, 4000), session, ok)
-            store.update(cm.id, { status = ok and "resolved" or "open" })
+            store.update(cm.id, { status = status })
           else
             store.add_turn(cm.id, "agent", (text or ""):sub(1, 4000))
-            store.update(cm.id, { status = ok and "resolved" or "open" })
+            store.update(cm.id, { status = status })
           end
         end
       end
@@ -256,7 +273,10 @@ local function run_stream(payload)
   -- below permits) every id in that list rather than just `target` — acting on
   -- OTHER threads from the project chat is the entire point of that send.
   local actions_comments = payload.opts and payload.opts.actions_comments
-  local use_actions = actions_comments ~= nil or config.options.transport.chat_actions == true
+  -- edits OFF (:ObelusEdits): never demand write-backs the read-only plan mode
+  -- can't perform — the streamed reply lands in the thread as usual either way
+  local use_actions = (actions_comments ~= nil or config.options.transport.chat_actions == true)
+    and config.edits_enabled()
   local prompt = payload.markdown
   if use_actions then
     prompt = prompt .. "\n\n" .. actions.instructions(actions_comments or payload.comments, target.id)

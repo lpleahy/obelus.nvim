@@ -45,6 +45,8 @@ also has an `:Obelus*` command.
 | `od` | Delete the comment at cursor |
 | `os` / `oS` | Submit or continue the batch / force a new batch |
 | `oD` / `oC` | Dispatch one thread in the background / cancel |
+| `oP` | Dispatch ALL pending threads in parallel, one agent each |
+| `oe` | Toggle whether agents may apply edits (global, on the fly) |
 | `oj` | Open the background-job output log |
 | `og` / `oG` | Tag the thread / sticky-tag mode |
 | `ot` / `oT` | Toggle inline annotations (buffer / global) |

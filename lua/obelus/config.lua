@@ -152,6 +152,10 @@ M.defaults = {
         send = nil, -- normal chat reply  (<CR> in the reply box)  — your "harder" model
         fast = nil, -- "send fast"     (<M-CR> in the reply box) — a quicker/cheaper model
         batch = nil, -- the batch submit (<prefix>s) — falls back to `send` when nil
+        -- Per-TAG overrides for tag-scoped work (the tag thread, replies on its
+        -- members, batch rounds): `tags = { auth = "opus" }` makes everything
+        -- concerning #auth use that model; unlisted tags fall back to `batch`.
+        tags = {},
       },
     },
     -- Continuable batch conversations: send related comments to ONE agent and keep
@@ -250,7 +254,21 @@ M.options = vim.deepcopy(M.defaults)
 -- re-running setup() (e.g. a plugin manager reload) never reverts a live toggle.
 -- nil = never toggled (fall through to options); set_renderer("auto") stores the
 -- string "auto" — an EXPLICIT auto that still overrides an options.render.renderer.
-M.ui = { renderer = nil, mode = nil, band_style = nil, show_resolved = nil, hints = nil }
+M.ui = { renderer = nil, mode = nil, band_style = nil, show_resolved = nil, hints = nil, edits = nil }
+
+---Whether agents may APPLY EDITS (global, session-scoped; :ObelusEdits /
+---toggle_edits). true (the default) leaves the configured cli cmd alone — its
+-----permission-mode (e.g. acceptEdits) applies as written. false makes every NEW
+---cli spawn read-only: the transport swaps the permission mode for `plan`
+---(claude's read-only mode — no edits, no mutating shell). In-flight agents
+---keep the mode they started with.
+---@return boolean
+function M.edits_enabled()
+  if M.ui.edits ~= nil then
+    return M.ui.edits
+  end
+  return true
+end
 
 ---Effective engagement modality: the session override if one was ever set
 ---(:ObelusMode / toggle_mode), else options.mode.
@@ -441,6 +459,7 @@ local function ensure_tables(o)
   ensure_table(o.transport, "batch", "transport.batch", M.defaults.transport.batch)
   ensure_table(o.transport, "cli", "transport.cli", M.defaults.transport.cli)
   ensure_table(o.transport.cli, "models", "transport.cli.models", M.defaults.transport.cli.models)
+  ensure_table(o.transport.cli.models, "tags", "transport.cli.models.tags", {})
   if o.render.bands ~= false then -- false is the documented all-off shorthand (normalized below)
     ensure_table(o.render, "bands", "render.bands", M.defaults.render.bands)
   end

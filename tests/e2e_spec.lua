@@ -655,6 +655,7 @@ T.it("batch.continue persists folded-in membership even when the dispatch fails"
   require("obelus.batch").create({ ctx.store.get(c1.id) }, { tag = "auth" })
   local b = require("obelus.batch").open_for_tag("auth")
   T.ok(b, "batch open")
+  F.finish_batch("sess-r1") -- round 1 lands; its members are free again
   local c2 = ctx.store.add(T.comment({ comment = "two" }))
   ctx.store.tag_comment(c2.id, "auth")
   -- make the NEXT dispatch fail

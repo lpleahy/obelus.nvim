@@ -57,6 +57,20 @@ function F.install()
         store.stream_update(F.target.id, text, F.col.final_start())
       end)
     else
+      -- mirror cli.lua's run_oneshot bookkeeping: each comment is claimed (live
+      -- job + dispatching spinner flag) the moment the dispatch is accepted —
+      -- store.pending()/jobs.busy() must see a dispatched thread as taken, or a
+      -- second dispatch-all would double-fire it. F.finish_batch clears both.
+      for _, cm in ipairs(payload.comments or {}) do
+        local id = cm.id
+        require("obelus.jobs").register(id, {
+          transport = "fake",
+          cancel = function()
+            require("obelus.jobs").clear(id)
+          end,
+        })
+        store.update(id, { dispatching = true })
+      end
       F.oneshots[#F.oneshots + 1] = payload
     end
   end)

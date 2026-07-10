@@ -545,6 +545,8 @@ out of the group below in a which-key popup).
     s          Submit pending comments, or continue the open batch (auto)
     S          Force a NEW batch, even if one is already open
     D          Dispatch the thread at cursor to a background agent
+    P          Dispatch ALL pending threads in parallel, one agent each
+    e          Toggle whether agents may apply edits (global, on the fly)
     g          Tag/untag the thread at cursor (curates batch membership)
     G          Toggle sticky tagging mode (new threads inherit the tag)
     C          Cancel the in-flight dispatch at cursor
@@ -615,6 +617,24 @@ Every command is one line; `()` marks a cross-reference for more detail.
     Toggle sticky tagging mode (new threads inherit the tag).
 :ObelusDispatch                                            *:ObelusDispatch*
     Dispatch the comment at cursor to a background agent.
+:ObelusDispatchAll[!] [tag]                              *:ObelusDispatchAll*
+    Dispatch EVERY pending thread at once — one separate background agent per
+    thread (vs. |:ObelusSubmit|'s single shared batch agent). Scopes to the
+    active sticky tag or the tag under the cursor like a batch submit; pass a
+    tag to scope explicitly, or `!` to ignore any tag context and take all
+    pending. Each dispatch is the ordinary single-dispatch path: its own job,
+    spinner, and actions file, so |:ObelusCancel| works per thread.
+:ObelusEdits [on/off]                                          *:ObelusEdits*
+    Toggle (or set) whether agents may APPLY EDITS — globally, on the fly,
+    without touching your config. Off swaps every NEW cli agent to claude's
+    read-only `plan` permission mode; on restores your configured
+    `transport.cli.cmd` exactly. In-flight agents keep the mode they started
+    with. Session-scoped, like |:ObelusRenderer|.
+    While off, the write-back protocol pauses too (a read-only agent can't
+    write the actions file): dispatches and batch rounds attach the agent's
+    answer as a plain reply and leave every thread OPEN — nothing is
+    auto-resolved, no code is touched. Toggle back on and the next round
+    resumes the full protocol.
 :ObelusCancel                                                *:ObelusCancel*
     Cancel the in-flight dispatch at cursor.
 :ObelusClear                                                  *:ObelusClear*
@@ -991,7 +1011,10 @@ Tag threads ~                                        *obelus-tag-thread*
     Model: every tag-session send — the tag thread's own messages, a reply
     on any tagged thread, and batch rounds — defaults to
     `transport.cli.models.batch` (falling back to `models.send`), the same
-    heavier model a batch submit already used. An ordinary (never-tagged)
+    heavier model a batch submit already used. A specific tag can override
+    it: `transport.cli.models.tags = { auth = "opus" }` makes everything
+    concerning #auth use that model (its sessions resume with it too);
+    unlisted tags keep the `batch` default. An ordinary (never-tagged)
     thread keeps using `models.send`, as before.
 
 ==============================================================================
