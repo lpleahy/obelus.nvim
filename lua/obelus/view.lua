@@ -123,6 +123,7 @@ local function buffer(split)
       border = "rounded",
       title = " AI Review ",
       title_pos = "center",
+      zindex = config.z.OVERLAY, -- above the chat stack (incl. its input)
     })
   end
 

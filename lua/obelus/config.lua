@@ -1,5 +1,13 @@
 local M = {}
 
+-- zindex bands, lowest → highest. Every obelus float takes one of these instead of
+-- a scattered literal, so stacking is a single policy: a newly opened window lands
+-- on top of everything in the bands below it (newest wins within a band — Neovim
+-- stacks same-zindex floats by recency). PREVIEW deliberately sits UNDER the chat
+-- + input; OVERLAY is any take-over surface (:ObelusPrompt, :ObelusJobs, the
+-- review browser, the comment prompt) that must beat the input's band.
+M.z = { PREVIEW = 40, CHAT = 50, INPUT = 60, OVERLAY = 70, STATUS = 200 }
+
 ---@class obelus.Config
 ---@field render obelus.Config.Render
 M.defaults = {

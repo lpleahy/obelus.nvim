@@ -69,7 +69,7 @@ local function is_headerish(hls)
   return false
 end
 
-T.it("_rows_to_chat external mode: the #tag seg is absent externally but present internally", function()
+T.it("_rows_to_chat external mode: the #tag seg drops (markview renders the tag pill itself)", function()
   local ctx = T.fresh()
   local c = ctx.store.add(T.comment({ comment = "please review", tag = "bugfix" }))
   ctx.store.add_turn(c.id, "agent", "reply body text")
@@ -100,7 +100,11 @@ T.it("_rows_to_chat external mode: the #tag seg is absent externally but present
     end
   end
   T.ok(internal_has_tag, "internal mode keeps the #tag seg")
-  T.ok(not external_has_tag, "external mode drops the #tag seg — markview mode must keep dropping it")
+  T.ok(
+    not external_has_tag,
+    "external mode drops the #tag seg — markview's tag handler conceals the # and wins the hl tie; "
+      .. "the pill there is the Obelus_MarkviewPalette7 remap, not an obelus seg"
+  )
 end)
 
 T.it("_rows_to_chat external mode: body segs empty (markview paints them), header/meta segs kept", function()
@@ -646,4 +650,55 @@ T.it("heading strips melt into the agent bubble too (same seamless default as co
     local hl = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewHeading" .. i, link = false })
     T.eq(hl.bg, bubble, "heading " .. i .. " strip == bubble bg")
   end
+end)
+
+T.it("tag chip: a bold pill clearly distinct from inline code (opaque), bold fg-only when transparent", function()
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e })
+  local ok, err = pcall(function()
+    T.fresh({})
+    require("obelus.thread").setup_highlights()
+    local chip = vim.api.nvim_get_hl(0, { name = "ObelusThreadTag", link = false })
+    local code = vim.api.nvim_get_hl(0, { name = "ObelusThreadCode", link = false })
+    local band = vim.api.nvim_get_hl(0, { name = "ObelusThreadBg", link = false })
+    T.ok(chip.bold, "the chip is bold (no code group is)")
+    T.ok(chip.bg ~= nil, "the chip carries its own pill bg")
+    T.ok(chip.bg ~= code.bg, "the pill bg differs from the inline-code bg")
+    T.ok(chip.bg ~= band.bg, "the pill bg differs from the bubble tint it sits on")
+    local badge = vim.api.nvim_get_hl(0, { name = "ObelusTagBadge", link = false })
+    T.ok(badge.bold and badge.bg == nil, "the explorer badge shares the bold-brand typography, no box")
+  end)
+  vim.api.nvim_set_hl(0, "Normal", {})
+  if not ok then
+    error(err, 0)
+  end
+  T.fresh({ render = { transparent = true } })
+  require("obelus.thread").setup_highlights()
+  local chip = vim.api.nvim_get_hl(0, { name = "ObelusThreadTag", link = false })
+  T.is_nil(chip.bg, "transparent mode drops the pill bg (one-switch contract)")
+  T.ok(chip.bold, "…but keeps bold, still distinct from non-bold code fg")
+end)
+
+T.it("markview tag pill: Obelus_MarkviewPalette7 carries the bold brand chip (twin of ObelusThreadTag)", function()
+  vim.api.nvim_set_hl(0, "Normal", { bg = 0x1e1e2e })
+  local ok, err = pcall(function()
+    T.fresh({})
+    require("obelus.thread").setup_highlights()
+    require("obelus.thread").markview_harmonize()
+    local pill = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewPalette7", link = false })
+    local other = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewPalette6", link = false })
+    T.ok(pill.bold, "the markview tag pill is bold")
+    T.ok(pill.bg ~= nil and pill.bg ~= other.bg, "…with its own brand pill bg, not the shared palette box bg")
+    local chip = vim.api.nvim_get_hl(0, { name = "ObelusThreadTag", link = false })
+    T.eq(pill.bg, chip.bg, "markview + builtin chips share one pill recipe")
+  end)
+  vim.api.nvim_set_hl(0, "Normal", {})
+  if not ok then
+    error(err, 0)
+  end
+  T.fresh({ render = { transparent = true } })
+  require("obelus.thread").setup_highlights()
+  require("obelus.thread").markview_harmonize()
+  local pill = vim.api.nvim_get_hl(0, { name = "Obelus_MarkviewPalette7", link = false })
+  T.is_nil(pill.bg, "transparent mode drops the pill bg here too")
+  T.ok(pill.bold, "…keeping bold")
 end)

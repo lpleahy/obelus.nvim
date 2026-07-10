@@ -183,9 +183,16 @@ function M.setup_highlights()
   -- brand accent + bold so they read as DESTINATIONS, not as the grey chrome
   -- (counts/hints) they used to blend into
   set("ObelusMetaThread", { fg = brand, bold = true })
-  -- tag badge: the distinct brand colour sitting ON the you-bubble tint (bg = band,
-  -- NOT the agent tint), so a thread's #tag reads cleanly in the header with no box
-  set("ObelusThreadTag", { fg = brand, bg = band })
+  -- tag chip: a bold brand-tinted PILL, unmistakably a tag and not inline code —
+  -- the bg is ~3x the bubble/code tint (vs band's 0.08 / code's 0.13) AND
+  -- hue-shifted (brand purple vs the accent-blue code box), plus bold, which no
+  -- code group uses. Transparent mode drops the bg like every other tint, leaving
+  -- bold brand fg — still distinct from the non-bold code fg.
+  local chipbg = not transparent and blend(brand, bg, math.min(tint * 3, 0.30)) or nil
+  set("ObelusThreadTag", { fg = brand, bg = chipbg, bold = true })
+  -- explorer/list tag badge: same tag typography (bold brand + #) minus the pill —
+  -- list rows have no bubble for a bg to sit on
+  set("ObelusTagBadge", { fg = brand, bold = true })
   -- the reply/compose INPUT box: tinted with the DISTINCT brand colour (not you/agent)
   -- + a brand border/bar, so the place you type is unmistakable from the history
   local inbg = not transparent and blend(brand, bg, math.min(tint * 2.4, 0.26)) or nil
@@ -350,6 +357,21 @@ function M.markview_harmonize()
     set("Obelus_MarkviewPalette" .. i, { bg = box_bg, fg = color("MarkviewPalette" .. i .. "Fg", "fg") })
     set("Obelus_MarkviewPalette" .. i .. "Bg", { bg = box_bg })
   end
+  -- #tags (markdown_inline `tags` renders via MarkviewPalette7, remapped to this
+  -- group per chat window): the bold brand PILL, twin of the builtin renderer's
+  -- ObelusThreadTag — hue-shifted from every code bg and ~3x any bubble tint, so
+  -- a thread's tag is unmistakably a TAG and never reads as inline code. In
+  -- markview mode obelus deliberately does NOT overlay its own chip seg (markview
+  -- conceals the '#' and wins the highlight tie — see panel._rows_to_chat); this
+  -- group IS the chip there.
+  local cc = (require("obelus.config").options.render or {}).colors or {}
+  local brand = color(cc.accent or "@keyword", "fg")
+    or color("Keyword", "fg")
+    or color("Statement", "fg")
+    or color("Special", "fg")
+    or 0xbb9af7
+  local chipbg = not transparent and blend(brand, base, math.min((cc.tint or 0.08) * 3, 0.30)) or nil
+  set("Obelus_MarkviewPalette7", { fg = brand, bg = chipbg, bold = true })
   -- a plain `>` blockquote border: mute it (Comment colour) so it doesn't read as a
   -- second clashing vertical bar inside the bubble next to the turn's accent bar
   set("Obelus_MarkviewBlockQuoteDefault", { fg = color("Comment", "fg") or 0x6c7086 })
@@ -747,7 +769,10 @@ local function turn_header(comment, t, i, is_last, status, agent)
       end
       header[#header + 1] = { "  " .. format.range_label(comment), "ObelusThreadMeta", role = "meta" }
       if comment.tag and comment.tag ~= "" then
-        header[#header + 1] = { "  #" .. comment.tag, "ObelusThreadTag", role = "tag" }
+        -- the separator spaces ride the meta hl, NOT the chip: the pill bg starts
+        -- exactly at the '#' (painting the gap looked like lopsided left padding)
+        header[#header + 1] = { "  ", "ObelusThreadMeta", role = "meta" }
+        header[#header + 1] = { "#" .. comment.tag, "ObelusThreadTag", role = "tag" }
       end
     end
     -- the trailing "you" turn is the UNSENT draft (a new comment, or a reply you're writing):
@@ -1018,19 +1043,21 @@ end
 -- `**`) can leave a stray marker dangling in that one cell — acceptable, since
 -- markview reparses this text fresh on every render (a stray marker degrades just
 -- that cell's styling, it doesn't corrupt the table or leak into neighbours).
--- markview's RENDERED table row is wider than the raw text, in two ways measured
--- empirically: (1) ~1 structural cell per column plus the corner overhang
--- (plain-text tables: min no-wrap margin = ncol + 1 across ncol 2..6), and
--- (2) markview RECOUPS concealed marker cells as alignment padding — a row whose
--- cells hide `backticks` renders narrower, so markview pads it (and its
--- neighbours) up to per-column maxima that can exceed even the WIDEST raw row
--- (measured 75 rendered vs 67 max-raw on a 3-column marker-heavy table). The fit
--- must budget for the RENDERED width or the fitted table still wraps; biased
--- generous because an over-shrunk table is cosmetic while an under-shrunk one
--- wraps and breaks the whole box.
-local function mv_table_margin(ncol)
-  return 2 * ncol + 4 -- ncol+1 structural + ~2 conceal-recoup cells per column + slack
-end
+-- The budget must count WRAP CAPACITY, not visible width. In a wrapped window
+-- nvim breaks lines at raw-text-plus-inline-virt width: CONCEALED characters take
+-- zero visible cells but still consume wrap capacity, and inline virt_text adds
+-- capacity on top. A rendered markview row therefore consumes, beyond the
+-- per-column stripped maxima the fit targets: (1) ncol+1 inline `│` border
+-- glyphs (the raw `|`s they conceal ALSO still count), (2) that row's OWN
+-- concealed marker cells — backticks, **bold**, ~~strike~~, link URLs, and the
+-- `\` of every re-escaped pipe build_row emits — measured directly as the
+-- emitted-raw minus stripped width, worst row wins, and (3) markview's 2 inline
+-- pad cells per code span, plus alignment pads lifting every other row up to the
+-- column's measure maximum (markview measures a cell as stripped+2 per span) —
+-- together bounded by 2 cells per span on per-column span maxima. Under-budget
+-- and the row physically wraps, breaking the whole box; over-budget is only a
+-- cosmetically narrower table — a +2 slack covers the stragglers (fit_cell's
+-- re-closed backtick, stripper inexactness on exotic markup).
 
 -- Approximate markview's marker-STRIPPED cell measurement (it conceals inline
 -- markers before aligning columns): drop backticks, **/__ bold, */_ italic, ~~
@@ -1044,20 +1071,62 @@ local function stripped_w(text)
   return vim.fn.strdisplaywidth(t)
 end
 
-local function fit_one_table(block, budget)
+-- complete `code` spans in one cell (pairs of backticks); truncation can only
+-- ever LOWER this (fit_cell re-closes at most the spans that were already there),
+-- so a pre-fit count stays a valid upper bound for the fitted table
+local function span_count(text)
+  local _, ticks = text:gsub("`", "")
+  return math.floor(ticks / 2)
+end
+
+-- one cell's concealed-but-capacity-consuming cells, AS EMITTED: raw minus
+-- stripped width covers every concealed span kind (backticks, **bold**,
+-- ~~strike~~, link URLs), and each bare pipe costs one more cell — parse_table
+-- unescaped it, but build_row re-emits it as `\|` whose backslash is concealed
+local function cell_conceal(cell)
+  local _, pipes = cell:gsub("|", "")
+  return vim.fn.strdisplaywidth(cell) - stripped_w(cell) + pipes
+end
+
+-- Measure a table block the way markview will RENDER it: per-column stripped
+-- maxima (markview's alignment metric) plus the wrap-capacity margin derived
+-- above. The conceal term is the WORST ROW's total (each row only pays for its
+-- own concealed markers), not a sum of column maxima — that distinction is what
+-- keeps narrow-sidebar tables from being over-shrunk; the span-pad term does use
+-- column maxima, because alignment pads lift every row up to them.
+local function measure_table(block)
   local header, _, body = parse_table(block)
   local ncol = #header
-  -- column widths from STRIPPED cell measure — markview's own alignment metric
-  local widths = {}
+  local rows = { header }
+  for _, r in ipairs(body) do
+    rows[#rows + 1] = r
+  end
+  local widths, pads = {}, 0
   for i = 1, ncol do
-    local w = stripped_w(header[i] or "")
-    for _, r in ipairs(body) do
+    local w, s = 0, 0
+    for _, r in ipairs(rows) do
       w = math.max(w, stripped_w(r[i] or ""))
+      s = math.max(s, span_count(r[i] or ""))
     end
     widths[i] = w
+    pads = pads + 2 * s
   end
+  local conceal = 0
+  for _, r in ipairs(rows) do
+    local rc = 0
+    for i = 1, ncol do
+      rc = rc + cell_conceal(r[i] or "")
+    end
+    conceal = math.max(conceal, rc)
+  end
+  local margin = (ncol + 1) + pads + conceal + 2 -- borders + pads/aligns + worst-row conceal + slack
+  return ncol, widths, margin, header, body
+end
+
+local function fit_one_table(block, budget)
+  local ncol, widths, margin, header, body = measure_table(block)
   local chrome = 3 * ncol + 1 -- "| " + " | " + " |" — same chrome shape as table_block_rows
-  shrink_col_widths(widths, ncol, chrome, budget - mv_table_margin(ncol))
+  shrink_col_widths(widths, ncol, chrome, budget - margin)
 
   -- Truncate AND pad, both by the STRIPPED measure: markview pads any cell whose
   -- stripped width is under the column max with an inline virt pad AT THE PIPE
@@ -1073,17 +1142,19 @@ local function fit_one_table(block, budget)
     if tw <= w then
       return text .. string.rep(" ", w - tw)
     end
-    -- truncate by DISPLAY width, not chars: strcharpart counts characters, and a
-    -- CJK/emoji cell cut to w-1 CHARS can still be ~2(w-1) CELLS wide — the row
-    -- would physically wrap, which is the exact markview breakage this exists to
-    -- prevent. Shave chars until the display width fits.
+    -- truncate by STRIPPED display width, not chars: strcharpart counts
+    -- characters, and a CJK/emoji cell cut to w-1 CHARS can still be ~2(w-1)
+    -- CELLS wide — the row would physically wrap, which is the exact markview
+    -- breakage this exists to prevent. Stripped (not raw) is the budget's own
+    -- metric: comparing raw width here over-truncated marker-carrying cells by
+    -- the width of their markers.
     local cut = vim.fn.strcharpart(text, 0, math.max(w - 1, 0))
-    while cut ~= "" and vim.fn.strdisplaywidth(cut) > math.max(w - 1, 0) do
+    while cut ~= "" and stripped_w(cut) > math.max(w - 1, 0) do
       cut = vim.fn.strcharpart(cut, 0, vim.fn.strchars(cut) - 1)
     end
     -- a cut that landed INSIDE a `code` span leaves an odd backtick — the unclosed
     -- span shows its raw backtick and skews markview's per-cell measurement. Close
-    -- it (one extra raw cell, covered by mv_table_margin's slack).
+    -- it (one extra raw cell, covered by the measure_table margin's slack).
     local _, ticks = cut:gsub("`", "")
     if ticks % 2 == 1 then
       cut = cut .. "`"
@@ -1227,15 +1298,25 @@ local function fit_table_cells(lines, budget)
         block[#block + 1] = lines[i]
         i = i + 1
       end
-      -- the fits-check must use the same ncol-aware threshold fit_one_table fits
-      -- to: markview's RENDERED row is ~ncol+1 cells wider than the raw text, so a
-      -- raw row at exactly `budget` would still wrap once rendered
-      local threshold = budget - mv_table_margin(#table_cells(block[1]))
-      local fits = true
-      for _, l in ipairs(block) do
-        if vim.fn.strdisplaywidth(l) > threshold then
-          fits = false
-          break
+      -- fits-check on the same metric fit_one_table fits to — the RENDERED wrap
+      -- capacity (per-column stripped maxima + chrome + margin), not raw line
+      -- width: column maxima can come from DIFFERENT rows, so no single raw line
+      -- reflects the width markview aligns every row up to
+      local ncol, widths, margin = measure_table(block)
+      local needed = 3 * ncol + 1 + margin
+      for _, w in ipairs(widths) do
+        needed = needed + w
+      end
+      local fits = needed <= budget
+      if fits then
+        -- safety net for what the parsed measure can't see (a row with MORE cells
+        -- than the header, exotic markup the stripper mismeasures): any raw line
+        -- wider than the margin allows still triggers the refit
+        for _, l in ipairs(block) do
+          if vim.fn.strdisplaywidth(l) > budget - margin then
+            fits = false
+            break
+          end
         end
       end
       if fits then
@@ -1462,7 +1543,7 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
     lines = pad_table_edges(lines)
     -- then fit any over-wide table's COLUMNS to the render width — see
     -- fit_table_cells above. The per-block ncol-aware markview margin
-    -- (mv_table_margin) is subtracted inside; pass the plain available width.
+    -- (measure_table's margin) is subtracted inside; pass the plain available width.
     lines = fit_table_cells(lines, inner)
     -- and give fenced code lines a uniform full-width recessed box — see
     -- pad_code_blocks above. -6 leaves room for markview's own lead/trail pads

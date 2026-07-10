@@ -56,6 +56,7 @@ local function prompt(opts, cb)
     title_pos = "center",
     footer = " <CR>/<C-s> submit · q/<Esc> cancel ",
     footer_pos = "right",
+    zindex = config.z.OVERLAY, -- above the chat stack (incl. its input)
   })
   vim.wo[win].wrap = true
   vim.cmd("startinsert")

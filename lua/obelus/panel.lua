@@ -193,6 +193,7 @@ local function rooted_wincfg(root, base_w, base_h, title, min_h, force_side)
     border = "rounded",
     title = title,
     title_pos = "left",
+    zindex = require("obelus.config").z.CHAT,
   }
   local side = force_side
   if side ~= "below" and side ~= "above" then
@@ -574,7 +575,7 @@ local function build_list()
       local r0 = i1 + 2
       local segs = { { #pre, i1, ICON_HL[s] }, { r0, r0 + #rlf, "ObelusChrome" } }
       if badge ~= "" then
-        segs[#segs + 1] = { #text - #badge, #text, "ObelusBorder" } -- fg-only brand: no box
+        segs[#segs + 1] = { #text - #badge, #text, "ObelusTagBadge" } -- bold brand, no box: tag typography everywhere
       end
       push(text, c.id, { segs = segs })
       if state.expanded[c.id] then
@@ -623,8 +624,12 @@ end
 -- divider-classification bugs used to live in exactly this split, back when it had
 -- to sniff hl-group NAME substrings to tell a divider from content.
 -- opts.external: an external renderer (markview/treesitter) colours the body, so
--- keep only "header"/"meta" role chunks and drop "body"/"code"/"tag" (the #tag
--- badge stays dropped in markview mode, exactly as before).
+-- keep only "header"/"meta" role chunks and drop "body"/"code"/"tag". The #tag
+-- seg stays dropped in markview mode ON PURPOSE: markview's inline tag handler
+-- conceals the '#' and injects its own virt cells, and it wins the same-priority
+-- highlight fight — an obelus seg underneath produces a broken hybrid. The pill
+-- look comes from the per-window MarkviewPalette7 remap instead (markview's tag
+-- palette — see markview_harmonize's brand-pill override in thread.lua).
 -- Returns a list of { text = <buffer line>, deco = <decorate() entry> } in order.
 function M._rows_to_chat(rows, opts)
   local mv = (opts or {}).external == true
@@ -640,7 +645,8 @@ function M._rows_to_chat(rows, opts)
         text = text .. (ch[1] or "")
         -- Both modes draw the SAME chrome — tinted bubble bg, bright bar, you/agent
         -- header + range meta — so the sidebar/popup look like the inline band.
-        -- markview mode only drops the BODY/code/tag segs so markview colours the body.
+        -- markview mode only drops the BODY/code/tag segs so markview colours the
+        -- body (and renders the #tag itself — see the note above).
         if not mv or ch.role == "header" or ch.role == "meta" then
           segs[#segs + 1] = { s, #text, ch[2] }
         end
@@ -940,7 +946,7 @@ local function input_wincfg()
     },
     title = { { " reply ", "ObelusInputHeader" } },
     title_pos = "left",
-    zindex = 60, -- above the chat float so it never renders behind it
+    zindex = require("obelus.config").z.INPUT, -- above the chat float so it never renders behind it
   }
   if hints() then -- footer + footer_pos must be set together (or neither)
     local segs = input_footer_segments()
@@ -2197,6 +2203,7 @@ function M.open(as_float)
       border = "rounded",
       title = " ◆ obelus review ",
       title_pos = "center",
+      zindex = require("obelus.config").z.CHAT,
     }
     -- rooted: hang the popup off the comment's line in the source window, choosing
     -- the side (below/above) with more room — like the inline band, but floating
@@ -2372,7 +2379,7 @@ local function preview_max_wcfg(title)
     title = title,
     title_pos = "center",
     focusable = false,
-    zindex = 40,
+    zindex = require("obelus.config").z.PREVIEW,
   }
 end
 
@@ -2638,7 +2645,7 @@ local function fill_preview(force)
     local wcfg, pside = rooted_wincfg(state.preview_root, preview_base_width(), base_h, title, 1, preview_side())
     remember_preview_side(pside)
     wcfg.focusable = false
-    wcfg.zindex = 40
+    wcfg.zindex = require("obelus.config").z.PREVIEW
     pcall(vim.api.nvim_win_set_config, w, wcfg)
     -- Seat the LATEST content at the bottom (like the chat) so the box fills from the bottom with
     -- older turns above if it overflows — instead of opening scrolled part-way with empty below.
@@ -2713,7 +2720,7 @@ function M.preview(id)
   local wcfg, oside = rooted_wincfg(state.preview_root, W, H, float_title(c), 1, preview_side())
   remember_preview_side(oside)
   wcfg.focusable = false -- read-only preview: window-nav skips it, cursor stays in code
-  wcfg.zindex = 40 -- below the modal input (60); above normal content
+  wcfg.zindex = require("obelus.config").z.PREVIEW -- below the modal input; above normal content
   bind_preview_maximize(cbuf)
   if state.preview_maximized then
     wcfg = preview_max_wcfg(float_title(c))

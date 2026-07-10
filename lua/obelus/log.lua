@@ -73,6 +73,7 @@ function M.open_prompt()
     border = "rounded",
     title = " last prompt sent ",
     title_pos = "center",
+    zindex = require("obelus.config").z.OVERLAY, -- above the chat stack (incl. its input)
   })
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = b, silent = true })
 end
@@ -91,6 +92,7 @@ function M.open()
     border = "rounded",
     title = " obelus jobs ",
     title_pos = "center",
+    zindex = require("obelus.config").z.OVERLAY, -- above the chat stack (incl. its input)
   })
   vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = b, nowait = true, silent = true })
 end

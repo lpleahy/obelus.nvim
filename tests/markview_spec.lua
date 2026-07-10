@@ -329,6 +329,123 @@ T.it_when(has_mv, "a 5-column over-wide table doesn't wrap RENDERED (ncol-aware 
   T.ok(all_single, "every rendered table row occupies exactly one screen row" .. (bad and (": " .. bad) or ""))
 end)
 
+T.it_when(has_mv, "code-span-heavy over-wide table doesn't wrap RENDERED (span-aware wrap-capacity margin)", function()
+  -- The screenshot bug: concealed backticks still consume WRAP capacity, and
+  -- markview adds 2 inline pad cells per `code` span — overhead that grows with
+  -- span count, which a constant per-column margin can't cover. Cells here carry
+  -- multiple code spans (the exact shape that broke); assert the RENDERED height.
+  local ctx = T.fresh({ render = { renderer = "markview" } })
+  local panel = require("obelus.panel")
+  panel._timing.fill_throttle = 0
+  local saved_columns = vim.o.columns
+  vim.o.columns = 190
+  local c = ctx.store.add(T.comment({ comment = "verdict table" }))
+  ctx.store.add_turn(
+    c.id,
+    "agent",
+    table.concat({
+      "| Comment | Verdict | Why | Recommended fix |",
+      "| --- | --- | --- | --- |",
+      '| 1783642229-7 "testing this" | REAL bug | `strip_bg()` drops `hl.bg` for themes that set `#ff9e64` and writes the rest through anyway | read `hl.bg` directly and keep `#ff9e64` as the fallback |',
+      '| 1783642230-1 "test" | not a bug | when trees conceal the backticks markview pads `inline` code both sides | keep `strip_bg()` but skip pad cells |',
+    }, "\n")
+  )
+  panel.open_thread(c.id, true) -- the full-width float, like the screenshot
+  local opened = T.wait_for(function()
+    local g = panel.geom()
+    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+  end, 2000)
+  if not opened then
+    vim.o.columns = saved_columns
+  end
+  T.ok(opened, "chat opened")
+  local g = panel.geom()
+  T.wait_for(function()
+    for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+      if name:find("markview", 1, true) and #vim.api.nvim_buf_get_extmarks(g.buf, ns, 0, -1, {}) > 0 then
+        return true
+      end
+    end
+    return false
+  end, 2000)
+  vim.cmd("redraw")
+  local lines = vim.api.nvim_buf_get_lines(g.buf, 0, -1, false)
+  local saw = false
+  local all_single = true
+  local bad
+  for i, l in ipairs(lines) do
+    if l:match("^%s*|.*|%s*$") then
+      saw = true
+      local ok, th = pcall(vim.api.nvim_win_text_height, g.win, { start_row = i - 1, end_row = i - 1 })
+      if not (ok and th and th.all == 1) then
+        all_single = false
+        bad = l
+      end
+    end
+  end
+  vim.o.columns = saved_columns
+  T.ok(saw, "the table's rows were found")
+  T.ok(all_single, "every span-heavy rendered row occupies exactly one screen row" .. (bad and (": " .. bad) or ""))
+end)
+
+T.it_when(has_mv, "bold/strike-marker table doesn't wrap RENDERED (concealed width counted, not just code)", function()
+  -- concealed **bold**/~~strike~~ markers also consume wrap capacity; the margin
+  -- measures concealment as raw-minus-stripped per cell, so non-code spans are
+  -- budgeted too
+  local ctx = T.fresh({ render = { renderer = "markview" } })
+  local panel = require("obelus.panel")
+  panel._timing.fill_throttle = 0
+  local saved_columns = vim.o.columns
+  vim.o.columns = 150
+  local c = ctx.store.add(T.comment({ comment = "bold table" }))
+  ctx.store.add_turn(
+    c.id,
+    "agent",
+    table.concat({
+      "| Item | Status | Detail |",
+      "| --- | --- | --- |",
+      "| **first thing** with **another bold** run | ~~dropped~~ **kept** | " .. string.rep("d", 60) .. " |",
+      "| **second** | plain | **emphatic** ~~old~~ text " .. string.rep("x", 40) .. " |",
+    }, "\n")
+  )
+  panel.open_thread(c.id, true)
+  local opened = T.wait_for(function()
+    local g = panel.geom()
+    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+  end, 2000)
+  if not opened then
+    vim.o.columns = saved_columns
+  end
+  T.ok(opened, "chat opened")
+  local g = panel.geom()
+  T.wait_for(function()
+    for name, ns in pairs(vim.api.nvim_get_namespaces()) do
+      if name:find("markview", 1, true) and #vim.api.nvim_buf_get_extmarks(g.buf, ns, 0, -1, {}) > 0 then
+        return true
+      end
+    end
+    return false
+  end, 2000)
+  vim.cmd("redraw")
+  local lines = vim.api.nvim_buf_get_lines(g.buf, 0, -1, false)
+  local saw = false
+  local all_single = true
+  local bad
+  for i, l in ipairs(lines) do
+    if l:match("^%s*|.*|%s*$") then
+      saw = true
+      local ok, th = pcall(vim.api.nvim_win_text_height, g.win, { start_row = i - 1, end_row = i - 1 })
+      if not (ok and th and th.all == 1) then
+        all_single = false
+        bad = l
+      end
+    end
+  end
+  vim.o.columns = saved_columns
+  T.ok(saw, "the table's rows were found")
+  T.ok(all_single, "every bold-marker rendered row occupies exactly one screen row" .. (bad and (": " .. bad) or ""))
+end)
+
 -- ---------------------------------------------------------------------------
 -- Portability: vanilla markview (plain setup({}), no personal user config) must
 -- render obelus chats correctly WITHOUT help from the two global repairs some

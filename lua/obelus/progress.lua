@@ -100,7 +100,7 @@ local function render_corner(n)
     border = "rounded",
     focusable = false,
     noautocmd = true,
-    zindex = 200,
+    zindex = config.z.STATUS,
   }
   if corner_win and vim.api.nvim_win_is_valid(corner_win) then
     vim.api.nvim_win_set_config(corner_win, cfg)

@@ -756,6 +756,7 @@ function M.compose(opts)
   wcfg.border = "rounded"
   wcfg.title = { { " ▎ " .. (opts.title or "you") .. " ", "ObelusInputHeader" } }
   wcfg.title_pos = "left"
+  wcfg.zindex = config.z.OVERLAY -- focused entry surface: beats any chat stack on screen
   if M.hints_shown() then -- footer built from the RESOLVED keys (config.chat_hint) — see panel.lua's twin
     local segs = {}
     local function add(name, default, label)

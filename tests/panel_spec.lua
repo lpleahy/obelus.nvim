@@ -402,3 +402,40 @@ T.it("meta rows carry their own accent group, distinct from the grey chrome", fu
   T.ok(hl.bold and hl.fg, "brand accent + bold defined")
   panel.close()
 end)
+
+T.it("z-order: :ObelusPrompt opens ABOVE the chat stack, including its pinned input box", function()
+  -- the input pins itself above the chat body (INPUT band); any take-over surface
+  -- (OVERLAY band) must beat it — the reported bug was the prompt viewer opening
+  -- UNDER the still-drawn input
+  local ctx = T.fresh()
+  local panel = require("obelus.panel")
+  panel._timing.fill_throttle = 0
+  local c = ctx.store.add(T.comment({ comment = "hello" }))
+  panel.open_thread(c.id, true)
+  T.ok(
+    T.wait_for(function()
+      local g = panel.geom()
+      return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
+    end, 2000),
+    "chat opened"
+  )
+  local g = panel.geom()
+  local z = require("obelus.config").z
+  local chat_z = vim.api.nvim_win_get_config(g.win).zindex or 50
+  local input_z = vim.api.nvim_win_get_config(g.input_win).zindex or 50
+  T.eq(chat_z, z.CHAT, "chat popup rides the CHAT band")
+  T.eq(input_z, z.INPUT, "input box rides the INPUT band (above the chat body)")
+
+  require("obelus.log").set_prompt("the prompt")
+  require("obelus.log").open_prompt()
+  local prompt_z = vim.api.nvim_win_get_config(0).zindex or 50
+  T.eq(prompt_z, z.OVERLAY, "the prompt viewer rides the OVERLAY band")
+  T.ok(prompt_z > input_z, "a newly opened overlay stacks above the chat input")
+  vim.cmd("close")
+  panel.close()
+end)
+
+T.it("z-order: the hover preview stays UNDER the chat/input bands (deliberate inversion)", function()
+  local z = require("obelus.config").z
+  T.ok(z.PREVIEW < z.CHAT and z.CHAT < z.INPUT and z.INPUT < z.OVERLAY and z.OVERLAY < z.STATUS, "band ordering")
+end)
