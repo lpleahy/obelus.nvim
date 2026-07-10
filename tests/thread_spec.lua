@@ -174,13 +174,14 @@ T.it("build is a pure formatter: opts.live/opts.spinner drive the spinner direct
 end)
 
 -- ---------------------------------------------------------------------------
--- narration greying: a live streaming turn's pre-final-block lines render grey
--- (ObelusReplyMeta) instead of the normal body hl; the final block keeps normal
--- styling. See store.stream_update's narration_end (fed by stream.lua's
--- collector's final_start() via cli.lua's run_stream).
+-- narration greying: the WHOLE live streaming turn renders grey (ObelusReplyMeta)
+-- — including the latest block, which is provisional until the stream settles;
+-- the collapsed final answer turns white when live goes false. (The last block
+-- used to render white mid-stream, flashing white->grey as each new block
+-- retired it.)
 -- ---------------------------------------------------------------------------
 
-T.it("narration: a live turn's narration lines carry Meta hl; the final block carries Text hl", function()
+T.it("narration: EVERY prose line of a live turn greys — the latest block too", function()
   local ctx = T.fresh()
   local c = ctx.store.add(T.comment({ comment = "please fix" }))
   ctx.store.add_turn(c.id, "agent", "Let me check the file first.\n\nThe fix is simple.")
@@ -202,8 +203,8 @@ T.it("narration: a live turn's narration lines carry Meta hl; the final block ca
       end
     end
   end
-  T.eq(narration_hl, "ObelusReplyMeta", "the pre-final-block line greys")
-  T.eq(final_hl, "ObelusReplyText", "the final block keeps its normal body hl")
+  T.eq(narration_hl, "ObelusReplyMeta", "the earlier narration line greys")
+  T.eq(final_hl, "ObelusReplyMeta", "the LATEST block greys too — provisional until the stream settles")
 end)
 
 T.it("narration: never applies without live=true, even if narration_end lingers on the turn", function()

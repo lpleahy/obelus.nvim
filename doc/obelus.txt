@@ -188,8 +188,9 @@ render.renderer                                *obelus-config-render.renderer*
 render.narration                              *obelus-config-render.narration*
     Default: `"collapse"`     Enum: `"collapse"` | `"keep"`
     A stream interleaves prose with tool work ("let me check X…" [tools]
-    "…the real answer"). While replying, every prose block before the
-    latest renders grey (the turn's Meta highlight) — see |obelus-renderers|.
+    "…the real answer"). While replying, the WHOLE streaming turn renders
+    grey (the turn's Meta highlight) — everything is provisional until the
+    stream settles; the answer turns white then — see |obelus-renderers|.
     Once the stream finishes:
       "collapse" — keep ONLY the final block; the interim narration (and
                    its blank-line separators) is dropped from the stored
@@ -781,8 +782,8 @@ While a reply is STREAMING, every mode shows the plain in-house (builtin)
 markdown regardless of the configured renderer — this avoids a
 flash/reflow as markview's async render or treesitter's parse catches up
 mid-stream — then swaps to the configured renderer once the turn finishes.
-Prior prose blocks (interleaved "let me check X…" narration before tool
-work) render grey while streaming, and — per `render.narration`
+The whole streaming turn (interleaved "let me check X…" narration AND the
+in-progress latest block) renders grey, and — per `render.narration`
 (|obelus-config-render.narration|) — collapse out of the stored reply, or
 stay, once the turn finishes.
 

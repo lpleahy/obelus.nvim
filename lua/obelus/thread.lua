@@ -1494,31 +1494,26 @@ local function body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, in
     code_buf = {}
   end
   local lines = vim.split(sanitize(t.text) or "", "\n", { plain = true })
-  -- Narration greying: while THIS turn is the one actively streaming (live) and it
-  -- carries a narration_end (stream.lua's collector offset — see store.stream_update),
-  -- source lines that fall ENTIRELY before that offset are prior "let me check X…"
-  -- narration blocks, not the real answer — grey them (meta_hl) instead of the normal
-  -- body hl; the final block's lines render normally. Line-level granularity (a line
-  -- straddling the boundary counts as narration only if it ENDS at/before it) — scoped
-  -- to the plain-prose path below (headers/quotes/lists/paragraphs), which is what
-  -- narration text actually looks like; code/table/hr rows are left unstyled by this.
-  -- TWO offset correctness rules, both bugs when violated:
-  --   (1) narration_end was computed on the RAW accumulated text; `lines` is the
-  --       SANITIZED text (zero-width bytes stripped) — translate the boundary by
-  --       sanitizing the raw prefix, else a single ZWSP in the narration shifts the
-  --       boundary and greys the live FINAL ANSWER.
-  --   (2) builtin (md) path ONLY: the md==false branch rewrites `lines`
-  --       (pad_table_edges/fit_table_cells/pad_code_blocks) AFTER this point, which
-  --       shifts line indices — and treesitter mode renders live turns md==false.
+  -- Narration greying: while THIS turn is the one actively streaming (live), the
+  -- WHOLE turn is provisional — every prose line greys (meta_hl), including the
+  -- latest block. (It used to render the last block white as the "probable
+  -- answer", but that made each line flash white then retire to grey as the next
+  -- block arrived — visually noisier than one uniform "working…" grey.) The real
+  -- answer turns white exactly once, when the stream settles: stream_finish
+  -- stores the collapsed final block and live goes false. Scoped to the
+  -- plain-prose path below (headers/quotes/lists/paragraphs), which is what
+  -- narration text actually looks like; code/table/hr rows are left unstyled by
+  -- this. (The old narration_end boundary — stream.lua's final_start, still
+  -- stored by store.stream_update — is deliberately unused here now; the
+  -- collapse at finish still uses the collector's own offset.)
+  -- NB (md path only): the md==false branch rewrites `lines`
+  -- (pad_table_edges/fit_table_cells/pad_code_blocks) AFTER this point, which
+  -- would shift line indices — and treesitter mode renders live turns md==false.
   local narration_line
-  if agent and live and md and t.narration_end and t.narration_end > 0 then
-    local nend = #(sanitize((t.text or ""):sub(1, t.narration_end)) or "")
+  if agent and live and md then
     narration_line = {}
-    local pos = 0
     for li = 1, #lines do
-      local endpos = pos + #lines[li]
-      narration_line[li] = endpos <= nend
-      pos = endpos + 1 -- +1 for the '\n' vim.split consumed between lines
+      narration_line[li] = true
     end
   end
   local function greyed(chunks, grey)

@@ -82,8 +82,8 @@ M.defaults = {
     -- nil = auto: markview if installed, else builtin.
     renderer = nil,
     -- A stream interleaves prose with tool work ("let me check X…" [tools] "…the
-    -- real answer") — every prose block before the last renders grey (the turn's
-    -- Meta hl) while streaming. Once the stream finishes:
+    -- real answer") — the WHOLE streaming turn renders grey (the turn's Meta hl)
+    -- while it's live; the answer turns white when the stream settles:
     --   "collapse" — keep ONLY the final block; the interim narration (and its
     --                blank-line separators) is dropped from the stored reply.
     --   "keep"     — keep the full narration, exactly as accumulated.
