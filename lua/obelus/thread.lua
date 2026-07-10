@@ -183,15 +183,12 @@ function M.setup_highlights()
   -- brand accent + bold so they read as DESTINATIONS, not as the grey chrome
   -- (counts/hints) they used to blend into
   set("ObelusMetaThread", { fg = brand, bold = true })
-  -- tag chip: a bold brand-tinted PILL, unmistakably a tag and not inline code —
-  -- the bg is ~3x the bubble/code tint (vs band's 0.08 / code's 0.13) AND
-  -- hue-shifted (brand purple vs the accent-blue code box), plus bold, which no
-  -- code group uses. Transparent mode drops the bg like every other tint, leaving
-  -- bold brand fg — still distinct from the non-bold code fg.
-  local chipbg = not transparent and blend(brand, bg, math.min(tint * 3, 0.30)) or nil
-  set("ObelusThreadTag", { fg = brand, bg = chipbg, bold = true })
-  -- explorer/list tag badge: same tag typography (bold brand + #) minus the pill —
-  -- list rows have no bubble for a bg to sit on
+  -- tag chip: ONE treatment everywhere — the bright brand colour straight from
+  -- the theme, bold, NO box (a tinted pill read as muddy and clashed with the
+  -- bubbles). Bold + the hue shift is what separates it from inline code, which
+  -- is never bold; identical in transparent and opaque modes by construction.
+  set("ObelusThreadTag", { fg = brand, bold = true })
+  -- explorer/list tag badge: the same tag typography (bold brand + #)
   set("ObelusTagBadge", { fg = brand, bold = true })
   -- the reply/compose INPUT box: tinted with the DISTINCT brand colour (not you/agent)
   -- + a brand border/bar, so the place you type is unmistakable from the history
@@ -358,20 +355,18 @@ function M.markview_harmonize()
     set("Obelus_MarkviewPalette" .. i .. "Bg", { bg = box_bg })
   end
   -- #tags (markdown_inline `tags` renders via MarkviewPalette7, remapped to this
-  -- group per chat window): the bold brand PILL, twin of the builtin renderer's
-  -- ObelusThreadTag — hue-shifted from every code bg and ~3x any bubble tint, so
-  -- a thread's tag is unmistakably a TAG and never reads as inline code. In
-  -- markview mode obelus deliberately does NOT overlay its own chip seg (markview
-  -- conceals the '#' and wins the highlight tie — see panel._rows_to_chat); this
-  -- group IS the chip there.
+  -- group per chat window): the same treatment as the builtin renderer's
+  -- ObelusThreadTag — the bright brand colour straight from the theme, bold, no
+  -- box. In markview mode obelus deliberately does NOT overlay its own chip seg
+  -- (markview conceals the '#' and wins the highlight tie — see
+  -- panel._rows_to_chat); this group IS the chip there.
   local cc = (require("obelus.config").options.render or {}).colors or {}
   local brand = color(cc.accent or "@keyword", "fg")
     or color("Keyword", "fg")
     or color("Statement", "fg")
     or color("Special", "fg")
     or 0xbb9af7
-  local chipbg = not transparent and blend(brand, base, math.min((cc.tint or 0.08) * 3, 0.30)) or nil
-  set("Obelus_MarkviewPalette7", { fg = brand, bg = chipbg, bold = true })
+  set("Obelus_MarkviewPalette7", { fg = brand, bold = true })
   -- a plain `>` blockquote border: mute it (Comment colour) so it doesn't read as a
   -- second clashing vertical bar inside the bubble next to the turn's accent bar
   set("Obelus_MarkviewBlockQuoteDefault", { fg = color("Comment", "fg") or 0x6c7086 })
