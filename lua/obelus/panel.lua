@@ -824,7 +824,7 @@ local function build_list()
       push(text, c.id, { segs = segs })
       if state.expanded[c.id] then
         for _, t in ipairs(store.turns(c)) do
-          local tag = t.author == "agent" and "↩ agent" or "· you"
+          local tag = t.author == "agent" and ("↩ " .. require("obelus.config").agent_label()) or "· you"
           for j, l in ipairs(vim.split(t.text or "", "\n")) do
             local line = string.format("        %s %s", j == 1 and tag or string.rep(" ", #tag), l)
             push(

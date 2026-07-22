@@ -149,6 +149,34 @@ M.defaults = {
     cli = {
       cmd = { "claude", "-p" }, -- headless agent; prompt appended as final arg
       stdin = false, -- true => pipe the prompt on stdin instead of as an arg
+      -- Built-in per-CLI preset ("claude" | "antigravity"): fills the protocol
+      -- knobs below + permissions.state; any key set alongside it overrides
+      -- the preset's value (defaults < preset < your opts).
+      preset = nil,
+      -- Display name for the agent's chat turns ("### claude ↩" etc.); nil =
+      -- the basename of cmd[1].
+      name = nil,
+      -- ── OS-level permission enforcement (see |obelus-permissions|). The
+      -- CLI's own mode flags stay the SEMANTIC layer (they tell the model what
+      -- it may do); this sandbox is the GUARANTEE — writes confined at the OS
+      -- level to the project root + the dirs below. macOS: sandbox-exec;
+      -- Linux: bwrap (bubblewrap). :ObelusPerms picks the live level.
+      permissions = {
+        enabled = true, -- false = never wrap (CLI-native permissions only)
+        -- default level for new sessions: "read-only" (no project writes) |
+        -- "project-edit" (writes confined to the project) | "unrestricted"
+        -- (no sandbox wrap at all)
+        level = "project-edit",
+        -- nil = auto (sandbox-exec on macOS, bwrap on Linux); a wrapper name;
+        -- function(cmd, ctx) -> cmd for a custom wrapper; false = off
+        wrapper = nil,
+        state = {}, -- CLI state dirs, writable in EVERY mode (presets fill this)
+        write = {}, -- extra always-writable dirs
+        -- nil = the default secrets deny-list (sandbox.DEFAULT_DENY_READ:
+        -- ~/.ssh, ~/.gnupg, ~/.aws, ~/.netrc, ~/.config/gh, ~/Library/
+        -- Keychains); {} = deny nothing; a list overrides
+        deny_read = nil,
+      },
       -- ── Per-CLI protocol knobs. The defaults are Claude Code's; together they
       -- describe ANY headless streaming CLI (e.g. Google's `agy`) — see
       -- |obelus-config-transport.cli| for a full non-claude example.
@@ -293,20 +321,50 @@ M.options = vim.deepcopy(M.defaults)
 -- re-running setup() (e.g. a plugin manager reload) never reverts a live toggle.
 -- nil = never toggled (fall through to options); set_renderer("auto") stores the
 -- string "auto" — an EXPLICIT auto that still overrides an options.render.renderer.
-M.ui = { renderer = nil, mode = nil, band_style = nil, show_resolved = nil, hints = nil, edits = nil }
+M.ui = { renderer = nil, mode = nil, band_style = nil, show_resolved = nil, hints = nil, perms = nil }
 
----Whether agents may APPLY EDITS (global, session-scoped; :ObelusEdits /
----toggle_edits). true (the default) leaves the configured cli cmd alone — its
------permission-mode (e.g. acceptEdits) applies as written. false makes every NEW
----cli spawn read-only: the transport swaps the permission mode for `plan`
----(claude's read-only mode — no edits, no mutating shell). In-flight agents
----keep the mode they started with.
+---The live permission level (global, session-scoped; :ObelusPerms /
+---set_perms): "read-only" | "project-edit" | "unrestricted". Falls back to
+---transport.cli.permissions.level (default "project-edit") when never toggled.
+---@return "read-only"|"project-edit"|"unrestricted"
+function M.perms_level()
+  if M.ui.perms ~= nil then
+    return M.ui.perms
+  end
+  local p = (M.options.transport.cli or {}).permissions or {}
+  return p.level or "project-edit"
+end
+
+---Whether agents may APPLY EDITS — now derived from the permission level
+---(read-only = no). false makes every NEW cli spawn read-only: the transport
+---swaps in the CLI's plan mode (transport.cli.plan) AND the sandbox denies
+---project writes. In-flight agents keep the mode they started with.
 ---@return boolean
 function M.edits_enabled()
-  if M.ui.edits ~= nil then
-    return M.ui.edits
+  return M.perms_level() ~= "read-only"
+end
+
+---Display name for the agent's chat turns: transport.cli.name, else the
+---basename of transport.cli.cmd[1] ("claude", "agy", …); the sidekick name
+---when the DISPATCH transport is sidekick. "agent" only as a last resort.
+---@return string
+function M.agent_label()
+  local t = M.options.transport or {}
+  if t.dispatch == "sidekick" then
+    local n = (t.sidekick or {}).name
+    if type(n) == "string" and n ~= "" then
+      return n
+    end
   end
-  return true
+  local c = t.cli or {}
+  if type(c.name) == "string" and c.name ~= "" then
+    return c.name
+  end
+  local exe = (c.cmd or {})[1]
+  if type(exe) == "string" and exe ~= "" then
+    return vim.fn.fnamemodify(exe, ":t")
+  end
+  return "agent"
 end
 
 ---Effective engagement modality: the session override if one was ever set
@@ -498,6 +556,7 @@ local function ensure_tables(o)
   ensure_table(o.transport, "batch", "transport.batch", M.defaults.transport.batch)
   ensure_table(o.transport, "cli", "transport.cli", M.defaults.transport.cli)
   ensure_table(o.transport.cli, "flags", "transport.cli.flags", {})
+  ensure_table(o.transport.cli, "permissions", "transport.cli.permissions", M.defaults.transport.cli.permissions)
   ensure_table(o.transport.cli, "models", "transport.cli.models", M.defaults.transport.cli.models)
   ensure_table(o.transport.cli.models, "tags", "transport.cli.models.tags", {})
   if o.render.bands ~= false then -- false is the documented all-off shorthand (normalized below)
@@ -720,6 +779,30 @@ local function validate(o)
   typed(cli.flags, "stream", "transport.cli.flags.stream", "table|nil", function(v)
     return type(v) == "table"
   end)
+  typed(cli, "name", "transport.cli.name", "string|nil", function(v)
+    return type(v) == "string"
+  end)
+  local perms = cli.permissions
+  boolean(perms, "enabled", "transport.cli.permissions.enabled", true)
+  enum(
+    perms,
+    "level",
+    "transport.cli.permissions.level",
+    { "read-only", "project-edit", "unrestricted" },
+    M.defaults.transport.cli.permissions.level
+  )
+  typed(perms, "wrapper", "transport.cli.permissions.wrapper", "string|function|false|nil", function(v)
+    return type(v) == "string" or type(v) == "function" or v == false
+  end)
+  typed(perms, "state", "transport.cli.permissions.state", "table", function(v)
+    return type(v) == "table"
+  end)
+  typed(perms, "write", "transport.cli.permissions.write", "table", function(v)
+    return type(v) == "table"
+  end)
+  typed(perms, "deny_read", "transport.cli.permissions.deny_read", "table|nil", function(v)
+    return type(v) == "table"
+  end)
   if o.keys ~= false then
     validate_key_map(o.keys.overrides, "keys.overrides")
     validate_key_map(o.keys.chat, "keys.chat")
@@ -731,6 +814,27 @@ end
 function M.setup(opts)
   opts = opts or {}
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts)
+
+  -- transport.cli.preset ("claude" | "antigravity"): re-merge the cli table as
+  -- defaults < preset < user opts, so a key set ALONGSIDE `preset` overrides
+  -- the preset's value. Runs before ensure_tables/validate — the result is
+  -- validated like any hand-written config.
+  local user_cli = type(opts.transport) == "table" and type(opts.transport.cli) == "table" and opts.transport.cli or nil
+  if user_cli and user_cli.preset ~= nil then
+    local preset = type(user_cli.preset) == "string" and require("obelus.presets")[user_cli.preset] or nil
+    if preset then
+      merged.transport.cli =
+        vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.transport.cli), vim.deepcopy(preset), user_cli)
+    else
+      vim.notify_once(
+        "obelus: transport.cli.preset = "
+          .. vim.inspect(user_cli.preset)
+          .. ' is unknown (expected "claude" | "antigravity") — ignored',
+        vim.log.levels.WARN
+      )
+      merged.transport.cli.preset = nil
+    end
+  end
 
   ensure_tables(merged)
   normalize_false_tables(merged)

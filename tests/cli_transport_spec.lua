@@ -52,9 +52,9 @@ end)
 
 T.it("claude default: edits-off swaps --permission-mode for plan", function()
   setup_cli({ cmd = { "claude", "-p", "--permission-mode", "acceptEdits" } })
-  config.ui.edits = false
+  config.ui.perms = "read-only"
   local cmd = cli._base_cmd(nil, nil)
-  config.ui.edits = nil
+  config.ui.perms = nil
   T.eq(cmd, { "claude", "-p", "--permission-mode", "plan" })
 end)
 
@@ -88,9 +88,9 @@ end)
 
 T.it("agy profile: edits-off strips the dangerous bool flag and swaps in --mode plan", function()
   setup_cli(AGY)
-  config.ui.edits = false
+  config.ui.perms = "read-only"
   local cmd = cli._base_cmd(nil, nil)
-  config.ui.edits = nil
+  config.ui.perms = nil
   T.eq(cmd, { "agy", "--sandbox", "--mode", "plan" })
 end)
 
@@ -101,9 +101,9 @@ T.it("plan as a function owns the whole read-only swap", function()
       return { "mycli", "--read-only" }
     end,
   })
-  config.ui.edits = false
+  config.ui.perms = "read-only"
   local cmd = cli._base_cmd(nil, nil)
-  config.ui.edits = nil
+  config.ui.perms = nil
   T.eq(cmd, { "mycli", "--read-only" })
 end)
 
@@ -153,4 +153,105 @@ T.it("captured_session: the stream's own session id wins over the log", function
   local session = cli._captured_session(col, c, logfile)
   T.eq(session, "from-the-stream")
   T.is_nil((vim.uv or vim.loop).fs_stat(logfile), "temp log still consumed")
+end)
+
+-- ── presets, labels, permission levels ──────────────────────────────────────
+
+T.it("preset 'antigravity': fills the protocol knobs; keys set alongside override it", function()
+  config.setup({
+    transport = { cli = { preset = "antigravity", models = { send = "my-model" }, name = "gravity" } },
+  })
+  local c = config.options.transport.cli
+  T.eq(c.cmd[1], "agy")
+  T.eq(c.prompt_flag, "-p")
+  T.eq(c.output, "text")
+  T.eq(c.flags.resume, "--conversation")
+  T.eq(c.session.flag, "--log-file")
+  T.eq(type(c.before_spawn), "function", "the --add-dir hook rides the preset")
+  T.ok(vim.tbl_contains(c.permissions.state, "~/.gemini"), "agy state dir writable")
+  T.eq(c.models.send, "my-model", "user models survive")
+  T.eq(c.name, "gravity", "user keys override the preset")
+end)
+
+T.it("preset 'claude': acceptEdits cmd + claude state dirs; unknown preset is ignored", function()
+  config.setup({ transport = { cli = { preset = "claude" } } })
+  local c = config.options.transport.cli
+  T.eq(c.cmd, { "claude", "-p", "--permission-mode", "acceptEdits" })
+  T.ok(vim.tbl_contains(c.permissions.state, "~/.claude"))
+  config.setup({ transport = { cli = { preset = "no-such-cli" } } })
+  T.eq(config.options.transport.cli.cmd, { "claude", "-p" }, "unknown preset falls back to the defaults")
+end)
+
+T.it("agent_label: cli basename by default, name override, sidekick name for sidekick dispatch", function()
+  config.setup({ transport = { cli = { cmd = { "/opt/homebrew/bin/agy", "--sandbox" } } } })
+  T.eq(config.agent_label(), "agy")
+  config.setup({ transport = { cli = { cmd = { "agy" }, name = "antigravity" } } })
+  T.eq(config.agent_label(), "antigravity")
+  config.setup({ transport = { dispatch = "sidekick", sidekick = { name = "crush" } } })
+  T.eq(config.agent_label(), "crush")
+end)
+
+T.it("enforce: wraps for project-edit with the project root; read-only mode reaches the wrapper", function()
+  local seen
+  config.setup({
+    transport = {
+      cli = {
+        permissions = {
+          wrapper = function(cmd, wctx)
+            seen = wctx
+            return vim.list_extend({ "WRAP" }, cmd)
+          end,
+        },
+      },
+    },
+  })
+  local c = config.options.transport.cli
+  config.ui.perms = nil -- default level: project-edit
+  local out = cli._enforce({ "mycli", "-p", "hi" }, c, "/proj/root")
+  T.eq(out[1], "WRAP")
+  T.eq(seen.root, "/proj/root")
+  T.eq(seen.mode, "project-edit")
+  config.ui.perms = "read-only"
+  cli._enforce({ "mycli" }, c, "/proj/root")
+  T.eq(seen.mode, "read-only")
+  config.ui.perms = nil
+end)
+
+T.it("enforce: 'unrestricted' and permissions.enabled = false skip the wrap", function()
+  config.setup({
+    transport = {
+      cli = {
+        permissions = {
+          wrapper = function(cmd)
+            return vim.list_extend({ "WRAP" }, cmd)
+          end,
+        },
+      },
+    },
+  })
+  local c = config.options.transport.cli
+  config.ui.perms = "unrestricted"
+  local cmd = { "mycli" }
+  T.eq(cli._enforce(cmd, c, "/proj"), cmd, "unrestricted never wraps")
+  config.ui.perms = nil
+  config.setup({ transport = { cli = { permissions = { enabled = false } } } })
+  T.eq(cli._enforce(cmd, config.options.transport.cli, "/proj"), cmd, "enabled = false never wraps")
+end)
+
+T.it(":ObelusPerms cycles; :ObelusEdits maps onto the levels", function()
+  T.fresh({})
+  local cfg = require("obelus.config")
+  T.eq(cfg.perms_level(), "project-edit", "default level")
+  vim.cmd("ObelusPerms")
+  T.eq(cfg.perms_level(), "unrestricted", "cycle: project-edit → unrestricted")
+  vim.cmd("ObelusPerms")
+  T.eq(cfg.perms_level(), "read-only", "cycle wraps to read-only")
+  T.ok(not cfg.edits_enabled(), "read-only means edits off")
+  vim.cmd("ObelusPerms project-edit")
+  T.eq(cfg.perms_level(), "project-edit", "explicit level")
+  vim.cmd("ObelusEdits off")
+  T.eq(cfg.perms_level(), "read-only", "edits off = read-only")
+  vim.cmd("ObelusEdits on")
+  T.eq(cfg.perms_level(), "project-edit", "edits on = the default edit level")
+  cfg.ui.perms = nil
 end)

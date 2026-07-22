@@ -98,7 +98,8 @@ function M.thread_full(c, opts)
       lines[#lines + 1] = "- (has an unsent draft, not shown)"
       lines[#lines + 1] = ""
     else
-      local label = (trailing_draft and i == n) and "You (draft, unsent)" or (t.author == "agent" and "Agent" or "You")
+      local label = (trailing_draft and i == n) and "You (draft, unsent)"
+        or (t.author == "agent" and require("obelus.config").agent_label() or "You")
       lines[#lines + 1] = "**" .. label .. ":** " .. (t.text or "")
       lines[#lines + 1] = ""
     end

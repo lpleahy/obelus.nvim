@@ -41,7 +41,7 @@ function M.to_markdown(comment)
       add("---")
       add("")
     end
-    local who = t.author == "agent" and "### agent ↩" or "### you"
+    local who = t.author == "agent" and ("### " .. config.agent_label() .. " ↩") or "### you"
     if i == 1 then
       who = who .. "  ·  `" .. format.range_label(comment) .. "`"
     end

@@ -132,6 +132,27 @@ local function finish_cmd(cmd, c, prompt, sysopts)
   return logfile
 end
 
+-- Wrap the fully-assembled argv in the OS sandbox for the live permission
+-- level (config.perms_level) — writes confined to the project root (+ state/
+-- temp dirs), secret reads denied; see sandbox.lua. Called AFTER before_spawn
+-- so the wrap is outermost. "unrestricted" and permissions.enabled = false
+-- skip it: the CLI's native flags are then the only permission layer.
+local function enforce(cmd, c, cwd)
+  local perms = c.permissions or {}
+  local level = config.perms_level()
+  if level == "unrestricted" or perms.enabled == false then
+    return cmd
+  end
+  return require("obelus.sandbox").wrap(cmd, {
+    root = cwd,
+    mode = level,
+    wrapper = perms.wrapper,
+    state = perms.state,
+    write = perms.write,
+    deny_read = perms.deny_read,
+  })
+end
+
 -- Pick the stdout collector for transport.cli.output (see stream.lua).
 local function collector_for(c, on_update)
   if c.output == "text" then
@@ -212,6 +233,9 @@ local function run_oneshot(payload)
     pcall(c.before_spawn, sysopts.cwd, cmd, payload)
   end
 
+  local label = config.agent_label() -- the CLI's name, not cmd[1] (post-wrap that's the sandbox binary)
+  cmd = enforce(cmd, c, sysopts.cwd)
+
   for _, cm in ipairs(payload.comments or {}) do
     cancelled[cm.id] = nil
     jobs.register(cm.id, { transport = "cli" }) -- mark live immediately (a cancel
@@ -227,7 +251,7 @@ local function run_oneshot(payload)
   end
   require("obelus.review").refresh()
   local progress = require("obelus.progress")
-  local job = progress.start({ label = cmd[1], comments = payload.comments })
+  local job = progress.start({ label = label, comments = payload.comments })
 
   -- grow the transient progress turn; the progress timer re-renders in sync.
   -- (the collector owns the line buffering + delta/result precedence — stream.lua)
@@ -334,11 +358,11 @@ local function run_oneshot(payload)
       local applied = use_actions and actions.apply(akey, allowed) or 0
       require("obelus.review").refresh()
       require("obelus.log").append({
-        label = cmd[1],
+        label = label,
         ok = ok,
         text = (applied > 0 and ("[applied " .. applied .. " action(s)]\n") or "") .. text,
       })
-      notify_done(cmd[1], ok, res.code)
+      notify_done(label, ok, res.code)
     end)
   end)
   if not ok_spawn then
@@ -351,7 +375,7 @@ local function run_oneshot(payload)
     end
     pcall(progress.finish, job, false, tostring(obj))
     require("obelus.review").refresh()
-    vim.notify("obelus: failed to launch " .. cmd[1] .. ": " .. tostring(obj), vim.log.levels.ERROR)
+    vim.notify("obelus: failed to launch " .. label .. ": " .. tostring(obj), vim.log.levels.ERROR)
     error(obj, 0) -- re-raise: transport/init.lua's pcall catches it and skips clear_on_submit
   end
   for _, cm in ipairs(payload.comments or {}) do
@@ -405,13 +429,16 @@ local function run_stream(payload)
     pcall(c.before_spawn, sysopts.cwd, cmd, payload)
   end
 
+  local label = config.agent_label() -- the CLI's name, not cmd[1] (post-wrap that's the sandbox binary)
+  cmd = enforce(cmd, c, sysopts.cwd)
+
   cancelled[target.id] = nil
   store.stream_start(target.id)
   jobs.register(target.id, { transport = "cli" }) -- mark live immediately (a cancel
   -- closure is attached below once spawn succeeds) so the dispatching cross-check
   -- in thread.build never sees a gap before vim.system returns
   local progress = require("obelus.progress")
-  local job = progress.start({ label = cmd[1], comments = payload.comments })
+  local job = progress.start({ label = label, comments = payload.comments })
 
   -- grow the stored turn; the progress timer re-renders bands/sidebar in sync.
   -- (the collector owns the line buffering + delta/result precedence — stream.lua).
@@ -488,8 +515,8 @@ local function run_stream(payload)
       end
       pcall(progress.finish, job, ok, acc)
       require("obelus.review").refresh()
-      require("obelus.log").append({ label = cmd[1], ok = ok, text = acc })
-      notify_done(cmd[1], ok, res.code)
+      require("obelus.log").append({ label = label, ok = ok, text = acc })
+      notify_done(label, ok, res.code)
     end)
   end)
   if not ok_spawn then
@@ -500,7 +527,7 @@ local function run_stream(payload)
     store.abort(target.id) -- clears dispatching + pops the empty placeholder turn
     pcall(progress.finish, job, false, tostring(obj))
     require("obelus.review").refresh()
-    vim.notify("obelus: failed to launch " .. cmd[1] .. ": " .. tostring(obj), vim.log.levels.ERROR)
+    vim.notify("obelus: failed to launch " .. label .. ": " .. tostring(obj), vim.log.levels.ERROR)
     error(obj, 0) -- re-raise: transport/init.lua's pcall catches it and skips clear_on_submit
   end
   jobs.register(target.id, {
@@ -533,6 +560,7 @@ end
 -- mapping (claude regression + a text-CLI profile) is spec-testable without a
 -- subprocess.
 M._base_cmd = base_cmd
+M._enforce = enforce
 M._finish_cmd = finish_cmd
 M._captured_session = captured_session
 

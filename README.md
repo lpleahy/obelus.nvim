@@ -156,20 +156,30 @@ The cli transport speaks Claude Code by default, but every claude-ism is a
 config knob — output parsing (`output = "stream-json" | "text"`), the prompt's
 argv position (`prompt_flag`), flag names (`flags.model` / `flags.resume` /
 `flags.stream`), the read-only swap (`plan`), and session capture (`session`) —
-so any headless streaming CLI can drive it. Google's Antigravity CLI, complete:
+so any headless streaming CLI can drive it. Built-in presets wire the two we
+ship knowledge for — set your models and go:
 
 ```lua
+cli = { preset = "claude" }      -- or:
 cli = {
-  cmd = { "agy", "--dangerously-skip-permissions", "--sandbox" }, -- headless edits need the skip (agy auto-denies confirmations it can't prompt for)
-  prompt_flag = "-p",                                 -- agy's prompt is -p's VALUE, not a positional
-  output = "text",                                    -- agy streams plain text, not JSON events
-  flags = { resume = "--conversation", stream = {} },
-  plan = { strip = { "--mode" }, strip_flags = { "--dangerously-skip-permissions" }, args = { "--mode", "plan" } },
-  session = { flag = "--log-file", pattern = "Print mode: conversation=([%x%-]+)" },
+  preset = "antigravity",        -- Google's agy: plain-text streaming, -p prompt,
+                                 -- --conversation resume, --add-dir workspace, log-file session capture
   models = { send = "gemini-3.6-flash-high", fast = "gemini-3.6-flash-low", batch = "gemini-3.1-pro-high" },
-  before_spawn = function(cwd, cmd) vim.list_extend(cmd, { "--add-dir", cwd }) end, -- agy edits ITS workspace, not the cwd
 }
 ```
+
+Any key set alongside `preset` overrides it, and every knob a preset fills
+(`output`, `prompt_flag`, `flags`, `plan`, `session`, `before_spawn`,
+`permissions`) is plain config — see `:h obelus-config-transport.cli` for
+wiring a CLI we don't ship a preset for.
+
+**Permissions**: every spawn runs at a level — `read-only` / `project-edit` /
+`unrestricted` (`:ObelusPerms` cycles) — enforced in two layers: the CLI's own
+mode flags (what the model is told) plus an OS sandbox (what the process can
+actually do): writes confined to the project root + the CLI's state dirs,
+reads open except a plaintext-secrets deny-list. macOS uses `sandbox-exec`,
+Linux uses `bwrap` (bubblewrap); with neither, obelus warns and relies on the
+CLI's native flags. See `:h obelus-permissions`.
 
 A transport is a function; register your own:
 

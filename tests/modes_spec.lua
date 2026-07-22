@@ -180,7 +180,7 @@ T.it("edits toggle: OFF swaps new cli spawns to --permission-mode plan; ON resto
     ctx.store.abort(c3.id)
   end)
   vim.system = real_system
-  cfgmod.ui.edits = nil -- session-scoped: never leak the toggle into other specs
+  cfgmod.ui.perms = nil -- session-scoped: never leak the toggle into other specs
   if not ok then
     error(err, 0)
   end
@@ -197,7 +197,7 @@ T.it(":ObelusEdits off twice STAYS off (the and/or-swallows-false command-arg tr
   T.ok(cfgmod.edits_enabled(), "on turns it on")
   vim.cmd("ObelusEdits")
   T.ok(not cfgmod.edits_enabled(), "bare command toggles")
-  cfgmod.ui.edits = nil
+  cfgmod.ui.perms = nil
 end)
 
 T.it("fast send on a TAGGED thread never falls through to the heavy tag model", function()
@@ -260,7 +260,7 @@ T.it("edits OFF: the cli prompt drops the actions write-back demand (plan mode c
     ctx.store.abort(c2.id)
   end)
   vim.system = real_system
-  cfgmod.ui.edits = nil
+  cfgmod.ui.perms = nil
   if not ok then
     error(err, 0)
   end

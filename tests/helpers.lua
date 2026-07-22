@@ -103,7 +103,14 @@ function H.fresh(opts)
   local root = vim.fn.tempname()
   vim.fn.mkdir(root, "p")
   local obelus = require("obelus")
-  obelus.setup(vim.tbl_deep_extend("force", { root = root, persist = { backend = "data", auto = false } }, opts or {}))
+  -- sandbox OFF by default in the harness: legacy spawn specs assert the raw
+  -- CLI argv / rely on synchronous ENOENT for a missing binary — both change
+  -- under the OS wrapper. Sandbox specs opt back in via permissions.enabled.
+  obelus.setup(vim.tbl_deep_extend("force", {
+    root = root,
+    persist = { backend = "data", auto = false },
+    transport = { cli = { permissions = { enabled = false } } },
+  }, opts or {}))
   local store = require("obelus.store")
   store.reset_root()
   store.clear()

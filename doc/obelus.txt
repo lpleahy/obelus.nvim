@@ -367,6 +367,30 @@ transport.cli                                    *obelus-config-transport.cli*
                can't express (e.g. appending a cwd-dependent flag like
                agy's `--add-dir <project root>`). Errors are swallowed
                (pcall); the spawn proceeds either way.
+      preset  (nil) — `"claude"` | `"antigravity"`: fill the protocol knobs
+               (cmd, flags, plan, session, …) and `permissions.state` from a
+               built-in per-CLI preset; any key you set ALONGSIDE `preset`
+               overrides the preset's value (defaults < preset < your opts).
+      name    (nil) — display name for the agent's chat turns ("### claude ↩"
+               etc.); nil = the basename of `cmd[1]`.
+      permissions — OS-level file isolation for every spawn; see
+               |obelus-permissions|:
+                 enabled   (true)  — false = never wrap (native flags only).
+                 level     ("project-edit") — default |:ObelusPerms| level:
+                            "read-only" | "project-edit" | "unrestricted".
+                 wrapper   (nil)   — nil = auto (sandbox-exec on macOS,
+                            bwrap on Linux); a wrapper name; a
+                            `function(cmd, ctx) -> cmd`; false = off.
+                 state     ({})    — the CLI's OWN state dirs, writable in
+                            every mode (presets fill this: ~/.claude…,
+                            ~/.gemini).
+                 write     ({})    — extra always-writable dirs.
+                 deny_read (nil)   — nil = the default plaintext-secrets
+                            deny-list (~/.ssh, ~/.gnupg, ~/.aws, ~/.netrc,
+                            ~/.config/gh); {} = deny nothing; a list
+                            overrides. (~/Library/Keychains is deliberately
+                            NOT denied — keychains are encrypted at rest,
+                            and claude keeps its oauth there.)
       models  (`{ send = nil, fast = nil, batch = nil }`) — per send-mode
                model overrides (nil = whatever `cmd`/the account
                defaults to):
@@ -409,6 +433,32 @@ transport.cli                                    *obelus-config-transport.cli*
           end,
         },
 <
+
+                                                        *obelus-permissions*
+PERMISSIONS ~
+
+Two layers, per spawn:
+  semantic    — the CLI's own mode flags (claude `--permission-mode`, agy
+                `--mode`) tell the MODEL what it may do; obelus swaps them per
+                level via `transport.cli.plan`.
+  enforcement — an OS sandbox wraps the process so the file rules hold even if
+                the CLI's own permission layer doesn't (agy's headless mode
+                auto-denies confirmations, so its edit path needs
+                `--dangerously-skip-permissions` — the sandbox is what actually
+                confines those writes). macOS: `sandbox-exec` (ships with the
+                OS). Linux: `bwrap` (install bubblewrap). Neither available →
+                one warning, native flags only.
+
+Levels (|:ObelusPerms| cycles or sets; session-scoped; NEW spawns only):
+  read-only    — plan-mode flags; the sandbox denies ALL project writes (the
+                 CLI's own state dirs + temp stay writable).
+  project-edit — edit-mode flags; writes confined to the project root +
+                 `permissions.state`/`.write` dirs + temp.
+  unrestricted — edit-mode flags, no sandbox wrap at all.
+In every wrapped level, reads are open EXCEPT `permissions.deny_read` (default:
+the classic plaintext secret stores). Note: a project that itself lives under
+a temp tree (/tmp, $TMPDIR) is inside the always-writable temp allows — the
+write confinement is only meaningful for projects outside temp.
 
 transport.batch                                *obelus-config-transport.batch*
     Continuable batch conversations: send several related comments to ONE
@@ -716,6 +766,11 @@ Every command is one line; `()` marks a cross-reference for more detail.
     answer as a plain reply and leave every thread OPEN — nothing is
     auto-resolved, no code is touched. Toggle back on and the next round
     resumes the full protocol.
+:ObelusPerms [level]                                          *:ObelusPerms*
+    Set (or, with no arg, cycle) the global permission LEVEL for new agents —
+    `read-only` | `project-edit` | `unrestricted`; see |obelus-permissions|.
+    |:ObelusEdits| is sugar over this: off = read-only, on = your configured
+    default edit level. Session-scoped, like |:ObelusRenderer|.
 :ObelusCancel                                                *:ObelusCancel*
     Cancel the in-flight dispatch at cursor.
 :ObelusClear                                                  *:ObelusClear*

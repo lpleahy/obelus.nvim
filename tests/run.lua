@@ -44,6 +44,7 @@ for _, spec in ipairs({
   "actions",
   "format",
   "stream",
+  "sandbox",
   "cli_transport",
   "thread",
   "chat",

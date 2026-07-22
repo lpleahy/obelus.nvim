@@ -64,22 +64,57 @@ M.clear = review.clear
 ---any stored comment/turn/draft text.
 M.img_clean = mention.img_clean
 
--- Global on-the-fly EDITS toggle (:ObelusEdits / <prefix>e): whether agents may
--- apply edits. Session-scoped like the renderer/mode toggles (config.ui, never
--- mutates options); read-only swaps every NEW cli spawn to claude's `plan`
--- permission mode (see transport/cli.lua's base_cmd) — in-flight agents keep
--- the mode they started with. `on` non-nil sets it explicitly; nil toggles.
+-- The permission LEVELS in escalation order (see |obelus-permissions|):
+--   read-only    — plan-mode flags + the sandbox denies project writes
+--   project-edit — edit-mode flags + writes confined to project/state dirs
+--   unrestricted — edit-mode flags, no sandbox wrap
+local PERMS = { "read-only", "project-edit", "unrestricted" }
+
+local PERMS_DESC = {
+  ["read-only"] = "plan mode, no project writes (sandbox-enforced)",
+  ["project-edit"] = "edits confined to the project (sandbox-enforced)",
+  ["unrestricted"] = "no sandbox — the CLI's own permissions only",
+}
+
+-- Set (or, with no arg, cycle) the global permission level (:ObelusPerms).
+-- Session-scoped like the renderer/mode toggles (config.ui, never mutates
+-- options); applies to every NEW spawn — in-flight agents keep the level they
+-- started with.
+---@param level? "read-only"|"project-edit"|"unrestricted"
+function M.set_perms(level)
+  if level == nil then
+    local cur = config.perms_level()
+    for i, l in ipairs(PERMS) do
+      if l == cur then
+        level = PERMS[i % #PERMS + 1]
+        break
+      end
+    end
+    level = level or PERMS[1]
+  end
+  if not vim.tbl_contains(PERMS, level) then
+    vim.notify("obelus: unknown permission level " .. vim.inspect(level), vim.log.levels.ERROR)
+    return
+  end
+  config.ui.perms = level
+  vim.notify("obelus: permissions = " .. level .. " — " .. PERMS_DESC[level] .. " (new agents)", vim.log.levels.INFO)
+end
+
+-- Global on-the-fly EDITS toggle (:ObelusEdits / <prefix>e) — sugar over the
+-- permission level: OFF = "read-only"; ON = the configured default edit level
+-- (transport.cli.permissions.level, or "project-edit" if that default IS
+-- read-only). `on` non-nil sets it explicitly; nil toggles.
 ---@param on? boolean
 function M.toggle_edits(on)
   if on == nil then
     on = not config.edits_enabled()
   end
-  config.ui.edits = on
-  vim.notify(
-    on and "obelus: agent edits ON — the configured permission mode applies to new agents"
-      or "obelus: agent edits OFF — new agents run read-only (--permission-mode plan)",
-    vim.log.levels.INFO
-  )
+  if on then
+    local dflt = ((config.options.transport.cli or {}).permissions or {}).level or "project-edit"
+    M.set_perms(dflt ~= "read-only" and dflt or "project-edit")
+  else
+    M.set_perms("read-only")
+  end
 end
 
 -- Set (or, with no arg, cycle) the chat markdown renderer. Applies live to an open
@@ -360,6 +395,16 @@ local function commands()
       return { "on", "off" }
     end,
     desc = "obelus: toggle whether agents may apply edits (global; new agents only)",
+  })
+
+  cmd("ObelusPerms", function(a)
+    M.set_perms(a.args ~= "" and a.args or nil)
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "read-only", "project-edit", "unrestricted" }
+    end,
+    desc = "obelus: set (or cycle) the agent permission level — read-only | project-edit | unrestricted",
   })
 
   cmd("ObelusCancel", function()

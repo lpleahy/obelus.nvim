@@ -17,6 +17,7 @@
 :ObelusLoad	obelus.txt	/*:ObelusLoad*
 :ObelusMode	obelus.txt	/*:ObelusMode*
 :ObelusPanel	obelus.txt	/*:ObelusPanel*
+:ObelusPerms	obelus.txt	/*:ObelusPerms*
 :ObelusProject	obelus.txt	/*:ObelusProject*
 :ObelusPrompt	obelus.txt	/*:ObelusPrompt*
 :ObelusQuickReply	obelus.txt	/*:ObelusQuickReply*
@@ -79,6 +80,7 @@ obelus-debug	obelus.txt	/*obelus-debug*
 obelus-introduction	obelus.txt	/*obelus-introduction*
 obelus-keymaps	obelus.txt	/*obelus-keymaps*
 obelus-mentions	obelus.txt	/*obelus-mentions*
+obelus-permissions	obelus.txt	/*obelus-permissions*
 obelus-project-thread	obelus.txt	/*obelus-project-thread*
 obelus-renderers	obelus.txt	/*obelus-renderers*
 obelus-setup	obelus.txt	/*obelus-setup*
