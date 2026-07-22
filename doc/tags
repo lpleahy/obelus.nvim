@@ -7,7 +7,9 @@
 :ObelusContinue	obelus.txt	/*:ObelusContinue*
 :ObelusDelete	obelus.txt	/*:ObelusDelete*
 :ObelusDispatch	obelus.txt	/*:ObelusDispatch*
+:ObelusDispatchAll	obelus.txt	/*:ObelusDispatchAll*
 :ObelusEdit	obelus.txt	/*:ObelusEdit*
+:ObelusEdits	obelus.txt	/*:ObelusEdits*
 :ObelusHints	obelus.txt	/*:ObelusHints*
 :ObelusImgClean	obelus.txt	/*:ObelusImgClean*
 :ObelusJobs	obelus.txt	/*:ObelusJobs*

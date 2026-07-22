@@ -152,6 +152,25 @@ require("obelus").setup({
 })
 ```
 
+The cli transport speaks Claude Code by default, but every claude-ism is a
+config knob — output parsing (`output = "stream-json" | "text"`), the prompt's
+argv position (`prompt_flag`), flag names (`flags.model` / `flags.resume` /
+`flags.stream`), the read-only swap (`plan`), and session capture (`session`) —
+so any headless streaming CLI can drive it. Google's Antigravity CLI, complete:
+
+```lua
+cli = {
+  cmd = { "agy", "--dangerously-skip-permissions", "--sandbox" }, -- headless edits need the skip (agy auto-denies confirmations it can't prompt for)
+  prompt_flag = "-p",                                 -- agy's prompt is -p's VALUE, not a positional
+  output = "text",                                    -- agy streams plain text, not JSON events
+  flags = { resume = "--conversation", stream = {} },
+  plan = { strip = { "--mode" }, strip_flags = { "--dangerously-skip-permissions" }, args = { "--mode", "plan" } },
+  session = { flag = "--log-file", pattern = "Print mode: conversation=([%x%-]+)" },
+  models = { send = "gemini-3.6-flash-high", fast = "gemini-3.6-flash-low", batch = "gemini-3.1-pro-high" },
+  before_spawn = function(cwd, cmd) vim.list_extend(cmd, { "--add-dir", cwd }) end, -- agy edits ITS workspace, not the cwd
+}
+```
+
 A transport is a function; register your own:
 
 ```lua

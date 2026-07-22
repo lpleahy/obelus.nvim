@@ -332,3 +332,51 @@ T.it("transport.cli accepts before_spawn callback function", function()
   T.ok(called, "before_spawn callback executed")
 end)
 
+T.it("transport.cli.output: invalid value resets to stream-json", function()
+  local config = require("obelus.config")
+  config.setup({ transport = { cli = { output = "jsonl" } } })
+  T.eq(config.options.transport.cli.output, "stream-json")
+end)
+
+T.it("transport.cli protocol knobs: wrong types reset to nil (the claude defaults)", function()
+  local config = require("obelus.config")
+  config.setup({
+    transport = {
+      cli = {
+        prompt_flag = 42,
+        plan = "plan",
+        session = { pattern = "x" }, -- missing the required flag
+        flags = { model = 7, resume = {}, stream = "no" },
+      },
+    },
+  })
+  local c = config.options.transport.cli
+  T.is_nil(c.prompt_flag)
+  T.is_nil(c.plan)
+  T.is_nil(c.session)
+  T.is_nil(c.flags.model)
+  T.is_nil(c.flags.resume)
+  T.is_nil(c.flags.stream)
+end)
+
+T.it("transport.cli protocol knobs: valid values survive setup", function()
+  local config = require("obelus.config")
+  config.setup({
+    transport = {
+      cli = {
+        prompt_flag = "-p",
+        output = "text",
+        plan = { strip = { "--mode" }, args = { "--mode", "plan" } },
+        session = { flag = "--log-file", pattern = "conversation=([%x%-]+)" },
+        flags = { model = "--model", resume = false, stream = {} },
+      },
+    },
+  })
+  local c = config.options.transport.cli
+  T.eq(c.prompt_flag, "-p")
+  T.eq(c.output, "text")
+  T.eq(c.plan.args, { "--mode", "plan" })
+  T.eq(c.session.flag, "--log-file")
+  T.eq(c.flags.resume, false)
+  T.eq(c.flags.stream, {}, "an empty stream list must MEAN empty (not merge back to the default)")
+end)

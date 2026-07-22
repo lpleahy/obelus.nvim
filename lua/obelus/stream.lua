@@ -161,6 +161,42 @@ function M.collector(on_update)
   return C
 end
 
+-- Collector for a PLAIN-TEXT streaming CLI (transport.cli.output = "text", e.g.
+-- Google's `agy -p`): stdout chunks ARE the reply — no framing, no events. Same
+-- interface as M.collector so transport/cli.lua treats the two uniformly:
+--   session()     — always nil (a text stream carries no session id; capture it
+--                   out-of-band via transport.cli.session's log-file extraction)
+--   final_start() — always 0 (no block boundaries → M.collapse keeps everything,
+--                   and thread.build's narration-greying sees one single block)
+function M.text_collector(on_update)
+  local acc = ""
+  local C = {}
+
+  function C.feed(data)
+    if not data or data == "" then
+      return
+    end
+    acc = acc .. data
+    if on_update then
+      on_update(acc)
+    end
+  end
+
+  function C.text()
+    return acc
+  end
+
+  function C.session()
+    return nil
+  end
+
+  function C.final_start()
+    return 0
+  end
+
+  return C
+end
+
 ---Compute the text a CHAT stream-finish should store, honoring render.narration:
 ---  "keep"     — always the full `acc`.
 ---  "collapse" (default, any other value) — ONLY the latest block's text (`acc`

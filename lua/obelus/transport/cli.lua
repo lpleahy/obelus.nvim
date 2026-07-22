@@ -9,12 +9,33 @@ local jobs = require("obelus.jobs")
 local cancelled = {}
 
 -- Headless execution of a CLI agent (e.g. `claude -p`) in the project root.
---   one-shot (default): --output-format json; parse the final result; resolve.
---   streaming (opts.stream): --output-format stream-json; grow the agent turn live.
--- The output-format is managed here, so transport.cli.cmd should NOT set it.
+--   one-shot (default): batch submit; per-comment outcomes come from the actions file.
+--   streaming (opts.stream): grow the agent turn live.
+-- BOTH paths stream stdout; transport.cli.output picks how it's parsed:
+--   "stream-json" (default) — Claude Code's --output-format stream-json events
+--   "text"                  — raw stdout chunks ARE the reply (any plain-streaming
+--                             CLI, e.g. Google's `agy -p`)
+-- The streaming flags are managed here, so transport.cli.cmd should NOT set them;
+-- the per-CLI flag NAMES are configurable — transport.cli.flags (model/resume/
+-- stream), .plan (the read-only swap), .prompt_flag, .session (id capture).
+
+-- claude defaults for the configurable per-CLI bits. Resolved HERE, not in
+-- config.defaults: a LIST default can't be emptied through tbl_deep_extend (the
+-- user's `stream = {}` would merge back into the claude list), so the defaults
+-- table keeps these nil and the fallback lives at the point of use.
+local DEFAULT_STREAM_ARGS = { "--output-format", "stream-json", "--verbose", "--include-partial-messages" }
+local DEFAULT_PLAN = { strip = { "--permission-mode" }, strip_flags = {}, args = { "--permission-mode", "plan" } }
+
+-- transport.cli.flags.*: `false` disables the flag outright; nil = claude default
+local function flag_or(v, default)
+  if v == nil then
+    return default
+  end
+  return v
+end
 
 -- drop the given value-taking flags (and their values) from a cmd, so obelus owns
--- them — it always sets --output-format itself, and --model per send-mode
+-- them — it always sets the output-format itself, and the model flag per send-mode
 local function strip_flags(cmd, flags)
   local out, i = {}, 1
   while i <= #cmd do
@@ -28,27 +49,116 @@ local function strip_flags(cmd, flags)
   return out
 end
 
+-- drop the given VALUELESS (boolean) flags from a cmd — e.g. the read-only plan
+-- swap removing a --dangerously-skip-permissions that must not survive into a
+-- supposedly read-only run
+local function strip_bool_flags(cmd, flags)
+  local out = {}
+  for _, a in ipairs(cmd) do
+    if not vim.tbl_contains(flags, a) then
+      out[#out + 1] = a
+    end
+  end
+  return out
+end
+
 local function base_cmd(resume, model)
   local c = config.options.transport.cli or {}
-  local cmd = strip_flags(vim.deepcopy(c.cmd or { "claude", "-p" }), { "--output-format", "--model" })
-  -- the global edits toggle (:ObelusEdits): read-only means every NEW spawn runs
-  -- in claude's `plan` permission mode — the configured mode (acceptEdits etc.)
-  -- is swapped out here rather than edited in the user's config, so toggling back
-  -- restores their cmd exactly
-  if not config.edits_enabled() then
-    cmd = strip_flags(cmd, { "--permission-mode" })
-    table.insert(cmd, "--permission-mode")
-    table.insert(cmd, "plan")
+  local f = c.flags or {}
+  local model_flag = flag_or(f.model, "--model")
+  local resume_flag = flag_or(f.resume, "--resume")
+  local strip = { "--output-format" }
+  if model_flag then
+    table.insert(strip, model_flag)
   end
-  if model and model ~= "" then
-    table.insert(cmd, "--model")
-    table.insert(cmd, tostring(model))
+  local cmd = strip_flags(vim.deepcopy(c.cmd or { "claude", "-p" }), strip)
+  -- the global edits toggle (:ObelusEdits): read-only means every NEW spawn runs
+  -- in the CLI's read-only/plan mode — the configured mode (acceptEdits etc.) is
+  -- swapped out here rather than edited in the user's config, so toggling back
+  -- restores their cmd exactly. transport.cli.plan owns the swap recipe: a table
+  -- { strip, strip_flags, args } (default: claude's --permission-mode plan), or
+  -- a function(cmd) -> cmd for anything the table form can't express.
+  if not config.edits_enabled() then
+    local plan = c.plan or DEFAULT_PLAN
+    if type(plan) == "function" then
+      cmd = plan(cmd) or cmd
+    else
+      cmd = strip_flags(cmd, plan.strip or {})
+      cmd = strip_bool_flags(cmd, plan.strip_flags or {})
+      vim.list_extend(cmd, vim.deepcopy(plan.args or {}))
+    end
+  end
+  if model and model ~= "" and model_flag then
+    vim.list_extend(cmd, { model_flag, tostring(model) })
   end
   if resume then
-    table.insert(cmd, "--resume")
-    table.insert(cmd, tostring(resume))
+    if resume_flag then
+      vim.list_extend(cmd, { resume_flag, tostring(resume) })
+    else
+      -- a resume was requested but this CLI can't (flags.resume = false): the
+      -- spawn still runs, but as a FRESH conversation — the delta-only batch
+      -- prompt would lack its context, so tell the user how to fix the config
+      vim.notify_once(
+        "obelus: transport.cli.flags.resume = false but a session resume was requested — "
+          .. 'this CLI starts fresh each run; set transport.batch.mode = "stateless"',
+        vim.log.levels.WARN
+      )
+    end
   end
   return cmd, c
+end
+
+-- Append the streaming flags, the optional session-capture log flag, and the
+-- prompt itself (stdin | prompt_flag value | trailing positional). Returns the
+-- temp log-file path when transport.cli.session = { flag, pattern } is set —
+-- captured_session() reads + deletes it once the process exits.
+local function finish_cmd(cmd, c, prompt, sysopts)
+  vim.list_extend(cmd, vim.deepcopy((c.flags or {}).stream or DEFAULT_STREAM_ARGS))
+  local logfile
+  if type(c.session) == "table" and c.session.flag then
+    logfile = vim.fn.tempname()
+    vim.list_extend(cmd, { c.session.flag, logfile })
+  end
+  if c.stdin then
+    sysopts.stdin = prompt
+  elseif c.prompt_flag then
+    -- CLIs whose prompt is a FLAG VALUE (e.g. `agy -p <prompt>`): appended as
+    -- `<flag> <prompt>` — a trailing positional would be parsed as the value of
+    -- whatever flag happens to precede it
+    vim.list_extend(cmd, { c.prompt_flag, prompt })
+  else
+    table.insert(cmd, prompt)
+  end
+  return logfile
+end
+
+-- Pick the stdout collector for transport.cli.output (see stream.lua).
+local function collector_for(c, on_update)
+  if c.output == "text" then
+    return stream.text_collector(on_update)
+  end
+  return stream.collector(on_update)
+end
+
+-- The session id: from the stream itself (stream-json's system/result events),
+-- else extracted from the per-spawn temp log a text-mode CLI wrote — e.g. agy's
+-- "Print mode: conversation=<uuid>" line, matched by transport.cli.session
+-- .pattern. The temp log is consumed (deleted) either way, including on a
+-- cancelled run.
+local function captured_session(col, c, logfile)
+  local session = col.session()
+  if logfile then
+    if not session then
+      local fd = io.open(logfile, "r")
+      if fd then
+        local body = fd:read("*a") or ""
+        fd:close()
+        session = body:match(c.session.pattern or "conversation=([%x%-]+)")
+      end
+    end
+    os.remove(logfile)
+  end
+  return session
 end
 
 local function notify_done(label, ok, code)
@@ -90,17 +200,12 @@ local function run_oneshot(payload)
     prompt = prompt .. "\n\n" .. actions.instructions(payload.comments, akey)
   end
   local cmd, c = base_cmd(payload.opts and payload.opts.resume, payload.opts and payload.opts.model)
-  -- STREAM the batch (not a blocking --output-format json) so the user sees the
-  -- agent working live instead of a spinner that looks hung. The deltas grow a
+  -- STREAM the batch (not a blocking one-shot wait) so the user sees the agent
+  -- working live instead of a spinner that looks hung. The deltas grow a
   -- TRANSIENT progress turn on the first comment; the real per-comment outcomes
   -- still come from the per-job .ai/review-actions-<key>.json via actions.apply().
-  vim.list_extend(cmd, { "--output-format", "stream-json", "--verbose", "--include-partial-messages" })
   local sysopts = { cwd = store.root(), text = true, timeout = c.timeout or 240000 }
-  if c.stdin then
-    sysopts.stdin = prompt
-  else
-    table.insert(cmd, prompt)
-  end
+  local logfile = finish_cmd(cmd, c, prompt, sysopts)
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
   if type(c.before_spawn) == "function" then
@@ -126,7 +231,7 @@ local function run_oneshot(payload)
 
   -- grow the transient progress turn; the progress timer re-renders in sync.
   -- (the collector owns the line buffering + delta/result precedence — stream.lua)
-  local col = stream.collector(function(text)
+  local col = collector_for(c, function(text)
     vim.schedule(function()
       if first then
         store.stream_update(first.id, text)
@@ -139,7 +244,7 @@ local function run_oneshot(payload)
 
   local ok_spawn, obj = pcall(vim.system, cmd, sysopts, function(res)
     vim.schedule(function()
-      local acc, session = col.text(), col.session()
+      local acc, session = col.text(), captured_session(col, c, logfile)
       -- cancelled: M.cancel already aborted the thread, so don't surface the
       -- SIGTERM exit (143) as an error or attach a turn — just drop the handles
       local was_cancelled = false
@@ -292,13 +397,8 @@ local function run_stream(payload)
     .. " spaces or other invisible characters. To show a fenced code block INSIDE a code block,"
     .. " use a longer OUTER fence (four or more backticks) instead of escaping the inner fence."
   local cmd, c = base_cmd(payload.opts and payload.opts.resume, payload.opts and payload.opts.model)
-  vim.list_extend(cmd, { "--output-format", "stream-json", "--verbose", "--include-partial-messages" })
   local sysopts = { cwd = store.root(), text = true, timeout = c.timeout or 240000 }
-  if c.stdin then
-    sysopts.stdin = prompt
-  else
-    table.insert(cmd, prompt)
-  end
+  local logfile = finish_cmd(cmd, c, prompt, sysopts)
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
   if type(c.before_spawn) == "function" then
@@ -320,7 +420,7 @@ local function run_stream(payload)
   -- finishes, so referencing col inside it without this captures the GLOBAL col
   -- (nil) — "attempt to index global 'col'" on the very first delta
   local col
-  col = stream.collector(function(text)
+  col = collector_for(c, function(text)
     vim.schedule(function()
       store.stream_update(target.id, text, col.final_start())
     end)
@@ -331,7 +431,7 @@ local function run_stream(payload)
 
   local ok_spawn, obj = pcall(vim.system, cmd, sysopts, function(res)
     vim.schedule(function()
-      local acc, session = col.text(), col.session()
+      local acc, session = col.text(), captured_session(col, c, logfile)
       jobs.clear(target.id)
       if cancelled[target.id] then
         cancelled[target.id] = nil
@@ -427,6 +527,14 @@ end
 function M.cancel(id)
   return jobs.cancel(id)
 end
+
+-- Test hooks (tests/cli_transport_spec.lua): argv construction and session
+-- extraction are pure given config.options — expose them so the per-CLI flag
+-- mapping (claude regression + a text-CLI profile) is spec-testable without a
+-- subprocess.
+M._base_cmd = base_cmd
+M._finish_cmd = finish_cmd
+M._captured_session = captured_session
 
 -- callable: `require("obelus.transport.cli")(transport)` registers the backend
 return setmetatable(M, {

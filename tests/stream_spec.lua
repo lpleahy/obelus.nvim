@@ -296,3 +296,79 @@ T.it("cli run_stream: the collector callback can call back into the collector (s
   T.ok(found, "the streamed delta reached the store")
   ctx.store.abort(c.id)
 end)
+
+-- ── text_collector: the plain-text counterpart (transport.cli.output = "text") ──
+
+T.it("text_collector: chunks accumulate verbatim and fire on_update", function()
+  local updates = {}
+  local C = M.text_collector(function(t)
+    updates[#updates + 1] = t
+  end)
+  C.feed("Hello")
+  C.feed(", world")
+  C.feed(nil) -- ignored, never fires
+  C.feed("") -- ignored, never fires
+  T.eq(C.text(), "Hello, world")
+  T.eq(updates, { "Hello", "Hello, world" })
+  T.is_nil(C.session(), "a text stream carries no session id")
+  T.eq(C.final_start(), 0, "no block boundaries in a text stream")
+end)
+
+T.it("text_collector: collapse keeps everything (final_start 0 guard)", function()
+  local C = M.text_collector(nil)
+  C.feed("narration…\n\nthe answer")
+  T.eq(M.collapse(C.text(), C.final_start(), "collapse"), "narration…\n\nthe answer")
+end)
+
+T.it("cli run_stream (output=text): raw chunks reach the store; session comes from the log file", function()
+  -- Drive the REAL cli transport with a stubbed vim.system playing an agy-shaped
+  -- CLI: plain text on stdout, the conversation id only in the --log-file.
+  local ctx = T.fresh({
+    transport = {
+      dispatch = "cli",
+      cli = {
+        cmd = { "fake-agy", "--sandbox" },
+        prompt_flag = "-p",
+        output = "text",
+        flags = { resume = "--conversation", stream = {} },
+        session = { flag = "--log-file", pattern = "Print mode: conversation=([%x%-]+)" },
+      },
+    },
+  })
+  local real_system = vim.system
+  local seen_cmd, fed_stdout, exit_cb
+  vim.system = function(cmd, opts, on_exit)
+    seen_cmd, fed_stdout, exit_cb = cmd, opts.stdout, on_exit
+    return { kill = function() end, pid = 1 }
+  end
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  require("obelus").chat_send(c.id, "hello", "send")
+  vim.system = real_system
+  T.ok(fed_stdout ~= nil and exit_cb ~= nil, "spawned with stdout + exit handlers")
+  local logfile
+  for i, a in ipairs(seen_cmd) do
+    if a == "--log-file" then
+      logfile = seen_cmd[i + 1]
+    end
+  end
+  T.ok(logfile, "argv carries --log-file for session capture")
+  fed_stdout(nil, "Hello ")
+  fed_stdout(nil, "from agy")
+  local fd = assert(io.open(logfile, "w"))
+  fd:write("I0722 printmode.go:216] Print mode: conversation=cafe0000-0000-0000-0000-000000000042, sending message\n")
+  fd:close()
+  exit_cb({ code = 0, stderr = "" })
+  T.wait_for(function()
+    return (ctx.store.get(c.id) or {}).session_id ~= nil
+  end)
+  local cm = ctx.store.get(c.id)
+  T.eq(cm.session_id, "cafe0000-0000-0000-0000-000000000042", "session id extracted from the log")
+  local turns = ctx.store.turns(cm)
+  local found = false
+  for _, t in ipairs(turns) do
+    if (t.text or ""):find("Hello from agy", 1, true) then
+      found = true
+    end
+  end
+  T.ok(found, "the raw text chunks reached the store as the reply")
+end)

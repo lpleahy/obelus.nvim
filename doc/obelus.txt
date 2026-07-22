@@ -315,16 +315,60 @@ transport.sidekick                          *obelus-config-transport.sidekick*
 
 transport.cli                                    *obelus-config-transport.cli*
     Options for the built-in "cli" transport (a headless agent process,
-    e.g. `claude -p` or `codex exec`, run in the project root).
+    e.g. `claude -p` or `agy -p`, run in the project root). The defaults
+    describe Claude Code; the protocol knobs below (`output`,
+    `prompt_flag`, `flags`, `plan`, `session`) re-map every claude-ism, so
+    ANY headless streaming CLI can drive the transport — see the agy
+    example at the end of this section.
       cmd     (`{ "claude", "-p" }`) — the headless command; the prompt is
-               appended as the final arg (or piped on stdin — see `stdin`
-               below). obelus always sets `--output-format`
-               itself (and appends `--model`/`--resume` as needed) —
-               don't bake `--output-format` or `--model` into `cmd`.
+               appended as the final arg (or via `prompt_flag`/`stdin`
+               below). obelus always sets the output-format and the
+               model/resume flags itself — don't bake those into `cmd`.
       stdin   (false) — `true` pipes the prompt on stdin instead of
-               appending it as a final arg.
+               appending it as a final arg (wins over `prompt_flag`).
+      output  ("stream-json") — how the streamed stdout is parsed:
+                 "stream-json" — Claude Code's
+                                 `--output-format stream-json` event lines.
+                 "text"        — raw stdout chunks ARE the reply (a CLI
+                                 that streams plain text, e.g. `agy -p`).
+      prompt_flag (nil) — the prompt's place on the argv: nil appends it
+               as the trailing positional (claude); a flag string appends
+               `<flag> <prompt>` instead — required for CLIs whose prompt
+               is a flag VALUE (agy: "-p"), where a trailing positional
+               would be swallowed by whatever flag precedes it.
+      flags   (`{ model = nil, resume = nil, stream = nil }`) — the flag
+               NAMES obelus passes itself; nil = the claude default,
+               `false` disables that flag entirely:
+                 model  ("--model")  — per send-mode model flag; false =
+                         never pass a model.
+                 resume ("--resume") — session-resume flag (agy:
+                         "--conversation"); false = the CLI can't resume —
+                         pair it with `transport.batch.mode = "stateless"`.
+                 stream (claude's `{ "--output-format", "stream-json",
+                         "--verbose", "--include-partial-messages" }`) —
+                         EXTRA argv appended to every spawn; `{}` appends
+                         nothing (a text CLI that just streams).
+      plan    (nil = claude's swap) — what |:ObelusEdits|' read-only
+               toggle does to every NEW spawn: a table
+               `{ strip = { value-taking flags to drop }, strip_flags =
+               { valueless flags to drop }, args = { argv to append } }`
+               (claude: strip `--permission-mode <v>`, append
+               `--permission-mode plan`), or a `function(cmd) -> cmd` for
+               anything the table can't express.
+      session (nil) — session-id capture for CLIs whose stream carries
+               none (`output = "text"`): `{ flag = "--log-file", pattern =
+               "conversation=([%x%-]+)" }` makes every spawn write a
+               private temp log via `flag`, and the first Lua `pattern`
+               match in it becomes the session id. nil = the stream's own
+               session events (claude).
+      before_spawn (nil) — `function(cwd, cmd, payload)` called just
+               before every spawn, AFTER the argv is fully assembled —
+               mutate `cmd` in place for anything the declarative knobs
+               can't express (e.g. appending a cwd-dependent flag like
+               agy's `--add-dir <project root>`). Errors are swallowed
+               (pcall); the spawn proceeds either way.
       models  (`{ send = nil, fast = nil, batch = nil }`) — per send-mode
-               `--model` overrides (nil = whatever `cmd`/the account
+               model overrides (nil = whatever `cmd`/the account
                defaults to):
                  send  — normal chat reply (<CR> in the reply box) — your
                          "harder" model.
@@ -332,6 +376,39 @@ transport.cli                                    *obelus-config-transport.cli*
                          quicker/cheaper model.
                  batch — the batch submit (`<prefix>s`) — falls back to
                          `send` when nil.
+
+    A complete non-claude profile — Google's Antigravity CLI (`agy`),
+    which streams plain text, takes the prompt as `-p`'s value, resumes
+    with `--conversation`, and only reveals the conversation id in its
+    log file: >lua
+        cli = {
+          -- headless edits need --dangerously-skip-permissions: agy's
+          -- print mode auto-denies tool confirmations it can't prompt
+          -- for (even with settings.json allow-rules, as of 1.1.5);
+          -- --sandbox keeps terminal restrictions on regardless.
+          cmd = { "agy", "--dangerously-skip-permissions", "--sandbox" },
+          prompt_flag = "-p",
+          output = "text",
+          flags = { resume = "--conversation", stream = {} },
+          plan = {
+            strip = { "--mode" },
+            strip_flags = { "--dangerously-skip-permissions" },
+            args = { "--mode", "plan" },
+          },
+          session = {
+            flag = "--log-file",
+            pattern = "Print mode: conversation=([%x%-]+)",
+          },
+          models = { send = "gemini-3.6-flash-high",
+                     fast = "gemini-3.6-flash-low",
+                     batch = "gemini-3.1-pro-high" },
+          -- agy operates on ITS OWN workspace, not the cwd — add the
+          -- project root to it on every spawn:
+          before_spawn = function(cwd, cmd)
+            vim.list_extend(cmd, { "--add-dir", cwd })
+          end,
+        },
+<
 
 transport.batch                                *obelus-config-transport.batch*
     Continuable batch conversations: send several related comments to ONE

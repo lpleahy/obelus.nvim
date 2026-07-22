@@ -149,8 +149,44 @@ M.defaults = {
     cli = {
       cmd = { "claude", "-p" }, -- headless agent; prompt appended as final arg
       stdin = false, -- true => pipe the prompt on stdin instead of as an arg
+      -- ── Per-CLI protocol knobs. The defaults are Claude Code's; together they
+      -- describe ANY headless streaming CLI (e.g. Google's `agy`) — see
+      -- |obelus-config-transport.cli| for a full non-claude example.
+      -- How stdout is parsed while the agent streams:
+      --   "stream-json" — Claude Code's `--output-format stream-json` events
+      --   "text"        — raw stdout chunks ARE the reply (plain streaming)
+      output = "stream-json",
+      -- The prompt's place on the argv: nil appends it as the trailing arg
+      -- (claude); a flag string appends `<flag> <prompt>` instead (e.g. "-p"
+      -- for agy, whose prompt is the VALUE of -p, not a positional).
+      prompt_flag = nil,
+      -- Flag NAMES obelus passes itself (so don't bake them into `cmd`):
+      --   model  — per send-mode model flag ("--model"); false = never pass one
+      --   resume — session-resume flag ("--resume", agy: "--conversation");
+      --            false = the CLI can't resume (use transport.batch.mode =
+      --            "stateless")
+      --   stream — EXTRA argv appended to every spawn; nil = claude's
+      --            { --output-format stream-json --verbose
+      --              --include-partial-messages }; {} = append nothing (a
+      --            text CLI that just streams)
+      flags = { model = nil, resume = nil, stream = nil },
+      -- The read-only swap :ObelusEdits applies to every NEW spawn while edits
+      -- are off. nil = claude's (strip --permission-mode <v>, append
+      -- `--permission-mode plan`). A table { strip = { value-taking flags to
+      -- drop }, strip_flags = { valueless flags to drop }, args = { argv to
+      -- append } } — e.g. agy: { strip = { "--mode" }, strip_flags =
+      -- { "--dangerously-skip-permissions" }, args = { "--mode", "plan" } } —
+      -- or a function(cmd) -> cmd for anything the table can't express.
+      plan = nil,
+      -- Session-id capture for CLIs whose stream carries none (output = "text"):
+      -- { flag = "--log-file", pattern = "conversation=([%x%-]+)" } makes every
+      -- spawn write a private temp log via `flag`, then the first `pattern`
+      -- match becomes the session id (agy logs
+      -- "Print mode: conversation=<uuid>"). nil = the stream's own session
+      -- events (claude).
+      session = nil,
       -- Per send-mode models (nil = whatever the cmd / account default is). obelus
-      -- passes `--model` itself, so DON'T also bake one into `cmd`.
+      -- passes the model flag itself, so DON'T also bake one into `cmd`.
       models = {
         send = nil, -- normal chat reply  (<CR> in the reply box)  — your "harder" model
         fast = nil, -- "send fast"     (<M-CR> in the reply box) — a quicker/cheaper model
@@ -461,6 +497,7 @@ local function ensure_tables(o)
   ensure_table(o, "transport", "transport", M.defaults.transport)
   ensure_table(o.transport, "batch", "transport.batch", M.defaults.transport.batch)
   ensure_table(o.transport, "cli", "transport.cli", M.defaults.transport.cli)
+  ensure_table(o.transport.cli, "flags", "transport.cli.flags", {})
   ensure_table(o.transport.cli, "models", "transport.cli.models", M.defaults.transport.cli.models)
   ensure_table(o.transport.cli.models, "tags", "transport.cli.models.tags", {})
   if o.render.bands ~= false then -- false is the documented all-off shorthand (normalized below)
@@ -610,6 +647,21 @@ local function warn_removed(opts, merged)
   )
 end
 
+-- transport.cli's per-CLI protocol knobs all treat nil as "the claude default",
+-- so only a WRONG-TYPED value warns + resets (to nil — i.e. back to that
+-- default). `ok(v)` decides validity; `want` is the human-readable expectation.
+local function typed(opts, key, path, want, ok)
+  local v = opts[key]
+  if v == nil or ok(v) then
+    return
+  end
+  vim.notify_once(
+    string.format("obelus: %s = %s is invalid (expected %s) — using the default", path, vim.inspect(v), want),
+    vim.log.levels.WARN
+  )
+  opts[key] = nil
+end
+
 local function validate(o)
   enum(o, "mode", "mode", { "inline", "sidebar" }, M.defaults.mode)
   enum(o.persist, "backend", "persist.backend", { "data", "jsonl" }, M.defaults.persist.backend)
@@ -648,6 +700,26 @@ local function validate(o)
   )
   enum(o.transport.batch, "mode", "transport.batch.mode", { "session", "stateless" }, M.defaults.transport.batch.mode)
   enum(o.transport.batch, "prompt", "transport.batch.prompt", { "diff", "full" }, M.defaults.transport.batch.prompt)
+  local cli = o.transport.cli
+  enum(cli, "output", "transport.cli.output", { "stream-json", "text" }, M.defaults.transport.cli.output)
+  typed(cli, "prompt_flag", "transport.cli.prompt_flag", "string|nil", function(v)
+    return type(v) == "string"
+  end)
+  typed(cli, "plan", "transport.cli.plan", "table|function|nil", function(v)
+    return type(v) == "table" or type(v) == "function"
+  end)
+  typed(cli, "session", "transport.cli.session", "{ flag, pattern? }|nil", function(v)
+    return type(v) == "table" and type(v.flag) == "string"
+  end)
+  typed(cli.flags, "model", "transport.cli.flags.model", "string|false|nil", function(v)
+    return type(v) == "string" or v == false
+  end)
+  typed(cli.flags, "resume", "transport.cli.flags.resume", "string|false|nil", function(v)
+    return type(v) == "string" or v == false
+  end)
+  typed(cli.flags, "stream", "transport.cli.flags.stream", "table|nil", function(v)
+    return type(v) == "table"
+  end)
   if o.keys ~= false then
     validate_key_map(o.keys.overrides, "keys.overrides")
     validate_key_map(o.keys.chat, "keys.chat")
