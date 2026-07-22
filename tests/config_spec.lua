@@ -319,3 +319,16 @@ T.it("MAPSPEC: suffix 'A' disables/overrides like any other row", function()
   init._keymaps({ prefix = prefix, disabled = {}, overrides = { A = false } })
   T.eq(vim.fn.maparg(prefix .. "A", "n"), "", "disabled via override: no mapping at the default lhs")
 end)
+
+T.it("transport.cli accepts before_spawn callback function", function()
+  local config = require("obelus.config")
+  local called = false
+  local fn = function(cwd, cmd, payload)
+    called = true
+  end
+  config.setup({ transport = { cli = { before_spawn = fn } } })
+  T.eq(type(config.options.transport.cli.before_spawn), "function")
+  config.options.transport.cli.before_spawn("/tmp", {}, {})
+  T.ok(called, "before_spawn callback executed")
+end)
+

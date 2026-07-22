@@ -103,6 +103,10 @@ local function run_oneshot(payload)
   end
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
+  if type(c.before_spawn) == "function" then
+    pcall(c.before_spawn, sysopts.cwd, cmd, payload)
+  end
+
   for _, cm in ipairs(payload.comments or {}) do
     cancelled[cm.id] = nil
     jobs.register(cm.id, { transport = "cli" }) -- mark live immediately (a cancel
@@ -296,6 +300,10 @@ local function run_stream(payload)
     table.insert(cmd, prompt)
   end
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
+
+  if type(c.before_spawn) == "function" then
+    pcall(c.before_spawn, sysopts.cwd, cmd, payload)
+  end
 
   cancelled[target.id] = nil
   store.stream_start(target.id)
