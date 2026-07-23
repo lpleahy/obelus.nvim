@@ -161,14 +161,13 @@ ones — pick one, set your models, go:
 
 ```lua
 cli = { preset = "claude" }    -- also: "antigravity", "codex", "opencode",
-                               --       "pi", "crush", "gemini", "aider"
+                               --       "pi", "crush"
 cli = { preset = "opencode", models = { send = "anthropic/claude-haiku-4-5" } }
 ```
 
-claude, antigravity (agy), crush, opencode, and pi are verified live end-to-end
-(streaming, session resume, sandboxed edits); codex is protocol-verified and
-relies on its own native sandbox (nested seatbelt breaks under an outer wrap);
-gemini and aider ship from source/docs probing — confirm their first run.
+Every preset is verified live end-to-end (streaming, session resume, sandboxed
+runs); codex relies on its own native workspace sandbox (nested seatbelt
+breaks under an outer wrap), the rest run under obelus's OS sandbox.
 
 Any key set alongside `preset` overrides it, and every knob a preset fills
 (`output`, `prompt_flag`, `flags`, `plan`, `session`, `before_spawn`,

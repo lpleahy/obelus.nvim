@@ -279,16 +279,16 @@ T.it("preset 'codex': subcommand resume after exec, native sandbox (no wrap), pl
   local cmd = cli._base_cmd("thread-1", "gpt-5.4-mini")
   local sysopts = {}
   cli._finish_cmd(cmd, c, "PROMPT", sysopts)
+  -- resume drops --color and translates --sandbox into -c sandbox_mode=…
+  -- (`exec resume` rejects both flags — verified against codex 0.145)
   T.eq(cmd, {
     "codex",
     "exec",
     "resume",
     "thread-1",
     "--skip-git-repo-check",
-    "--color",
-    "never",
-    "--sandbox",
-    "workspace-write",
+    "-c",
+    'sandbox_mode="workspace-write"',
     "--model",
     "gpt-5.4-mini",
     "--json",
@@ -375,42 +375,6 @@ T.it("preset 'crush': plain-text run, post-run session command capture, {root} s
     vim.fn.getcwd()
   )
   T.eq(sess, "96c633ad-7da6-4cfa")
-end)
-
-T.it("preset 'gemini' and 'aider': argv shapes", function()
-  config.setup({ transport = { cli = { preset = "gemini" } } })
-  local c = config.options.transport.cli
-  local cmd = cli._base_cmd("uuid-1", "gemini-2.5-flash")
-  local sysopts = {}
-  cli._finish_cmd(cmd, c, "PROMPT", sysopts)
-  T.eq(cmd, {
-    "gemini",
-    "--skip-trust",
-    "--approval-mode",
-    "auto_edit",
-    "--model",
-    "gemini-2.5-flash",
-    "--resume",
-    "uuid-1",
-    "-o",
-    "stream-json",
-    "--prompt",
-    "PROMPT",
-  })
-  local col = require("obelus.stream").jsonl_collector(nil, c.events)
-  col.feed('{"type":"init","session_id":"g-1"}\n{"type":"message","role":"assistant","content":"hi","delta":true}\n')
-  T.eq(col.text(), "hi")
-  T.eq(col.session(), "g-1")
-
-  config.setup({ transport = { cli = { preset = "aider" } } })
-  local a = config.options.transport.cli
-  T.eq(a.flags.resume, false, "aider has no id-based sessions")
-  T.eq(a.prompt_flag, "--message")
-  config.ui.perms = "read-only"
-  local ro = cli._base_cmd(nil, nil)
-  config.ui.perms = nil
-  T.ok(vim.tbl_contains(ro, "--dry-run"), "aider read-only = --dry-run")
-  T.ok(vim.tbl_contains(ro, "--no-auto-commits"), "commit safety flags always present")
 end)
 
 T.it("preset merge: a user list REPLACES the preset's list, never splices", function()

@@ -7,10 +7,8 @@
 -- preset).
 --
 -- Verification status (2026-07, macOS): claude / antigravity / crush /
--- opencode / pi were driven live end-to-end; codex's event stream and argv
--- were probed live but unauthenticated; gemini and aider are wired from
--- source/docs probing and marked UNVERIFIED below — expect to confirm the
--- first run.
+-- opencode / pi were driven live end-to-end; codex was verified live
+-- end-to-end as well (streaming, subcommand resume, native sandbox).
 local M = {}
 
 -- ── Anthropic Claude Code ───────────────────────────────────────────────────
@@ -80,13 +78,29 @@ M.codex = {
   flags = {
     stream = { "--json" },
     -- resume is a SUBCOMMAND of exec (`codex exec resume <id> …`), placed
-    -- right after "exec"; trailing flags are accepted after it (verified)
+    -- right after "exec". `exec resume` (verified 0.145) accepts --model /
+    -- --json / --skip-git-repo-check but REJECTS --color and --sandbox —
+    -- drop the former, translate the latter into the equivalent
+    -- `-c sandbox_mode="…"` config override.
     resume = function(cmd, id)
-      local out = vim.deepcopy(cmd)
-      for i, a in ipairs(out) do
+      local out, i = {}, 1
+      while i <= #cmd do
+        local a = cmd[i]
+        if a == "--color" then
+          i = i + 2
+        elseif a == "--sandbox" then
+          out[#out + 1] = "-c"
+          out[#out + 1] = 'sandbox_mode="' .. (cmd[i + 1] or "workspace-write") .. '"'
+          i = i + 2
+        else
+          out[#out + 1] = a
+          i = i + 1
+        end
+      end
+      for j, a in ipairs(out) do
         if a == "exec" then
-          table.insert(out, i + 1, "resume")
-          table.insert(out, i + 2, id)
+          table.insert(out, j + 1, "resume")
+          table.insert(out, j + 2, id)
           return out
         end
       end
@@ -178,78 +192,6 @@ M.crush = {
   end,
   permissions = {
     state = { "~/.config/crush", "~/.local/share/crush", "{root}/.crush" },
-  },
-}
-
--- ── Google Gemini CLI ───────────────────────────────────────────────────────
-M.gemini = {
-  -- UNVERIFIED live (wired from the shipped v0.52 bundle source + docs;
-  -- confirm the first run). `-o stream-json` is JSONL: init carries
-  -- session_id, assistant "message" events carry deltas. --skip-trust avoids
-  -- the untrusted-dir exit 55; auto_edit auto-approves edit tools only; the
-  -- read-only swap maps to --approval-mode plan; --resume takes the uuid.
-  -- ~/.gemini is SHARED with Antigravity — state covers the whole dir.
-  cmd = { "gemini", "--skip-trust", "--approval-mode", "auto_edit" },
-  prompt_flag = "--prompt",
-  output = "jsonl",
-  events = function(e)
-    if e.type == "init" then
-      return { session = e.session_id }
-    end
-    if e.type == "message" and e.role == "assistant" and e.content and e.content ~= "" then
-      return { delta = e.content }
-    end
-    if e.type == "result" and e.status == "error" and e.error then
-      return { block = "[gemini error] " .. (e.error.message or "unknown") }
-    end
-  end,
-  flags = { resume = "--resume", stream = { "-o", "stream-json" } },
-  plan = { strip = { "--approval-mode" }, strip_flags = {}, args = { "--approval-mode", "plan" } },
-  permissions = {
-    state = { "~/.gemini", "~/.npm" },
-  },
-}
-
--- ── aider ───────────────────────────────────────────────────────────────────
-M.aider = {
-  -- UNVERIFIED live (wired from help/docs probing; confirm the first run).
-  -- aider EDITS FILES DIRECTLY and, by default, GIT-COMMITS both its edits
-  -- and your dirty tree — the cmd disables all of that. Its stdout mixes
-  -- prose with edit/commit/cost announcements (no clean framing) and its
-  -- exit code is 0 even on hard failure. No session id exists: resume is the
-  -- boolean --restore-chat-history over the per-project
-  -- .aider.chat.history.md, which doesn't fit obelus's id-based sessions —
-  -- flags.resume = false (use transport.batch.mode = "stateless"). Read-only
-  -- maps to --dry-run. Models need the litellm provider prefix
-  -- ("anthropic/claude-…"). aider writes its history/cache into the project —
-  -- kept writable via {root} entries.
-  cmd = {
-    "aider",
-    "--no-check-update",
-    "--no-analytics",
-    "--no-show-release-notes",
-    "--no-pretty",
-    "--no-fancy-input",
-    "--no-show-model-warnings",
-    "--no-gitignore",
-    "--yes-always",
-    "--no-auto-commits",
-    "--no-dirty-commits",
-    "--no-suggest-shell-commands",
-    "--no-auto-lint",
-  },
-  prompt_flag = "--message",
-  output = "text",
-  flags = { resume = false, stream = {} },
-  plan = { strip = {}, strip_flags = {}, args = { "--dry-run" } },
-  permissions = {
-    state = {
-      "~/.aider",
-      "~/.aider.conf.yml",
-      "{root}/.aider.chat.history.md",
-      "{root}/.aider.input.history",
-      "{root}/.aider.tags.cache.v4",
-    },
   },
 }
 

@@ -375,23 +375,16 @@ transport.cli                                    *obelus-config-transport.cli*
                `permissions.state`; any key you set ALONGSIDE `preset`
                overrides the preset's value (defaults < preset < your opts —
                a LIST you set, e.g. `cmd`, replaces the preset's wholesale).
-               Shipped presets and their verification status:
-                 "claude"      — Claude Code            (verified live)
-                 "antigravity" — Google agy             (verified live)
-                 "crush"       — Charmbracelet Crush    (verified live)
-                 "opencode"    — sst/opencode           (verified live)
-                 "pi"          — badlogic pi            (verified live)
-                 "codex"       — OpenAI Codex CLI       (protocol verified,
-                                  final turn unverified; uses codex's NATIVE
+               Shipped presets — every one verified live end-to-end
+               (streaming, session resume, sandboxed):
+                 "claude"      — Claude Code
+                 "antigravity" — Google agy
+                 "codex"       — OpenAI Codex CLI (uses codex's NATIVE
                                   sandbox — obelus's wrap is off, since
                                   nested seatbelt breaks its tool calls)
-                 "gemini"      — Google Gemini CLI      (from source/docs,
-                                  UNVERIFIED live)
-                 "aider"       — aider                  (from docs, UNVERIFIED
-                                  live; no id-based sessions — pair with
-                                  transport.batch.mode = "stateless"; edits
-                                  land directly, git auto-commit disabled by
-                                  the preset)
+                 "opencode"    — sst/opencode
+                 "pi"          — badlogic pi
+                 "crush"       — Charmbracelet Crush
                See lua/obelus/presets.lua for each preset's caveats inline.
       name    (nil) — display name for the agent's chat turns ("### claude ↩"
                etc.); nil = the basename of `cmd[1]`.
