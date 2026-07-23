@@ -380,3 +380,15 @@ T.it("transport.cli protocol knobs: valid values survive setup", function()
   T.eq(c.flags.resume, false)
   T.eq(c.flags.stream, {}, "an empty stream list must MEAN empty (not merge back to the default)")
 end)
+
+T.it("MAPSPEC: suffix 'E' cycles the permission level", function()
+  local init = require("obelus.init")
+  local config = require("obelus.config")
+  local prefix = "<leader>ZZE"
+  init._keymaps({ prefix = prefix, disabled = {}, overrides = {} })
+  T.ok(vim.fn.maparg(prefix .. "E", "n") ~= "", "suffix E is mapped by default")
+  config.ui.perms = "project-edit"
+  init.set_perms() -- what the mapping calls: one cycle step
+  T.eq(config.perms_level(), "unrestricted")
+  config.ui.perms = nil
+end)

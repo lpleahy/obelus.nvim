@@ -734,6 +734,14 @@ local MAPSPEC = {
     desc = "obelus: toggle agent edits (global)",
   },
   {
+    suffix = "E",
+    modes = "n",
+    rhs = function()
+      M.set_perms() -- cycle read-only → project-edit → unrestricted
+    end,
+    desc = "obelus: cycle the agent permission level (global)",
+  },
+  {
     suffix = "g",
     modes = "n",
     rhs = function()
@@ -1055,6 +1063,24 @@ local function whichkey(k)
     "toggle agent edits (global)",
     function()
       return sw(config.edits_enabled())
+    end
+  )
+
+  add(
+    "E",
+    function()
+      M.set_perms()
+    end,
+    "cycle agent permission level",
+    function()
+      -- tri-state icon: the CURRENT level at a glance
+      local l = config.perms_level()
+      if l == "read-only" then
+        return { icon = "󰌾", color = "azure" }
+      elseif l == "unrestricted" then
+        return { icon = "󰀪", color = "red" }
+      end
+      return { icon = "󰏫", color = "yellow" }
     end
   )
 

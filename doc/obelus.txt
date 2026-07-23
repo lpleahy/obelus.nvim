@@ -711,6 +711,8 @@ out of the group below in a which-key popup).
     D          Dispatch the thread at cursor to a background agent
     P          Dispatch ALL pending threads in parallel, one agent each
     e          Toggle whether agents may apply edits (global, on the fly)
+    E          Cycle the permission level: read-only → project-edit →
+               unrestricted (|:ObelusPerms|; `e` is the two-state toggle)
     g          Tag/untag the thread at cursor (curates batch membership)
     G          Toggle sticky tagging mode (new threads inherit the tag)
     C          Cancel the in-flight dispatch at cursor
