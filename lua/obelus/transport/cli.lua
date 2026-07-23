@@ -92,7 +92,11 @@ local function base_cmd(resume, model)
     vim.list_extend(cmd, { model_flag, tostring(model) })
   end
   if resume then
-    if resume_flag then
+    if type(resume_flag) == "function" then
+      -- resume that isn't a flag pair (e.g. codex's `exec resume <id>`
+      -- SUBCOMMAND): the function owns the argv placement
+      cmd = resume_flag(cmd, tostring(resume)) or cmd
+    elseif resume_flag then
       vim.list_extend(cmd, { resume_flag, tostring(resume) })
     else
       -- a resume was requested but this CLI can't (flags.resume = false): the
@@ -158,15 +162,21 @@ local function collector_for(c, on_update)
   if c.output == "text" then
     return stream.text_collector(on_update)
   end
+  if c.output == "jsonl" then
+    return stream.jsonl_collector(on_update, c.events or function() end)
+  end
   return stream.collector(on_update)
 end
 
--- The session id: from the stream itself (stream-json's system/result events),
--- else extracted from the per-spawn temp log a text-mode CLI wrote — e.g. agy's
--- "Print mode: conversation=<uuid>" line, matched by transport.cli.session
--- .pattern. The temp log is consumed (deleted) either way, including on a
--- cancelled run.
-local function captured_session(col, c, logfile)
+-- The session id: from the stream itself (stream-json's system/result events
+-- or a jsonl `events` mapper), else extracted per transport.cli.session:
+--   { flag, pattern }    — the per-spawn temp log the CLI wrote via `flag`
+--                          (agy's "Print mode: conversation=<uuid>" line)
+--   { command, pattern } — a post-run command's stdout, run in the project
+--                          root (crush: `crush session list --json`, whose
+--                          FIRST "uuid" is the newest session)
+-- The temp log is consumed (deleted) either way, including on a cancelled run.
+local function captured_session(col, c, logfile, root)
   local session = col.session()
   if logfile then
     if not session then
@@ -178,6 +188,14 @@ local function captured_session(col, c, logfile)
       end
     end
     os.remove(logfile)
+  end
+  if not session and type(c.session) == "table" and type(c.session.command) == "table" then
+    local ok, res = pcall(function()
+      return vim.system(c.session.command, { cwd = root, text = true }):wait(10000)
+    end)
+    if ok and res and res.code == 0 then
+      session = (res.stdout or ""):match(c.session.pattern or "([%x%-]+)")
+    end
   end
   return session
 end
@@ -268,7 +286,7 @@ local function run_oneshot(payload)
 
   local ok_spawn, obj = pcall(vim.system, cmd, sysopts, function(res)
     vim.schedule(function()
-      local acc, session = col.text(), captured_session(col, c, logfile)
+      local acc, session = col.text(), captured_session(col, c, logfile, sysopts.cwd)
       -- cancelled: M.cancel already aborted the thread, so don't surface the
       -- SIGTERM exit (143) as an error or attach a turn — just drop the handles
       local was_cancelled = false
@@ -458,7 +476,7 @@ local function run_stream(payload)
 
   local ok_spawn, obj = pcall(vim.system, cmd, sysopts, function(res)
     vim.schedule(function()
-      local acc, session = col.text(), captured_session(col, c, logfile)
+      local acc, session = col.text(), captured_session(col, c, logfile, sysopts.cwd)
       jobs.clear(target.id)
       if cancelled[target.id] then
         cancelled[target.id] = nil

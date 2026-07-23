@@ -30,9 +30,14 @@ end
 
 -- { path = <realpath>, dir = <bool> } for every entry that EXISTS (binding or
 -- allowing a non-existent path is at best a no-op, at worst a bwrap error).
-local function existing(list)
+-- A literal "{root}" in an entry expands to the project root — for per-project
+-- CLI dirs like crush's ./.crush that must stay writable even in read-only.
+local function existing(list, root)
   local out = {}
   for _, p in ipairs(list or {}) do
+    if root then
+      p = p:gsub("{root}", root)
+    end
     local r = real(p)
     local st = uv.fs_stat(r)
     if st then
@@ -87,10 +92,10 @@ function M._sbpl(ctx)
     "(deny file-write*)",
     '(allow file-write* (subpath "/dev"))',
   }
-  for _, e in ipairs(existing(writable(ctx))) do
+  for _, e in ipairs(existing(writable(ctx), ctx.root)) do
     lines[#lines + 1] = ("(allow file-write* (%s %s))"):format(e.dir and "subpath" or "literal", sbpl_str(e.path))
   end
-  for _, e in ipairs(existing(deny_read(ctx))) do
+  for _, e in ipairs(existing(deny_read(ctx), ctx.root)) do
     lines[#lines + 1] = ("(deny file-read* (%s %s))"):format(e.dir and "subpath" or "literal", sbpl_str(e.path))
   end
   return table.concat(lines, "\n")
@@ -110,10 +115,10 @@ end
 -- shared (the agent needs its API). Exposed for specs.
 function M._bwrap(cmd, ctx)
   local args = { "bwrap", "--die-with-parent", "--ro-bind", "/", "/", "--dev-bind", "/dev", "/dev", "--proc", "/proc" }
-  for _, e in ipairs(existing(writable(ctx))) do
+  for _, e in ipairs(existing(writable(ctx), ctx.root)) do
     vim.list_extend(args, { "--bind", e.path, e.path })
   end
-  for _, e in ipairs(existing(deny_read(ctx))) do
+  for _, e in ipairs(existing(deny_read(ctx), ctx.root)) do
     if e.dir then
       vim.list_extend(args, { "--tmpfs", e.path })
     else

@@ -255,3 +255,168 @@ T.it(":ObelusPerms cycles; :ObelusEdits maps onto the levels", function()
   T.eq(cfg.perms_level(), "project-edit", "edits on = the default edit level")
   cfg.ui.perms = nil
 end)
+
+T.it("flags.resume as a function owns the argv placement (subcommand-style resume)", function()
+  setup_cli({
+    cmd = { "codex", "exec" },
+    flags = {
+      stream = {},
+      resume = function(cmd, id)
+        return vim.list_extend(vim.deepcopy(cmd), { "resume", id })
+      end,
+    },
+  })
+  local cmd = cli._base_cmd("sess-7", "gpt-5.3-codex")
+  T.eq(cmd, { "codex", "exec", "--model", "gpt-5.3-codex", "resume", "sess-7" })
+end)
+
+-- ── the wider preset catalog ────────────────────────────────────────────────
+
+T.it("preset 'codex': subcommand resume after exec, native sandbox (no wrap), plan → read-only", function()
+  config.setup({ transport = { cli = { preset = "codex" } } })
+  local c = config.options.transport.cli
+  T.eq(c.permissions.enabled, false, "codex's native sandbox is the enforcement layer")
+  local cmd = cli._base_cmd("thread-1", "gpt-5.4-mini")
+  local sysopts = {}
+  cli._finish_cmd(cmd, c, "PROMPT", sysopts)
+  T.eq(cmd, {
+    "codex",
+    "exec",
+    "resume",
+    "thread-1",
+    "--skip-git-repo-check",
+    "--color",
+    "never",
+    "--sandbox",
+    "workspace-write",
+    "--model",
+    "gpt-5.4-mini",
+    "--json",
+    "PROMPT",
+  })
+  config.ui.perms = "read-only"
+  local ro = cli._base_cmd(nil, nil)
+  config.ui.perms = nil
+  T.eq(ro, { "codex", "exec", "--skip-git-repo-check", "--color", "never", "--sandbox", "read-only" })
+  -- events mapper: thread id + message-granular blocks
+  local col = require("obelus.stream").jsonl_collector(nil, c.events)
+  col.feed('{"type":"thread.started","thread_id":"t-9"}\n')
+  col.feed('{"type":"item.completed","item":{"type":"agent_message","text":"first"}}\n')
+  col.feed('{"type":"item.completed","item":{"type":"reasoning","text":"skip me"}}\n')
+  col.feed('{"type":"item.completed","item":{"type":"agent_message","text":"second"}}\n')
+  T.eq(col.text(), "first\n\nsecond")
+  T.eq(col.session(), "t-9")
+end)
+
+T.it("preset 'opencode': --format json events, --session resume, plan agent swap", function()
+  config.setup({ transport = { cli = { preset = "opencode" } } })
+  local c = config.options.transport.cli
+  local cmd = cli._base_cmd("ses_abc", "anthropic/claude-haiku-4-5")
+  local sysopts = {}
+  cli._finish_cmd(cmd, c, "PROMPT", sysopts)
+  T.eq(cmd, {
+    "opencode",
+    "run",
+    "--model",
+    "anthropic/claude-haiku-4-5",
+    "--session",
+    "ses_abc",
+    "--format",
+    "json",
+    "PROMPT",
+  })
+  config.ui.perms = "read-only"
+  local ro = cli._base_cmd(nil, nil)
+  config.ui.perms = nil
+  T.eq(ro, { "opencode", "run", "--agent", "plan" })
+  local col = require("obelus.stream").jsonl_collector(nil, c.events)
+  col.feed('{"type":"step_start","sessionID":"ses_xyz","part":{"type":"step-start"}}\n')
+  col.feed('{"type":"text","sessionID":"ses_xyz","part":{"type":"text","text":"the reply"}}\n')
+  T.eq(col.text(), "the reply")
+  T.eq(col.session(), "ses_xyz")
+end)
+
+T.it("preset 'pi': --mode json token deltas, session event id, read-only tool allowlist", function()
+  config.setup({ transport = { cli = { preset = "pi" } } })
+  local c = config.options.transport.cli
+  local cmd = cli._base_cmd("019f-aa", nil)
+  local sysopts = {}
+  cli._finish_cmd(cmd, c, "PROMPT", sysopts)
+  T.eq(cmd, { "pi", "-p", "--no-approve", "--session", "019f-aa", "--mode", "json", "PROMPT" })
+  config.ui.perms = "read-only"
+  local ro = cli._base_cmd(nil, nil)
+  config.ui.perms = nil
+  T.eq(ro, { "pi", "-p", "--no-approve", "--tools", "read,grep,find,ls" })
+  local col = require("obelus.stream").jsonl_collector(nil, c.events)
+  col.feed('{"type":"session","version":3,"id":"019f8cc5-a0b2"}\n')
+  col.feed('{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"hmm"}}\n')
+  col.feed('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"kum"}}\n')
+  col.feed('{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"quat"}}\n')
+  T.eq(col.text(), "kumquat", "thinking deltas are ignored, text deltas accumulate")
+  T.eq(col.session(), "019f8cc5-a0b2")
+end)
+
+T.it("preset 'crush': plain-text run, post-run session command capture, {root} state", function()
+  config.setup({ transport = { cli = { preset = "crush" } } })
+  local c = config.options.transport.cli
+  local cmd = cli._base_cmd("e666f22f-d245", nil)
+  local sysopts = {}
+  local logfile = cli._finish_cmd(cmd, c, "PROMPT", sysopts)
+  T.is_nil(logfile, "command-mode session capture uses no temp log")
+  T.eq(cmd, { "crush", "run", "-q", "--session", "e666f22f-d245", "PROMPT" })
+  T.ok(vim.tbl_contains(c.permissions.state, "{root}/.crush"), "project .crush stays writable")
+  -- session.command extraction: fake the CLI with echo
+  local sess = cli._captured_session(
+    require("obelus.stream").text_collector(nil),
+    vim.tbl_deep_extend("force", vim.deepcopy(c), {
+      session = { command = { "printf", '[{"id":"ab78","uuid":"96c633ad-7da6-4cfa"}]' } },
+    }),
+    nil,
+    vim.fn.getcwd()
+  )
+  T.eq(sess, "96c633ad-7da6-4cfa")
+end)
+
+T.it("preset 'gemini' and 'aider': argv shapes", function()
+  config.setup({ transport = { cli = { preset = "gemini" } } })
+  local c = config.options.transport.cli
+  local cmd = cli._base_cmd("uuid-1", "gemini-2.5-flash")
+  local sysopts = {}
+  cli._finish_cmd(cmd, c, "PROMPT", sysopts)
+  T.eq(cmd, {
+    "gemini",
+    "--skip-trust",
+    "--approval-mode",
+    "auto_edit",
+    "--model",
+    "gemini-2.5-flash",
+    "--resume",
+    "uuid-1",
+    "-o",
+    "stream-json",
+    "--prompt",
+    "PROMPT",
+  })
+  local col = require("obelus.stream").jsonl_collector(nil, c.events)
+  col.feed('{"type":"init","session_id":"g-1"}\n{"type":"message","role":"assistant","content":"hi","delta":true}\n')
+  T.eq(col.text(), "hi")
+  T.eq(col.session(), "g-1")
+
+  config.setup({ transport = { cli = { preset = "aider" } } })
+  local a = config.options.transport.cli
+  T.eq(a.flags.resume, false, "aider has no id-based sessions")
+  T.eq(a.prompt_flag, "--message")
+  config.ui.perms = "read-only"
+  local ro = cli._base_cmd(nil, nil)
+  config.ui.perms = nil
+  T.ok(vim.tbl_contains(ro, "--dry-run"), "aider read-only = --dry-run")
+  T.ok(vim.tbl_contains(ro, "--no-auto-commits"), "commit safety flags always present")
+end)
+
+T.it("preset merge: a user list REPLACES the preset's list, never splices", function()
+  config.setup({ transport = { cli = { preset = "codex", cmd = { "my-codex", "exec" }, flags = { stream = {} } } } })
+  local c = config.options.transport.cli
+  T.eq(c.cmd, { "my-codex", "exec" }, "shorter user cmd wins wholesale")
+  T.eq(c.flags.stream, {}, "user stream list wins over the preset's --json")
+  T.eq(type(c.events), "function", "non-list preset keys still ride along")
+end)

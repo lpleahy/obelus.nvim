@@ -156,17 +156,19 @@ The cli transport speaks Claude Code by default, but every claude-ism is a
 config knob — output parsing (`output = "stream-json" | "text"`), the prompt's
 argv position (`prompt_flag`), flag names (`flags.model` / `flags.resume` /
 `flags.stream`), the read-only swap (`plan`), and session capture (`session`) —
-so any headless streaming CLI can drive it. Built-in presets wire the two we
-ship knowledge for — set your models and go:
+so any headless streaming CLI can drive it. Built-in presets wire the popular
+ones — pick one, set your models, go:
 
 ```lua
-cli = { preset = "claude" }      -- or:
-cli = {
-  preset = "antigravity",        -- Google's agy: plain-text streaming, -p prompt,
-                                 -- --conversation resume, --add-dir workspace, log-file session capture
-  models = { send = "gemini-3.6-flash-high", fast = "gemini-3.6-flash-low", batch = "gemini-3.1-pro-high" },
-}
+cli = { preset = "claude" }    -- also: "antigravity", "codex", "opencode",
+                               --       "pi", "crush", "gemini", "aider"
+cli = { preset = "opencode", models = { send = "anthropic/claude-haiku-4-5" } }
 ```
+
+claude, antigravity (agy), crush, opencode, and pi are verified live end-to-end
+(streaming, session resume, sandboxed edits); codex is protocol-verified and
+relies on its own native sandbox (nested seatbelt breaks under an outer wrap);
+gemini and aider ship from source/docs probing — confirm their first run.
 
 Any key set alongside `preset` overrides it, and every knob a preset fills
 (`output`, `prompt_flag`, `flags`, `plan`, `session`, `before_spawn`,

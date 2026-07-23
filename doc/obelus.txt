@@ -356,21 +356,43 @@ transport.cli                                    *obelus-config-transport.cli*
                `--permission-mode plan`), or a `function(cmd) -> cmd` for
                anything the table can't express.
       session (nil) — session-id capture for CLIs whose stream carries
-               none (`output = "text"`): `{ flag = "--log-file", pattern =
-               "conversation=([%x%-]+)" }` makes every spawn write a
-               private temp log via `flag`, and the first Lua `pattern`
-               match in it becomes the session id. nil = the stream's own
-               session events (claude).
+               none: `{ flag = "--log-file", pattern = "…" }` makes every
+               spawn write a private temp log via `flag` and the first Lua
+               `pattern` match becomes the session id (agy); `{ command =
+               { "crush", "session", "list", "--json" }, pattern = "…" }`
+               instead runs that command in the project root AFTER the run
+               and matches its stdout (crush). nil = the stream's own
+               session events (claude's stream-json, or a jsonl `events`
+               mapper returning `session`).
       before_spawn (nil) — `function(cwd, cmd, payload)` called just
                before every spawn, AFTER the argv is fully assembled —
                mutate `cmd` in place for anything the declarative knobs
                can't express (e.g. appending a cwd-dependent flag like
                agy's `--add-dir <project root>`). Errors are swallowed
                (pcall); the spawn proceeds either way.
-      preset  (nil) — `"claude"` | `"antigravity"`: fill the protocol knobs
-               (cmd, flags, plan, session, …) and `permissions.state` from a
-               built-in per-CLI preset; any key you set ALONGSIDE `preset`
-               overrides the preset's value (defaults < preset < your opts).
+      preset  (nil) — a built-in per-CLI preset filling the protocol knobs
+               (cmd, prompt, output/events, flags, plan, session, …) and
+               `permissions.state`; any key you set ALONGSIDE `preset`
+               overrides the preset's value (defaults < preset < your opts —
+               a LIST you set, e.g. `cmd`, replaces the preset's wholesale).
+               Shipped presets and their verification status:
+                 "claude"      — Claude Code            (verified live)
+                 "antigravity" — Google agy             (verified live)
+                 "crush"       — Charmbracelet Crush    (verified live)
+                 "opencode"    — sst/opencode           (verified live)
+                 "pi"          — badlogic pi            (verified live)
+                 "codex"       — OpenAI Codex CLI       (protocol verified,
+                                  final turn unverified; uses codex's NATIVE
+                                  sandbox — obelus's wrap is off, since
+                                  nested seatbelt breaks its tool calls)
+                 "gemini"      — Google Gemini CLI      (from source/docs,
+                                  UNVERIFIED live)
+                 "aider"       — aider                  (from docs, UNVERIFIED
+                                  live; no id-based sessions — pair with
+                                  transport.batch.mode = "stateless"; edits
+                                  land directly, git auto-commit disabled by
+                                  the preset)
+               See lua/obelus/presets.lua for each preset's caveats inline.
       name    (nil) — display name for the agent's chat turns ("### claude ↩"
                etc.); nil = the basename of `cmd[1]`.
       permissions — OS-level file isolation for every spawn; see

@@ -372,3 +372,47 @@ T.it("cli run_stream (output=text): raw chunks reach the store; session comes fr
   end
   T.ok(found, "the raw text chunks reached the store as the reply")
 end)
+
+-- ── jsonl_collector: the generic line-JSON collector (output = "jsonl") ─────
+
+local function jl_map(e)
+  if e.t == "d" then
+    return { delta = e.v }
+  elseif e.t == "done" then
+    return { final = e.v, session = e.sid }
+  elseif e.t == "sid" then
+    return { session = e.v }
+  end
+end
+
+T.it("jsonl_collector: deltas accumulate; a final never truncates streamed deltas", function()
+  local updates = {}
+  local C = M.jsonl_collector(function(t)
+    updates[#updates + 1] = t
+  end, jl_map)
+  C.feed('{"t":"sid","v":"s-1"}\n{"t":"d","v":"Hel"}\n')
+  C.feed('{"t":"d","v":"lo"}\n{"t":"done","v":"short","sid":"s-2"}\n')
+  T.eq(C.text(), "Hello", "final must not replace streamed deltas")
+  T.eq(C.session(), "s-2", "later session wins")
+  T.eq(updates, { "Hel", "Hello" })
+end)
+
+T.it("jsonl_collector: with no deltas the final IS the reply; junk lines are skipped", function()
+  local C = M.jsonl_collector(nil, jl_map)
+  C.feed("not json at all\n")
+  C.feed('{"t":"done","v":"the whole reply","sid":"s-9"}\n')
+  T.eq(C.text(), "the whole reply")
+  T.eq(C.session(), "s-9")
+  T.eq(C.final_start(), 0)
+end)
+
+T.it("jsonl_collector: a throwing map only drops that event", function()
+  local C = M.jsonl_collector(nil, function(e)
+    if e.boom then
+      error("mapper bug")
+    end
+    return { delta = e.v }
+  end)
+  C.feed('{"boom":true}\n{"v":"ok"}\n')
+  T.eq(C.text(), "ok")
+end)

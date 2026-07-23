@@ -183,7 +183,13 @@ M.defaults = {
       -- How stdout is parsed while the agent streams:
       --   "stream-json" — Claude Code's `--output-format stream-json` events
       --   "text"        — raw stdout chunks ARE the reply (plain streaming)
+      --   "jsonl"       — a generic line-JSON event stream, normalized by
+      --                   `events` below (e.g. codex --json)
       output = "stream-json",
+      -- REQUIRED when output = "jsonl": function(decoded_event) -> any of
+      -- { delta = "chunk", session = "id", final = "whole reply" } (nil =
+      -- ignore the event). Presets ship these for their CLIs.
+      events = nil,
       -- The prompt's place on the argv: nil appends it as the trailing arg
       -- (claude); a flag string appends `<flag> <prompt>` instead (e.g. "-p"
       -- for agy, whose prompt is the VALUE of -p, not a positional).
@@ -191,6 +197,8 @@ M.defaults = {
       -- Flag NAMES obelus passes itself (so don't bake them into `cmd`):
       --   model  — per send-mode model flag ("--model"); false = never pass one
       --   resume — session-resume flag ("--resume", agy: "--conversation");
+      --            a function(cmd, session_id) -> cmd when resume isn't a
+      --            flag pair (codex's `exec resume <id>` subcommand);
       --            false = the CLI can't resume (use transport.batch.mode =
       --            "stateless")
       --   stream — EXTRA argv appended to every spawn; nil = claude's
@@ -760,21 +768,31 @@ local function validate(o)
   enum(o.transport.batch, "mode", "transport.batch.mode", { "session", "stateless" }, M.defaults.transport.batch.mode)
   enum(o.transport.batch, "prompt", "transport.batch.prompt", { "diff", "full" }, M.defaults.transport.batch.prompt)
   local cli = o.transport.cli
-  enum(cli, "output", "transport.cli.output", { "stream-json", "text" }, M.defaults.transport.cli.output)
+  enum(cli, "output", "transport.cli.output", { "stream-json", "text", "jsonl" }, M.defaults.transport.cli.output)
+  typed(cli, "events", "transport.cli.events", "function|nil", function(v)
+    return type(v) == "function"
+  end)
+  if cli.output == "jsonl" and type(cli.events) ~= "function" then
+    vim.notify_once(
+      'obelus: transport.cli.output = "jsonl" needs an `events` mapper function — falling back to "stream-json"',
+      vim.log.levels.WARN
+    )
+    cli.output = M.defaults.transport.cli.output
+  end
   typed(cli, "prompt_flag", "transport.cli.prompt_flag", "string|nil", function(v)
     return type(v) == "string"
   end)
   typed(cli, "plan", "transport.cli.plan", "table|function|nil", function(v)
     return type(v) == "table" or type(v) == "function"
   end)
-  typed(cli, "session", "transport.cli.session", "{ flag, pattern? }|nil", function(v)
-    return type(v) == "table" and type(v.flag) == "string"
+  typed(cli, "session", "transport.cli.session", "{ flag|command, pattern? }|nil", function(v)
+    return type(v) == "table" and (type(v.flag) == "string" or type(v.command) == "table")
   end)
   typed(cli.flags, "model", "transport.cli.flags.model", "string|false|nil", function(v)
     return type(v) == "string" or v == false
   end)
-  typed(cli.flags, "resume", "transport.cli.flags.resume", "string|false|nil", function(v)
-    return type(v) == "string" or v == false
+  typed(cli.flags, "resume", "transport.cli.flags.resume", "string|function|false|nil", function(v)
+    return type(v) == "string" or type(v) == "function" or v == false
   end)
   typed(cli.flags, "stream", "transport.cli.flags.stream", "table|nil", function(v)
     return type(v) == "table"
@@ -825,11 +843,28 @@ function M.setup(opts)
     if preset then
       merged.transport.cli =
         vim.tbl_deep_extend("force", vim.deepcopy(M.defaults.transport.cli), vim.deepcopy(preset), user_cli)
+      -- tbl_deep_extend merges LISTS index-wise — a user cmd/flags.stream/etc.
+      -- SHORTER than the preset's would come out spliced ({"mycli","exec",…}).
+      -- A list the user wrote must win wholesale, at any depth.
+      local function lists_win(user, out)
+        for k, v in pairs(user) do
+          if type(v) == "table" and vim.islist(v) then
+            out[k] = vim.deepcopy(v)
+          elseif type(v) == "table" and type(out[k]) == "table" then
+            lists_win(v, out[k])
+          end
+        end
+      end
+      lists_win(user_cli, merged.transport.cli)
     else
+      local names = vim.tbl_keys(require("obelus.presets"))
+      table.sort(names)
       vim.notify_once(
         "obelus: transport.cli.preset = "
           .. vim.inspect(user_cli.preset)
-          .. ' is unknown (expected "claude" | "antigravity") — ignored',
+          .. " is unknown (expected "
+          .. table.concat(names, " | ")
+          .. ") — ignored",
         vim.log.levels.WARN
       )
       merged.transport.cli.preset = nil

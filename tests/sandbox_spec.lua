@@ -104,3 +104,15 @@ T.it("wrap: an unavailable wrapper binary warns and returns the cmd unchanged", 
   local cmd = { "mycli" }
   T.eq(sb.wrap(cmd, ctx({ wrapper = "obelus-no-such-wrapper" })), cmd)
 end)
+
+T.it("{root} placeholder in state entries expands to the project root", function()
+  local root = mkdirp()
+  vim.fn.mkdir(root .. "/.crush", "p")
+  local c = ctx({ root = root, mode = "read-only", state = { "{root}/.crush" } })
+  local prof = sb._sbpl(c)
+  T.contains(prof, '(allow file-write* (subpath "' .. uv.fs_realpath(root .. "/.crush") .. '"))')
+  T.ok(
+    not prof:find('(allow file-write* (subpath "' .. uv.fs_realpath(root) .. '"))', 1, true),
+    "root itself stays read-only"
+  )
+end)

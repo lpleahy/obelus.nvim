@@ -197,6 +197,81 @@ function M.text_collector(on_update)
   return C
 end
 
+-- Collector for a GENERIC line-delimited-JSON stream (transport.cli.output =
+-- "jsonl"): each stdout line is one JSON event, and `map(ev)` — the user's /
+-- preset's transport.cli.events — normalizes it to any of
+--   { delta = "text chunk", session = "id", final = "whole reply",
+--     block = "a whole message/paragraph" }
+-- (nil/{}: ignore the event). `block` is for CLIs that emit MESSAGE-granular
+-- text (codex item.completed, opencode text parts): appended like a delta but
+-- separated from prior text by a blank line. Same precedence rule as the
+-- claude collector: a `final` only replaces the accumulation when no
+-- deltas/blocks ever arrived, so a short trailing summary can't truncate the
+-- streamed reply. Interface matches M.collector/M.text_collector; final_start
+-- stays 0 (no narration bookkeeping).
+function M.jsonl_collector(on_update, map)
+  local linebuf, acc, got_delta, session = "", "", false, nil
+  local C = {}
+
+  function C.feed(data)
+    if not data then
+      return
+    end
+    linebuf = linebuf .. data
+    while true do
+      local nl = linebuf:find("\n")
+      if not nl then
+        break
+      end
+      local line = linebuf:sub(1, nl - 1)
+      linebuf = linebuf:sub(nl + 1)
+      local okd, e = pcall(vim.json.decode, line)
+      if okd and type(e) == "table" then
+        local okm, ev = pcall(map, e)
+        if okm and type(ev) == "table" then
+          if ev.session and ev.session ~= "" then
+            session = ev.session
+          end
+          if ev.delta and ev.delta ~= "" then
+            acc = acc .. ev.delta
+            got_delta = true
+            if on_update then
+              on_update(acc)
+            end
+          end
+          if ev.block and ev.block ~= "" then
+            acc = (acc ~= "" and acc .. "\n\n" or "") .. ev.block
+            got_delta = true
+            if on_update then
+              on_update(acc)
+            end
+          end
+          if ev.final and ev.final ~= "" and not got_delta then
+            acc = ev.final
+            if on_update then
+              on_update(acc)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  function C.text()
+    return acc
+  end
+
+  function C.session()
+    return session
+  end
+
+  function C.final_start()
+    return 0
+  end
+
+  return C
+end
+
 ---Compute the text a CHAT stream-finish should store, honoring render.narration:
 ---  "keep"     — always the full `acc`.
 ---  "collapse" (default, any other value) — ONLY the latest block's text (`acc`
