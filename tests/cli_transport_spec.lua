@@ -384,3 +384,119 @@ T.it("preset merge: a user list REPLACES the preset's list, never splices", func
   T.eq(c.flags.stream, {}, "user stream list wins over the preset's --json")
   T.eq(type(c.events), "function", "non-list preset keys still ride along")
 end)
+
+-- ── failure surfacing: no corruption, message back to draft, error visible ──
+
+local function with_notify_capture(fn)
+  local seen = {}
+  local real = vim.notify
+  vim.notify = function(msg, lvl)
+    seen[#seen + 1] = { msg = tostring(msg), lvl = lvl }
+  end
+  local ok, err = pcall(fn, seen)
+  vim.notify = real
+  if not ok then
+    error(err, 0)
+  end
+  return seen
+end
+
+local function log_text()
+  return table.concat(require("obelus.log").lines(), "\n")
+end
+
+T.it("failed CLI run: thread uncorrupted, message back to draft, notified + logged", function()
+  local ctx = T.fresh({
+    transport = {
+      dispatch = "cli",
+      cli = { cmd = { "/bin/sh", "-c", "echo boom-stderr >&2; exit 3" }, output = "text", flags = { stream = {} } },
+    },
+  })
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  local seen = with_notify_capture(function()
+    require("obelus").chat_send(c.id, "hello draft", "send")
+    T.wait_for(function()
+      return not require("obelus.jobs").is_running(c.id)
+    end, 8000)
+    vim.wait(200)
+  end)
+  local cm = ctx.store.get(c.id)
+  local turns = ctx.store.turns(cm)
+  local last = turns[#turns]
+  T.eq(last.author, "you", "no agent/error turn — the trailing you-turn is the draft again")
+  T.eq(last.text, "hello draft", "the message text survived un-consumed")
+  T.is_nil(cm.dispatching, "not stranded on a spinner")
+  T.is_nil(cm.session_id, "no session stored for a failed run")
+  local notified = false
+  for _, n in ipairs(seen) do
+    if n.msg:find("failed", 1, true) and n.msg:find("ObelusLogs", 1, true) and n.msg:find("draft", 1, true) then
+      notified = true
+    end
+  end
+  T.ok(notified, "one concise error notification fired (not gated by transport.notify)")
+  local lt = log_text()
+  T.contains(lt, "boom-stderr", "raw stderr reached :ObelusLogs")
+  T.contains(lt, "exit 3", "exit code reached :ObelusLogs")
+  T.contains(lt, "/bin/sh", "the exact argv reached :ObelusLogs")
+end)
+
+T.it("exit-0-but-empty reply (mis-wired output config): discarded + surfaced, draft restored", function()
+  local ctx = T.fresh({
+    transport = {
+      dispatch = "cli",
+      cli = { cmd = { "/bin/sh", "-c", "exit 0" }, output = "text", flags = { stream = {} } },
+    },
+  })
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  local seen = with_notify_capture(function()
+    require("obelus").chat_send(c.id, "hello again", "send")
+    T.wait_for(function()
+      return not require("obelus.jobs").is_running(c.id)
+    end, 8000)
+    vim.wait(200)
+  end)
+  local turns = ctx.store.turns(ctx.store.get(c.id))
+  T.eq(turns[#turns].author, "you", "empty reply never lands as a blank agent turn")
+  T.eq(turns[#turns].text, "hello again")
+  local notified = false
+  for _, n in ipairs(seen) do
+    if n.msg:find("no reply text", 1, true) then
+      notified = true
+    end
+  end
+  T.ok(notified, "the empty-output config problem is called out explicitly")
+end)
+
+T.it("throwing before_spawn hook: surfaced + logged, run still proceeds", function()
+  local ctx = T.fresh({
+    transport = {
+      dispatch = "cli",
+      cli = {
+        cmd = { "/bin/sh", "-c", "printf reply-ok" },
+        output = "text",
+        flags = { stream = {} },
+        before_spawn = function()
+          error("boom-hook")
+        end,
+      },
+    },
+  })
+  local c = ctx.store.add(T.comment({ comment = "seed" }))
+  local seen = with_notify_capture(function()
+    require("obelus").chat_send(c.id, "hi", "send")
+    T.wait_for(function()
+      return not require("obelus.jobs").is_running(c.id)
+    end, 8000)
+    vim.wait(200)
+  end)
+  local turns = ctx.store.turns(ctx.store.get(c.id))
+  T.contains(turns[#turns].text or "", "reply-ok", "the run itself still completed")
+  local notified = false
+  for _, n in ipairs(seen) do
+    if n.msg:find("before_spawn", 1, true) then
+      notified = true
+    end
+  end
+  T.ok(notified, "the hook bug is no longer silently pcall-swallowed")
+  T.contains(log_text(), "boom-hook", "the hook error reached :ObelusLogs")
+end)

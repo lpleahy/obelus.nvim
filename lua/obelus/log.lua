@@ -17,25 +17,61 @@ local function ensure_buf()
   return buf
 end
 
----@param entry table { label?: string, ok?: boolean, text?: string, when?: string }
+---@param entry table { label?: string, ok?: boolean, text?: string, when?: string,
+---  code?: integer, cmd?: string[], stderr?: string }
+---code/cmd/stderr are the failure post-mortem (exit code, exact argv, raw
+---stderr) — rendered as their own sections so a broken config is diagnosable
+---from :ObelusLogs alone.
 function M.append(entry)
   local b = ensure_buf()
-  local lines = {
-    string.format(
-      "## %s · %s · %s",
-      entry.when or os.date("%H:%M:%S"),
-      entry.label or "agent",
-      entry.ok and "✓" or "✗"
-    ),
-    "",
-  }
+  local head = string.format(
+    "## %s · %s · %s",
+    entry.when or os.date("%H:%M:%S"),
+    entry.label or "agent",
+    entry.ok and "✓" or ("✗" .. (entry.code and (" exit " .. entry.code) or ""))
+  )
+  local lines = { head, "" }
+  if entry.cmd then
+    -- one line, whatever the argv contains: the PROMPT rides the argv and is
+    -- multi-line + huge (nvim_buf_set_lines rejects items with newlines) —
+    -- collapse whitespace and elide long elements; the full prompt is
+    -- :ObelusPrompt's job, not the cmd line's
+    local parts = {}
+    for _, a in ipairs(entry.cmd) do
+      a = tostring(a):gsub("%s+", " ")
+      if #a > 120 then
+        a = a:sub(1, 117) .. "…"
+      end
+      parts[#parts + 1] = a
+    end
+    lines[#lines + 1] = "cmd: `" .. table.concat(parts, " ") .. "`"
+    lines[#lines + 1] = ""
+  end
+  if entry.stderr and entry.stderr ~= "" then
+    lines[#lines + 1] = "### stderr"
+    for _, l in ipairs(vim.split(entry.stderr, "\n")) do
+      lines[#lines + 1] = l
+    end
+    lines[#lines + 1] = ""
+  end
   for _, l in ipairs(vim.split(entry.text or "", "\n")) do
     lines[#lines + 1] = l
   end
   lines[#lines + 1] = ""
+  -- the log must NEVER throw (a throw here would kill the exit callback that
+  -- is trying to report a failure): scrub any stray \r/\n a caller slipped in
+  for i, l in ipairs(lines) do
+    lines[i] = l:gsub("[\r\n]", " ")
+  end
   vim.bo[b].modifiable = true
   vim.api.nvim_buf_set_lines(b, 2, 2, false, lines) -- newest right under the header
   vim.bo[b].modifiable = false
+end
+
+---The log buffer's current lines (specs + programmatic checks).
+---@return string[]
+function M.lines()
+  return vim.api.nvim_buf_get_lines(ensure_buf(), 0, -1, false)
 end
 
 -- The last FINAL prompt the cli transport handed to the agent process (chat

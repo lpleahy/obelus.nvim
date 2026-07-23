@@ -15,6 +15,7 @@
 :ObelusJobs	obelus.txt	/*:ObelusJobs*
 :ObelusList	obelus.txt	/*:ObelusList*
 :ObelusLoad	obelus.txt	/*:ObelusLoad*
+:ObelusLogs	obelus.txt	/*:ObelusLogs*
 :ObelusMode	obelus.txt	/*:ObelusMode*
 :ObelusPanel	obelus.txt	/*:ObelusPanel*
 :ObelusPerms	obelus.txt	/*:ObelusPerms*
@@ -77,6 +78,7 @@ obelus-config-transport.notify	obelus.txt	/*obelus-config-transport.notify*
 obelus-config-transport.sidekick	obelus.txt	/*obelus-config-transport.sidekick*
 obelus-config-view	obelus.txt	/*obelus-config-view*
 obelus-debug	obelus.txt	/*obelus-debug*
+obelus-failure-handling	obelus.txt	/*obelus-failure-handling*
 obelus-introduction	obelus.txt	/*obelus-introduction*
 obelus-keymaps	obelus.txt	/*obelus-keymaps*
 obelus-mentions	obelus.txt	/*obelus-mentions*

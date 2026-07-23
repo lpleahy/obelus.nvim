@@ -182,6 +182,12 @@ reads open except a plaintext-secrets deny-list. macOS uses `sandbox-exec`,
 Linux uses `bwrap` (bubblewrap); with neither, obelus warns and relies on the
 CLI's native flags. See `:h obelus-permissions`.
 
+**Failure handling**: a failed run never corrupts a thread — a chat message
+returns to the draft (un-consumed, back in the reply box), batches stay
+untouched, and every failure fires one error notification pointing at
+`:ObelusLogs`, which holds the full post-mortem (argv, exit code, stderr).
+Exit-0-with-no-output is flagged as a likely `output`/`events` misconfig.
+
 A transport is a function; register your own:
 
 ```lua

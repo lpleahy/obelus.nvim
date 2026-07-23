@@ -475,6 +475,25 @@ the classic plaintext secret stores). Note: a project that itself lives under
 a temp tree (/tmp, $TMPDIR) is inside the always-writable temp allows — the
 write confinement is only meaningful for projects outside temp.
 
+                                                    *obelus-failure-handling*
+FAILURE HANDLING ~
+
+A cli run that fails NEVER writes into a thread — errors are surfaced, not
+stored as fake replies:
+  chat reply   — the streamed preview is discarded; the trailing "you" turn
+                 becomes the DRAFT again, so the message is back in the reply
+                 box un-consumed.
+  batch/dispatch — busy flags + the transient preview are dropped; every
+                 member keeps its pending comment/draft/status untouched, and
+                 no session advances.
+Every failure fires ONE error notification (regardless of transport.notify,
+which only gates success toasts) pointing at |:ObelusLogs|, where the full
+post-mortem lands: exact argv, exit code, raw stderr, and whatever streamed.
+An exit-0 run that produced NO reply text is treated the same way and called
+out as a likely transport.cli.output/events misconfiguration. A throwing
+`before_spawn` hook is reported (notification + log) instead of being
+silently swallowed; the spawn still proceeds.
+
 transport.batch                                *obelus-config-transport.batch*
     Continuable batch conversations: send several related comments to ONE
     agent and keep talking to it across rounds with shared context (see
@@ -796,6 +815,10 @@ Every command is one line; `()` marks a cross-reference for more detail.
     Reload reviews from disk and repaint.
 :ObelusJobs                                                    *:ObelusJobs*
     Open the background-job output log (|obelus-debug|).
+:ObelusLogs                                                    *:ObelusLogs*
+    The same buffer as |:ObelusJobs|, under the name error notifications
+    point at. Every run lands here; a FAILED run additionally gets a full
+    post-mortem — the exact argv, exit code, and raw stderr.
 :ObelusBands                                                  *:ObelusBands*
     Toggle inline comment bands in this buffer.
 :ObelusBandStyle                                          *:ObelusBandStyle*

@@ -428,6 +428,12 @@ local function commands()
     require("obelus.log").open()
   end, { desc = "obelus: open the background-job output log" })
 
+  -- Same buffer as :ObelusJobs under the name error messages point at: every
+  -- run (and every FAILURE post-mortem — argv, exit code, stderr) lands here.
+  cmd("ObelusLogs", function()
+    require("obelus.log").open()
+  end, { desc = "obelus: open the run/error log (alias of :ObelusJobs)" })
+
   cmd("ObelusBands", function()
     render.toggle_band()
   end, { desc = "obelus: toggle inline comment bands in this buffer" })

@@ -202,12 +202,54 @@ end
 
 local function notify_done(label, ok, code)
   if config.options.transport.notify ~= true then
-    return -- opt-in: the run still lands in :ObelusJobs / the thread updates inline
+    return -- opt-in: the run still lands in :ObelusLogs / the thread updates inline
   end
   vim.notify(
-    "obelus: " .. label .. (ok and " finished — :ObelusJobs for output" or " failed (" .. tostring(code) .. ")"),
+    "obelus: " .. label .. (ok and " finished — :ObelusLogs for output" or " failed (" .. tostring(code) .. ")"),
     ok and vim.log.levels.INFO or vim.log.levels.ERROR
   )
+end
+
+-- A FAILED run must always surface (NOT gated by transport.notify — a silent
+-- failure reads as a corrupted/blank reply): one concise ERROR notification
+-- pointing at :ObelusLogs, plus the full post-mortem (argv, exit code, raw
+-- stderr, whatever streamed) appended to the log.
+local function report_failure(label, cmd, res, acc, note, why)
+  local stderr = res and res.stderr or ""
+  require("obelus.log").append({
+    label = label,
+    ok = false,
+    code = res and res.code,
+    cmd = cmd,
+    stderr = stderr,
+    text = (why and ("[" .. why .. "]\n") or "") .. (acc or ""),
+  })
+  local first = stderr:match("[^\r\n]+") or why or ""
+  vim.notify(
+    ("obelus: %s failed (exit %s)%s — :ObelusLogs has the full output; %s"):format(
+      label,
+      res and tostring(res.code) or "?",
+      first ~= "" and (": " .. first:sub(1, 120)) or "",
+      note or "the threads are unchanged"
+    ),
+    vim.log.levels.ERROR
+  )
+end
+
+-- run the user's before_spawn hook; a THROWING hook is a config bug that must
+-- surface (it used to be silently pcall-swallowed)
+local function run_hook(c, cwd, cmd, payload, label)
+  if type(c.before_spawn) ~= "function" then
+    return
+  end
+  local hooked, herr = pcall(c.before_spawn, cwd, cmd, payload)
+  if not hooked then
+    require("obelus.log").append({ label = label .. " before_spawn", ok = false, text = tostring(herr) })
+    vim.notify(
+      "obelus: transport.cli.before_spawn threw (spawning anyway) — :ObelusLogs has the error",
+      vim.log.levels.ERROR
+    )
+  end
 end
 
 local function run_oneshot(payload)
@@ -247,11 +289,8 @@ local function run_oneshot(payload)
   local logfile = finish_cmd(cmd, c, prompt, sysopts)
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
-  if type(c.before_spawn) == "function" then
-    pcall(c.before_spawn, sysopts.cwd, cmd, payload)
-  end
-
   local label = config.agent_label() -- the CLI's name, not cmd[1] (post-wrap that's the sandbox binary)
+  run_hook(c, sysopts.cwd, cmd, payload, label)
   cmd = enforce(cmd, c, sysopts.cwd)
 
   for _, cm in ipairs(payload.comments or {}) do
@@ -311,10 +350,23 @@ local function run_oneshot(payload)
         return
       end
       local ok = res.code == 0
-      local text = acc
-      if not ok and (res.stderr or "") ~= "" then
-        text = (text ~= "" and text .. "\n" or "") .. res.stderr
+      if not ok then
+        -- FAILED batch/dispatch: NOTHING lands in the threads — drop the busy
+        -- flags and the transient preview, keep every member exactly as it was
+        -- (pending comments, drafts, statuses untouched), and surface the
+        -- error via a notification + :ObelusLogs instead of a fake reply.
+        for _, cm in ipairs(payload.comments or {}) do
+          store.clear_dispatching(cm.id)
+        end
+        if first then
+          store.stream_discard(first.id)
+        end
+        pcall(progress.finish, job, false, acc)
+        require("obelus.review").refresh()
+        report_failure(label, cmd, res, acc, "the threads are unchanged")
+        return
       end
+      local text = acc
       -- clear `dispatching` FIRST (so a throw in the spinner job can't strand the
       -- thread on "thinking…"), then finish the spinner under pcall
       local is_batch = payload.opts and payload.opts.batch ~= nil
@@ -335,9 +387,9 @@ local function run_oneshot(payload)
         if not use_actions then
           -- read-only runs (edits toggled off) never auto-resolve: the agent
           -- couldn't act on anything, it only answered — keep the thread open
-          local status = (ok and edits_ok) and "resolved" or "open"
+          local status = edits_ok and "resolved" or "open"
           if first and cm.id == first.id then
-            store.stream_finish(cm.id, (text or ""):sub(1, 4000), session, ok)
+            store.stream_finish(cm.id, (text or ""):sub(1, 4000), session, true)
             store.update(cm.id, { status = status })
           else
             store.add_turn(cm.id, "agent", (text or ""):sub(1, 4000))
@@ -364,7 +416,7 @@ local function run_oneshot(payload)
           store.update_batch(payload.opts.batch.id, { session_id = session })
         end
       end
-      if ok and payload.opts and payload.opts.on_success then
+      if payload.opts and payload.opts.on_success then
         pcall(payload.opts.on_success) -- run-level success hook (see run_stream's note)
       end
       -- actions mode: the streamed text was only a live preview — drop the transient
@@ -372,15 +424,15 @@ local function run_oneshot(payload)
       if use_actions and first then
         store.stream_discard(first.id)
       end
-      pcall(progress.finish, job, ok, text)
+      pcall(progress.finish, job, true, text)
       local applied = use_actions and actions.apply(akey, allowed) or 0
       require("obelus.review").refresh()
       require("obelus.log").append({
         label = label,
-        ok = ok,
+        ok = true,
         text = (applied > 0 and ("[applied " .. applied .. " action(s)]\n") or "") .. text,
       })
-      notify_done(label, ok, res.code)
+      notify_done(label, true, res.code)
     end)
   end)
   if not ok_spawn then
@@ -393,6 +445,7 @@ local function run_oneshot(payload)
     end
     pcall(progress.finish, job, false, tostring(obj))
     require("obelus.review").refresh()
+    require("obelus.log").append({ label = label, ok = false, cmd = cmd, text = "failed to launch: " .. tostring(obj) })
     vim.notify("obelus: failed to launch " .. label .. ": " .. tostring(obj), vim.log.levels.ERROR)
     error(obj, 0) -- re-raise: transport/init.lua's pcall catches it and skips clear_on_submit
   end
@@ -443,11 +496,8 @@ local function run_stream(payload)
   local logfile = finish_cmd(cmd, c, prompt, sysopts)
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
-  if type(c.before_spawn) == "function" then
-    pcall(c.before_spawn, sysopts.cwd, cmd, payload)
-  end
-
   local label = config.agent_label() -- the CLI's name, not cmd[1] (post-wrap that's the sandbox binary)
+  run_hook(c, sysopts.cwd, cmd, payload, label)
   cmd = enforce(cmd, c, sysopts.cwd)
 
   cancelled[target.id] = nil
@@ -490,8 +540,25 @@ local function run_stream(payload)
       -- (run_oneshot above has its own finish path — see its notes), so this can't
       -- affect a batch's actions-file / transient-preview finish.
       acc = stream.collapse(acc, col.final_start(), (config.options.render or {}).narration)
-      if not ok and (res.stderr or "") ~= "" then
-        acc = (acc ~= "" and acc .. "\n" or "") .. res.stderr
+      if not ok or (acc:match("^%s*$") ~= nil and not use_actions) then
+        -- FAILED reply — or exit 0 with NO reply text (a mis-wired
+        -- transport.cli.output/events config): NOTHING lands in the thread.
+        -- Dropping the streamed preview makes the trailing "you" turn the
+        -- DRAFT again, so the message is back in the reply box un-consumed;
+        -- the error goes to a notification + :ObelusLogs, never into the chat.
+        store.stream_discard(target.id)
+        store.clear_dispatching(target.id)
+        pcall(progress.finish, job, false, acc)
+        require("obelus.review").refresh()
+        report_failure(
+          label,
+          cmd,
+          res,
+          acc,
+          "your message is back in the draft",
+          ok and "exit 0 but no reply text — check transport.cli.output / events" or nil
+        )
+        return
       end
       -- clear `dispatching` FIRST so a throw in the spinner job can't strand the
       -- thread on "thinking…"; then finish the spinner (pcall: never let it strand)
@@ -501,7 +568,7 @@ local function run_stream(payload)
       -- streams into X's transcript, but the session it just spoke through
       -- belongs to X's tag, not X)
       local owner_id = (payload.opts and payload.opts.session_owner_id) or target.id
-      store.stream_finish(target.id, acc, owner_id == target.id and session or nil, ok)
+      store.stream_finish(target.id, acc, owner_id == target.id and session or nil, true)
       if session and owner_id ~= target.id then
         if store.get(owner_id) then
           store.update(owner_id, { session_id = session })
@@ -514,11 +581,10 @@ local function run_stream(payload)
           )
         end
       end
-      if ok and payload.opts and payload.opts.on_success then
+      if payload.opts and payload.opts.on_success then
         -- run-level success hook (tag membership commits ride this: a spawned-
-        -- but-FAILED run must not advance known_ids, or the retry would skip the
-        -- join briefings the agent never actually received — a silent,
-        -- permanent context hole)
+        -- but-FAILED run never reaches here — the failure branch above returned —
+        -- so known_ids can't advance past briefings the agent never received)
         pcall(payload.opts.on_success)
       end
       if use_actions then
@@ -531,10 +597,10 @@ local function run_stream(payload)
         end
         actions.apply(target.id, allowed)
       end
-      pcall(progress.finish, job, ok, acc)
+      pcall(progress.finish, job, true, acc)
       require("obelus.review").refresh()
-      require("obelus.log").append({ label = label, ok = ok, text = acc })
-      notify_done(label, ok, res.code)
+      require("obelus.log").append({ label = label, ok = true, text = acc })
+      notify_done(label, true, res.code)
     end)
   end)
   if not ok_spawn then
@@ -545,6 +611,7 @@ local function run_stream(payload)
     store.abort(target.id) -- clears dispatching + pops the empty placeholder turn
     pcall(progress.finish, job, false, tostring(obj))
     require("obelus.review").refresh()
+    require("obelus.log").append({ label = label, ok = false, cmd = cmd, text = "failed to launch: " .. tostring(obj) })
     vim.notify("obelus: failed to launch " .. label .. ": " .. tostring(obj), vim.log.levels.ERROR)
     error(obj, 0) -- re-raise: transport/init.lua's pcall catches it and skips clear_on_submit
   end
