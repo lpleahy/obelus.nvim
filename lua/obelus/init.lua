@@ -685,13 +685,24 @@ local MAPSPEC = {
   },
   -- (edit-comment keymap removed: a thread's unsent message now opens editable in the reply box
   -- via <prefix>r/<prefix>o; :ObelusEdit still edits the raw comment text if you want it)
+  -- Dispatch is the first-class verb, so it gets the lowercase letter; the
+  -- destructive pair lives on x/X (vim's own delete key), deliberately NOT a
+  -- shift away from dispatch.
   {
     suffix = "d",
     modes = "n",
     rhs = function()
-      M.delete()
+      M.dispatch()
     end,
-    desc = "obelus: delete at cursor",
+    desc = "obelus: dispatch one (background)",
+  },
+  {
+    suffix = "D",
+    modes = "n",
+    rhs = function()
+      M.dispatch_all()
+    end,
+    desc = "obelus: dispatch all in parallel (one agent each)",
   },
   {
     suffix = "s",
@@ -708,22 +719,6 @@ local MAPSPEC = {
       M.submit()
     end,
     desc = "obelus: force a new batch (even if one is open)",
-  },
-  {
-    suffix = "D",
-    modes = "n",
-    rhs = function()
-      M.dispatch()
-    end,
-    desc = "obelus: dispatch one (background)",
-  },
-  {
-    suffix = "P",
-    modes = "n",
-    rhs = function()
-      M.dispatch_all()
-    end,
-    desc = "obelus: dispatch all in parallel (one agent each)",
   },
   {
     suffix = "e",
@@ -767,6 +762,14 @@ local MAPSPEC = {
   },
   {
     suffix = "x",
+    modes = "n",
+    rhs = function()
+      M.delete()
+    end,
+    desc = "obelus: delete at cursor",
+  },
+  {
+    suffix = "X",
     modes = "n",
     rhs = function()
       M.clear()

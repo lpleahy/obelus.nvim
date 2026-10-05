@@ -320,6 +320,21 @@ T.it("MAPSPEC: suffix 'A' disables/overrides like any other row", function()
   T.eq(vim.fn.maparg(prefix .. "A", "n"), "", "disabled via override: no mapping at the default lhs")
 end)
 
+T.it("MAPSPEC: dispatch owns d/D, delete/clear live on x/X, P is unbound", function()
+  local init = require("obelus.init")
+  local prefix = "<leader>ZZK"
+  init._keymaps({ prefix = prefix, disabled = {}, overrides = {} })
+  local function desc(suffix)
+    local m = vim.fn.maparg(prefix .. suffix, "n", false, true)
+    return m and m.desc or ""
+  end
+  T.ok(desc("d"):find("dispatch one", 1, true), "d = dispatch one (lowercase: first-class verb)")
+  T.ok(desc("D"):find("dispatch all", 1, true), "D = dispatch all (the s/S-style pairing)")
+  T.ok(desc("x"):find("delete at cursor", 1, true), "x = delete at cursor")
+  T.ok(desc("X"):find("clear all", 1, true), "X = clear all")
+  T.eq(vim.fn.maparg(prefix .. "P", "n"), "", "P no longer bound (dispatch-all moved to D)")
+end)
+
 T.it("transport.cli accepts before_spawn callback function", function()
   local config = require("obelus.config")
   local called = false

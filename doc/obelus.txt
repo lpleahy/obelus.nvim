@@ -584,7 +584,7 @@ keys.prefix                                        *obelus-config-keys.prefix*
 
 keys.disabled                                    *obelus-config-keys.disabled*
     Default: `{}`
-    A list of suffixes to skip, e.g. `{ "x", "T" }` to skip the "clear all"
+    A list of suffixes to skip, e.g. `{ "X", "T" }` to skip the "clear all"
     and "toggle global" maps specifically, while keeping the rest.
 
 keys.band_scroll                              *obelus-config-keys.band_scroll*
@@ -716,18 +716,23 @@ out of the group below in a which-key popup).
     h          Show/hide resolved threads
     r          Reply to the thread at cursor (docked box or popup)
     f          Quick reply via the small inline compose float
-    d          Delete the comment at cursor
+    d          Dispatch the thread at cursor to a background agent
+    D          Dispatch ALL pending threads in parallel, one agent each
     s          Submit pending comments, or continue the open batch (auto)
     S          Force a NEW batch, even if one is already open
-    D          Dispatch the thread at cursor to a background agent
-    P          Dispatch ALL pending threads in parallel, one agent each
     e          Toggle whether agents may apply edits (global, on the fly)
     E          Cycle the permission level: read-only → project-edit →
                unrestricted (|:ObelusPerms|; `e` is the two-state toggle)
     g          Tag/untag the thread at cursor (curates batch membership)
     G          Toggle sticky tagging mode (new threads inherit the tag)
     C          Cancel the in-flight dispatch at cursor
-    x          Clear ALL comments
+    x          Delete the comment at cursor
+    X          Clear ALL comments
+
+Dispatch is the first-class verb, so it owns the lowercase `d` (and `D` for
+the all-parallel form, mirroring `s`/`S`); the destructive pair sits on
+`x`/`X` — vim's own delete key, and deliberately not one Shift away from
+dispatch.
 
 Plus, independent of the prefix (|obelus-config-keys.band_scroll|):
 `<A-d>`/`<A-u>` scroll a long inline band in place (half-page); disable or

@@ -290,7 +290,7 @@ M.defaults = {
   keys = {
     prefix = "<leader>o", -- set keys = false to skip default mappings
     -- skip specific default mappings by suffix (the letter after the prefix), e.g.
-    -- keys.disabled = { "x", "T" } to skip the "clear all" / "toggle global" maps.
+    -- keys.disabled = { "X", "T" } to skip the "clear all" / "toggle global" maps.
     disabled = {},
     -- hold Alt and d/u to scroll a long inline band in place (half-page). Set
     -- band_scroll = false to disable, or add line_down/line_up = "<A-j>"/"<A-k>"

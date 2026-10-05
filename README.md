@@ -42,10 +42,10 @@ also has an `:Obelus*` command.
 | `oA` | Open/create the active tag's meta/batch thread |
 | `or` / `of` | Reply to the thread (docked box / quick float) |
 | `oR` / `oh` | Toggle resolved / show-hide resolved |
-| `od` | Delete the comment at cursor |
+| `od` / `oD` | Dispatch one thread in the background / dispatch ALL pending threads in parallel, one agent each |
+| `oC` | Cancel the in-flight dispatch at cursor |
 | `os` / `oS` | Submit or continue the batch / force a new batch |
-| `oD` / `oC` | Dispatch one thread in the background / cancel |
-| `oP` | Dispatch ALL pending threads in parallel, one agent each |
+| `ox` / `oX` | Delete the comment at cursor / clear all threads |
 | `oe` | Toggle whether agents may apply edits (global, on the fly) |
 | `oj` | Open the background-job output log |
 | `og` / `oG` | Tag the thread / sticky-tag mode |
@@ -55,16 +55,34 @@ also has an `:Obelus*` command.
 | `oJ` / `oK` | Scroll the thread at cursor down / up |
 | `om` | Toggle inline ↔ sidebar |
 | `o?` | Toggle keybind hint footers |
-| `ox` | Clear all threads |
 | `<A-d>` / `<A-u>` | Scroll a long inline band in place (global default; `keys.band_scroll`) |
 
 Chat rendering: `:ObelusRenderer markview|builtin|treesitter|render-markdown` (no argument cycles
 through them; `render-markdown` needs [render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim)
 and is opt-in — auto prefers markview).
-Skip specific default mappings with `keys.disabled = { "x", "T" }` (a list of suffixes);
+Skip specific default mappings with `keys.disabled = { "X", "T" }` (a list of suffixes);
 `keys = false` skips all of them.
 
 In the reply box (or the quick-reply composer), `@` in insert mode mentions a project file — via
+## Ask mode
+
+Reading code and wondering "what does this do?" is not a review comment. `<leader>oi` (or a
+visual selection + `oi`, or `:ObelusAsk [question]`) asks about the line: `<CR>` in the composer
+creates the thread *and* sends it — no second key — and the answer streams in like any reply
+(`or` follows up in the same session). An ask differs from comment + dispatch in four ways:
+
+- **Framed as a question** — "do not modify any file", the *enclosing function* (treesitter)
+  quoted as context, then the asked lines, then the question; never the review preamble.
+- **Read-only, always** — every send on an ask thread runs the CLI's plan mode *and* pins the OS
+  sandbox read-only, regardless of `:ObelusEdits`/`:ObelusPerms`; no write-back protocol.
+- **Fast** — `ask.model` picks the `fast` slot by default.
+- **Never batched** — a question is not a review item: `os` / `oD` never pick it up (`od` on it
+  sends its waiting draft the ask way). With `ask.scratch` (default) it is also kept out of tags
+  and briefings, and `oI` clears them all. Ask threads wear a `?` gutter sign and a `?ask` chip.
+
+`ask = { model = "fast", context = "function", lines = 20, max_lines = 120, scratch = true }` —
+see `:h obelus-ask` and `:h obelus-config-ask`.
+
 blink.cmp/nvim-cmp when one is installed, else the picker. Set `input.mention = false` to disable
 it entirely, or `input.mention = { completion = "blink" | "cmp" | false }` to force/disable which
 completion engine it uses (`picker = false` disables the picker fallback). Mentions that name a
