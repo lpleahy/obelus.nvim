@@ -59,6 +59,12 @@ M.chat_save = review.chat_save
 M.chat_send = review.chat_send
 M.submit_all = review.submit_all
 M.clear = review.clear
+-- ask mode (|obelus-ask|): a read-only, streamed question about the line/selection
+M.ask = review.ask
+M.ask_visual = review.ask_visual
+M.ask_lines = review.ask_lines
+M.ask_send = review.ask_send
+M.ask_clear = review.ask_clear
 ---Delete every unreferenced *.png/jpg/jpeg/gif/webp under <root>/.ai/img (see
 ---|obelus-mentions|'s IMAGES paragraph) — a file whose name isn't mentioned in
 ---any stored comment/turn/draft text.
@@ -294,6 +300,29 @@ local function commands()
     end
   end, { range = true, desc = "obelus: add a review comment" })
 
+  -- :ObelusAsk [question] — with a question on the cmdline there's no composer:
+  -- the thread is created and sent in one go; a range asks about the selection
+  cmd("ObelusAsk", function(a)
+    local q = a.args ~= "" and a.args or nil
+    if a.range > 0 then
+      -- a line range is what the command carries; only a CHARWISE visual
+      -- selection (:'<,'>ObelusAsk from `v`) has columns worth keeping, and only
+      -- when its marks are the very rows the range names
+      local vs, ve = vim.fn.getpos("'<")[2], vim.fn.getpos("'>")[2]
+      if vim.fn.visualmode() == "v" and vs == a.line1 and ve == a.line2 then
+        M.ask_visual(q)
+      else
+        M.ask_lines(a.line1, a.line2, q)
+      end
+    else
+      M.ask(q)
+    end
+  end, { range = true, nargs = "?", desc = "obelus: ask a question about the line/selection (read-only)" })
+
+  cmd("ObelusAskClear", function()
+    M.ask_clear()
+  end, { desc = "obelus: clear every ask thread" })
+
   cmd("ObelusToggle", function(a)
     M.toggle(a.args ~= "" and a.args or nil)
   end, {
@@ -523,6 +552,17 @@ local MAPSPEC = {
     desc = "obelus: comment selection",
     silent = true,
   },
+  -- ask mode: i = ask about the line / selection (sent at once, read-only),
+  -- I = clear every ask thread — the lowercase/uppercase one-vs-all pairing
+  { suffix = "i", modes = "n", rhs = M.ask, desc = "obelus: ask about this line (read-only)" },
+  {
+    suffix = "i",
+    modes = "x",
+    rhs = ":<C-u>lua require('obelus').ask_visual()<CR>", -- same <C-u> contract as the x-mode comment map
+    desc = "obelus: ask about the selection (read-only)",
+    silent = true,
+  },
+  { suffix = "I", modes = "n", rhs = M.ask_clear, desc = "obelus: clear every ask thread" },
   {
     suffix = "t",
     modes = "n",

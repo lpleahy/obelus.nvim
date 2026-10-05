@@ -14,6 +14,29 @@ M.defaults = {
   -- Surrounding lines captured with each comment (no git/diff dependency).
   context = { before = 3, after = 3 },
 
+  -- Ask mode (<prefix>i / :ObelusAsk): a one-key question about the line or
+  -- selection under the cursor — captured, framed as a QUESTION (not review
+  -- feedback) and dispatched immediately as a streamed, read-only reply. See
+  -- |obelus-ask|.
+  ask = {
+    -- which transport.cli.models slot answers: "fast" | "send" | "batch", or a
+    -- literal model id passed verbatim
+    model = "fast",
+    -- what surrounds the asked lines in the prompt: "function" = the enclosing
+    -- function/method via treesitter (falls back to `lines` when there is no
+    -- parser or no enclosing function); "lines" = `lines` each side; an integer
+    -- = that many lines each side
+    context = "function",
+    lines = 20,
+    -- hard cap on context lines sent; a bigger enclosing function is trimmed to
+    -- a window of this size around the asked lines
+    max_lines = 120,
+    -- flag ask threads scratch: never swept into a batch submit / dispatch-all /
+    -- tag / project briefing, cleared together by <prefix>I / :ObelusAskClear.
+    -- false = an ask thread is an ordinary review thread once answered.
+    scratch = true,
+  },
+
   -- Engagement modality (one or the other — toggle with :ObelusMode):
   --   "inline"  — chat in the file via bands; the sidebar is a navigator
   --   "sidebar" — chat lives in the threads sidebar
@@ -45,6 +68,8 @@ M.defaults = {
       signs = true, -- gutter sign on every line of the range
       sign = "▌", -- the gutter sign glyph
       sign_hl = "DiagnosticInfo", -- gutter sign highlight group
+      ask_sign = "?", -- gutter sign for an ask thread (|obelus-ask|)
+      ask_sign_hl = "DiagnosticHint", -- its highlight group
       preview = true, -- eol first-line preview text (inline mode, bands off only)
       preview_hl = "Comment", -- eol preview highlight group
       preview_prefix = "  ▌ ", -- eol preview glyph/prefix
@@ -360,6 +385,34 @@ function M.edits_enabled()
   return M.perms_level() ~= "read-only"
 end
 
+---An ask-mode knob with the default filled in (validate() nils a bad value
+---rather than resetting it, so readers go through here).
+---@param key "model"|"context"|"lines"|"max_lines"|"scratch"
+function M.ask_opt(key)
+  local a = M.options.ask or {}
+  local v = a[key]
+  if v == nil then
+    return M.defaults.ask[key]
+  end
+  return v
+end
+
+---The model an ask send uses: ask.model names a transport.cli.models slot
+---("fast" | "send" | "batch", each with the usual fallback to `send`) or is a
+---literal model id passed verbatim. nil = the CLI's own default.
+function M.ask_model()
+  local models = (M.options.transport.cli or {}).models or {}
+  local which = M.ask_opt("model")
+  if which == "fast" then
+    return models.fast or models.send
+  elseif which == "batch" then
+    return models.batch or models.send
+  elseif which == "send" then
+    return models.send
+  end
+  return which
+end
+
 ---Display name for the agent's chat turns: transport.cli.name, else the
 ---basename of transport.cli.cmd[1] ("claude", "agy", …); the sidekick name
 ---when the DISPATCH transport is sidekick. "agent" only as a last resort.
@@ -564,6 +617,7 @@ end
 
 local function ensure_tables(o)
   ensure_table(o, "persist", "persist", M.defaults.persist)
+  ensure_table(o, "ask", "ask", M.defaults.ask)
   ensure_table(o, "view", "view", M.defaults.view)
   ensure_table(o, "render", "render", M.defaults.render)
   ensure_table(o, "progress", "progress", M.defaults.progress)
@@ -775,6 +829,21 @@ local function validate(o)
   )
   enum(o.transport.batch, "mode", "transport.batch.mode", { "session", "stateless" }, M.defaults.transport.batch.mode)
   enum(o.transport.batch, "prompt", "transport.batch.prompt", { "diff", "full" }, M.defaults.transport.batch.prompt)
+  -- ask: `typed` resets a bad value to nil, so every reader falls back to the
+  -- default itself (M.ask_opt) — keeps the knobs free-form (any model id, any
+  -- integer) without a reset-to-default helper per shape
+  local function positive_int(v)
+    return type(v) == "number" and v == math.floor(v) and v > 0
+  end
+  typed(o.ask, "model", "ask.model", '"fast"|"send"|"batch"|<model id>', function(v)
+    return type(v) == "string" and v ~= ""
+  end)
+  typed(o.ask, "context", "ask.context", '"function"|"lines"|integer', function(v)
+    return v == "function" or v == "lines" or positive_int(v)
+  end)
+  typed(o.ask, "lines", "ask.lines", "integer > 0", positive_int)
+  typed(o.ask, "max_lines", "ask.max_lines", "integer > 0", positive_int)
+  boolean(o.ask, "scratch", "ask.scratch", M.defaults.ask.scratch)
   local cli = o.transport.cli
   enum(cli, "output", "transport.cli.output", { "stream-json", "text", "jsonl" }, M.defaults.transport.cli.output)
   typed(cli, "events", "transport.cli.events", "function|nil", function(v)

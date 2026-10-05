@@ -812,7 +812,7 @@ local function build_list()
       local rl = format.range_label(c)
       local first = vim.split(c.comment or "", "\n")[1] or ""
       local pre = "   "
-      local badge = (c.tag and c.tag ~= "") and ("  #" .. c.tag) or ""
+      local badge = (c.ask and "  ?ask" or "") .. ((c.tag and c.tag ~= "") and ("  #" .. c.tag) or "")
       local rlf = string.format("%-10s", rl) -- padded label; highlight its full width, not just #rl
       local text = pre .. icon .. "  " .. rlf .. " " .. first .. badge
       local i1 = #pre + #icon
@@ -898,7 +898,13 @@ function M._rows_to_chat(rows, opts)
         -- external mode only drops the BODY/code/tag segs so the plugin colours the
         -- body (markview renders the #tag itself; render-markdown doesn't, so the
         -- tag seg survives there — see the note above).
-        if not mv or ch.role == "header" or ch.role == "meta" or (keep_tag and ch.role == "tag") then
+        if
+          not mv
+          or ch.role == "header"
+          or ch.role == "meta"
+          or ch.role == "chip"
+          or (keep_tag and ch.role == "tag")
+        then
           segs[#segs + 1] = { s, #text, ch[2] }
         end
       end

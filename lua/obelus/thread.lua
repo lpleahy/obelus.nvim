@@ -956,6 +956,14 @@ local function turn_header(comment, t, i, is_last, status, agent)
         header[#header + 1] = { "  ⚑ needs response", "ObelusReplyHeader", role = "header" }
       end
       header[#header + 1] = { "  " .. format.range_label(comment), "ObelusThreadMeta", role = "meta" }
+      if comment.ask then
+        -- the ask chip: same typography as a tag chip, so the header reads
+        -- "you  L12-L12  ?ask" — a question, not review feedback
+        -- role "chip", not "tag": the panel drops "tag" segs under markview
+        -- (which paints #tags itself) — nothing paints "?ask" but us
+        header[#header + 1] = { "  ", "ObelusThreadMeta", role = "meta" }
+        header[#header + 1] = { "?ask", "ObelusThreadTag", role = "chip" }
+      end
       if comment.tag and comment.tag ~= "" then
         -- the separator spaces ride the meta hl, NOT the chip: the pill bg starts
         -- exactly at the '#' (painting the gap looked like lopsided left padding)

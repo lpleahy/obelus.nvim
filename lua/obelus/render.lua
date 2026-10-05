@@ -132,10 +132,14 @@ function M.place(bufnr, c)
   local last0 = math.min((c.range.el or c.range.sl) - 1, total - 1)
   local charwise = c.kind == "char" and c.range.sc and c.range.ec
 
+  -- an ask thread wears its own glyph so a reading session's questions don't
+  -- read as review marks
+  local sign = c.ask and (a.ask_sign or "?") or a.sign
+  local sign_hl = c.ask and (a.ask_sign_hl or a.sign_hl) or a.sign_hl
   local opts = { id = c.extmark_id }
   if a.signs then
-    opts.sign_text = a.sign
-    opts.sign_hl_group = a.sign_hl
+    opts.sign_text = sign
+    opts.sign_hl_group = sign_hl
   end
   -- eol preview only in inline mode with bands off; in sidebar mode the chat
   -- lives in the sidebar, so don't ghost the file
@@ -167,8 +171,8 @@ function M.place(bufnr, c)
       lopts.line_hl_group = "ObelusThreadBg"
     end
     if a.signs then
-      lopts.sign_text = a.sign
-      lopts.sign_hl_group = a.sign_hl
+      lopts.sign_text = sign
+      lopts.sign_hl_group = sign_hl
     end
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns, l, 0, lopts)
   end

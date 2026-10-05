@@ -1,3 +1,5 @@
+:ObelusAsk	obelus.txt	/*:ObelusAsk*
+:ObelusAskClear	obelus.txt	/*:ObelusAskClear*
 :ObelusBandStyle	obelus.txt	/*:ObelusBandStyle*
 :ObelusBands	obelus.txt	/*:ObelusBands*
 :ObelusCancel	obelus.txt	/*:ObelusCancel*
@@ -36,8 +38,10 @@
 :ObelusToggleResolved	obelus.txt	/*:ObelusToggleResolved*
 obelus	obelus.txt	/*obelus*
 obelus-api	obelus.txt	/*obelus-api*
+obelus-ask	obelus.txt	/*obelus-ask*
 obelus-commands	obelus.txt	/*obelus-commands*
 obelus-config	obelus.txt	/*obelus-config*
+obelus-config-ask	obelus.txt	/*obelus-config-ask*
 obelus-config-context	obelus.txt	/*obelus-config-context*
 obelus-config-input	obelus.txt	/*obelus-config-input*
 obelus-config-input.mention	obelus.txt	/*obelus-config-input.mention*
@@ -88,6 +92,11 @@ obelus-renderers	obelus.txt	/*obelus-renderers*
 obelus-setup	obelus.txt	/*obelus-setup*
 obelus-tag-thread	obelus.txt	/*obelus-tag-thread*
 obelus-transports	obelus.txt	/*obelus-transports*
+obelus.ask()	obelus.txt	/*obelus.ask()*
+obelus.ask_clear()	obelus.txt	/*obelus.ask_clear()*
+obelus.ask_lines()	obelus.txt	/*obelus.ask_lines()*
+obelus.ask_send()	obelus.txt	/*obelus.ask_send()*
+obelus.ask_visual()	obelus.txt	/*obelus.ask_visual()*
 obelus.batch_advance()	obelus.txt	/*obelus.batch_advance()*
 obelus.busy()	obelus.txt	/*obelus.busy()*
 obelus.cancel()	obelus.txt	/*obelus.cancel()*

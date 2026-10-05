@@ -99,7 +99,10 @@ end
 ---@param name? string
 M.tag = with_comment(function(c, name)
   local function apply(t)
-    store.tag_comment(c.id, t)
+    if not store.tag_comment(c.id, t) then
+      -- refused: a meta thread, or a scratch (ask) thread — tags are batch curation
+      return vim.notify("obelus: this thread can't be tagged (tags curate review batches)", vim.log.levels.WARN)
+    end
     render.render_all()
     vim.notify(t and ("obelus: tagged #" .. t) or "obelus: tag cleared", vim.log.levels.INFO)
   end
@@ -211,12 +214,17 @@ M.dispatch = with_comment(function(c)
   if M.busy(c.id) then
     return vim.notify("obelus: already dispatching this one", vim.log.levels.WARN)
   end
+  if c.ask then
+    -- an ask thread always takes the ask path (question framing, read-only,
+    -- streamed) — <prefix>d on one sends its waiting question/draft
+    return M.ask_send(c.id)
+  end
   require("obelus.transport").submit(config.options.transport.dispatch or "cli", { comments = { c } })
 end)
 
 -- All-parallel modality: every pending thread gets its OWN background agent, all
 -- at once — the third dispatch mode next to <prefix>s's ONE shared batch agent
--- and <prefix>D's dispatch-one. Same tag scoping as submit: the active sticky
+-- and <prefix>d's dispatch-one. Same tag scoping as submit: the active sticky
 -- tag, else the tag under the cursor, else all pending. Each dispatch is the
 -- exact single-dispatch path (own job, own spinner, own actions file), so
 -- cancel/cancel-at-cursor and write-backs behave per thread.
@@ -233,7 +241,7 @@ function M.dispatch_all(tag)
   for _, c in ipairs(comments) do
     -- count SUCCESSES, not attempts: submit() returns false on a failed spawn
     -- (it already notified the error) — claiming those were dispatched would lie
-    if not M.busy(c.id) then
+    if not M.busy(c.id) and not c.ask then -- pending() already excludes asks; belt and braces
       local ok = require("obelus.transport").submit(config.options.transport.dispatch or "cli", { comments = { c } })
       if ok ~= false then
         n = n + 1
@@ -393,7 +401,31 @@ local function do_respond(c, text, mode)
   -- tag-level conversation, nothing to cross-reference).
   local model, prompt, submit_opts, tag_ctx
 
-  if c.meta_tag then
+  if c.ask then
+    -- case Q: an ask thread (|obelus-ask|). Its own framing (a question, with
+    -- the enclosing context — never "review feedback"), its own model slot, and
+    -- read_only on EVERY send — the founding question and each follow-up —
+    -- regardless of the global edits toggle. Never a tag session: store.add
+    -- skips sticky-tag inheritance for scratch and tag_comment refuses it.
+    model = (mode == "fast") and (models.fast or models.send) or config.ask_model()
+    prompt = text
+    if not c.session_id then
+      -- no session = the agent has never seen this code: found with the full
+      -- ask prompt. The trailing draft IS `text` (set_pending_you above), so it
+      -- rides the prompt's own **Question:**/**Follow-up:** line, not a second
+      -- copy — and any earlier turns (a RE-founding after a lost session) go
+      -- in as the transcript they are.
+      prompt = require("obelus.ask").prompt(c, text)
+    end
+    submit_opts = {
+      comments = { c },
+      resume = c.session_id,
+      prompt = prompt,
+      stream = true,
+      model = model,
+      read_only = true,
+    }
+  elseif c.meta_tag then
     -- case A: the tag thread's OWN message. `c` IS the tag meta record, so
     -- `c.session_id` doubles as the tag session's id — no separate lookup.
     if mode == "fast" then
@@ -422,7 +454,7 @@ local function do_respond(c, text, mode)
     -- the meta record itself — cli.lua's run_stream would otherwise scope
     -- `allowed` to just the meta id).
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      return not x.meta and x.tag == tag
+      return not x.meta and not x.scratch and x.tag == tag
     end, store.all())
     tag_ctx = { tag = tag }
   elseif tag then
@@ -475,7 +507,7 @@ local function do_respond(c, text, mode)
     -- needs_response on any thread in the project, not only the one it's
     -- nominally "about".
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      return not x.meta
+      return not x.meta and not x.scratch -- ask threads are never write-back targets
     end, store.all())
   else
     -- case D: an ordinary thread — untouched for one that was NEVER tagged (see
@@ -572,6 +604,106 @@ function M.chat_send(id, text, mode)
   if c and text and text ~= "" then
     do_respond(c, text, mode)
   end
+end
+
+-- ── Ask mode ────────────────────────────────────────────────────────────────
+-- A question about the line/selection (|obelus-ask|): captured like a comment
+-- but flagged `ask` (+ `scratch` per ask.scratch), with the enclosing function
+-- as context, and dispatched at once through do_respond's case Q — streamed,
+-- read-only, the ask model. A cancel-with-text keeps the question as a draft
+-- (<prefix>d / :ObelusDispatch sends it later).
+
+local function ask_fields()
+  return { ask = true, scratch = config.ask_opt("scratch") or nil }
+end
+
+local function ask_capture(bufnr, file, kind, sl, sc, el, ec, question)
+  local capture = require("obelus.capture")
+  capture._capture(bufnr, file, kind, sl, sc, el, ec, {
+    title = "ask: " .. vim.fn.fnamemodify(file, ":t"),
+    fields = ask_fields(),
+    text = question,
+    on_create = function(c, submitted, action)
+      -- captured HERE (the buffer as it is now), not in the prompt builder: a
+      -- later re-founding (lost session) must quote what the user was looking at
+      c.ask_context = require("obelus.ask").context(bufnr, sl, el)
+      if submitted then
+        -- the composer's <M-CR> means "fast" here as everywhere else
+        M.ask_send(c.id, action == "send_fast" and "fast" or nil)
+      end
+    end,
+  })
+end
+
+---Ask about the cursor line. `question` given = no composer, sent at once
+---(:ObelusAsk <question>).
+---@param question? string
+function M.ask(question)
+  local capture = require("obelus.capture")
+  local bufnr, file, kind, sl, sc, el, ec = capture.cursor_range()
+  if bufnr then
+    ask_capture(bufnr, file, kind, sl, sc, el, ec, question)
+  end
+end
+
+---Ask about the last visual selection (the x-mode mapping).
+---@param question? string
+function M.ask_visual(question)
+  local capture = require("obelus.capture")
+  local bufnr, file, kind, sl, sc, el, ec = capture.visual_range()
+  if bufnr then
+    ask_capture(bufnr, file, kind, sl, sc, el, ec, question)
+  end
+end
+
+---Ask about lines sl..el of the current buffer (a cmdline range: `:8,12ObelusAsk`).
+---@param sl integer
+---@param el integer
+---@param question? string
+function M.ask_lines(sl, el, question)
+  local capture = require("obelus.capture")
+  local bufnr, file = capture.cursor_range()
+  if bufnr then
+    if sl > el then
+      sl, el = el, sl
+    end
+    ask_capture(bufnr, file, "line", sl, nil, el, nil, question)
+  end
+end
+
+---Send an ask thread's waiting question/draft (its trailing "you" turn).
+---`mode` "fast" forces the fast slot; nil = ask.model.
+---@param id? string
+---@param mode? "fast"
+M.ask_send = with_comment(function(c, mode)
+  if not c.ask then
+    return vim.notify("obelus: not an ask thread — <prefix>r replies, <prefix>d dispatches", vim.log.levels.WARN)
+  end
+  -- only a WAITING you-turn is sendable: a fresh ask (its question is turn 1)
+  -- or a saved follow-up draft. An answered thread with no draft has nothing
+  -- to send — re-sending the original question would just ask it again.
+  local text = store.pending_you_text(c)
+  if not text or text == "" then
+    return vim.notify("obelus: nothing waiting on this ask thread — reply first (<prefix>r)", vim.log.levels.WARN)
+  end
+  do_respond(c, text, mode == "fast" and "fast" or "ask")
+end)
+
+---Remove every ask (scratch) thread — the reading session's sweep. Live
+---replies are cancelled first. Returns the count.
+function M.ask_clear()
+  local removed = store.scratch()
+  for _, c in ipairs(removed) do
+    jobs.cancel(c.id)
+  end
+  store.clear_scratch()
+  render.render_all()
+  vim.notify(
+    #removed == 0 and "obelus: no ask threads to clear"
+      or ("obelus: cleared " .. #removed .. " ask thread" .. (#removed == 1 and "" or "s")),
+    vim.log.levels.INFO
+  )
+  return #removed
 end
 
 ---Clear all comments, killing any live jobs first.

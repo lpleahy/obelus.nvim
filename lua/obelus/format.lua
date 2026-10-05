@@ -137,7 +137,8 @@ function M.meta_context(opts)
   local parts = { title, "" }
   local pending_parts, resolved_lines = {}, {}
   for _, c in ipairs(store.all()) do
-    if not c.meta and (tag == nil or c.tag == tag) then
+    -- scratch (ask-mode) threads are reading questions, not review status
+    if not c.meta and not c.scratch and (tag == nil or c.tag == tag) then
       if c.status == "resolved" then
         local first = vim.split(c.comment or "", "\n")[1] or ""
         resolved_lines[#resolved_lines + 1] =

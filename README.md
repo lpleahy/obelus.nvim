@@ -35,6 +35,7 @@ also has an `:Obelus*` command.
 | Key | Action |
 | --- | --- |
 | `oc` | Comment the current line (or visual selection) |
+| `oi` / `oI` | ASK about the line (or selection) — sent at once, read-only, fast model / clear every ask thread |
 | `ol` / `oq` | Open the review list (buffer / quickfix) |
 | `op` | Toggle the threads sidebar |
 | `oo` | Open the thread at the cursor as a chat |
@@ -63,7 +64,6 @@ and is opt-in — auto prefers markview).
 Skip specific default mappings with `keys.disabled = { "X", "T" }` (a list of suffixes);
 `keys = false` skips all of them.
 
-In the reply box (or the quick-reply composer), `@` in insert mode mentions a project file — via
 ## Ask mode
 
 Reading code and wondering "what does this do?" is not a review comment. `<leader>oi` (or a
@@ -83,6 +83,7 @@ creates the thread *and* sends it — no second key — and the answer streams i
 `ask = { model = "fast", context = "function", lines = 20, max_lines = 120, scratch = true }` —
 see `:h obelus-ask` and `:h obelus-config-ask`.
 
+In the reply box (or the quick-reply composer), `@` in insert mode mentions a project file — via
 blink.cmp/nvim-cmp when one is installed, else the picker. Set `input.mention = false` to disable
 it entirely, or `input.mention = { completion = "blink" | "cmp" | false }` to force/disable which
 completion engine it uses (`picker = false` disables the picker fallback). Mentions that name a
@@ -121,6 +122,8 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | Function | |
 | --- | --- |
 | `comment()` / `comment_visual()` | Capture a review comment (normal / visual selection) |
+| `ask(question?)` / `ask_visual(question?)` / `ask_lines(sl, el, question?)` | Ask about the line / selection / a line range — read-only, sent at once |
+| `ask_send(id?)` / `ask_clear()` | Send an ask thread's waiting draft / remove every ask thread |
 | `toggle(scope?)` | Toggle annotation display (`"global"` or the current buffer) |
 | `list(backend?)` | Open the review list (`"buffer"` \| `"quickfix"` \| `"split"`) |
 | `panel()` | Toggle the threads sidebar/popup |
@@ -158,6 +161,7 @@ require("obelus").setup({
     annotations = { signs = true, preview = true }, -- in-file gutter/eol decorations
   },
   input = { mention = true },                    -- "@" mentions in reply inputs (blink/cmp, else picker)
+  ask = { model = "fast", context = "function" }, -- <leader>oi: read-only questions, enclosing-function context
 
   transport = {
     default = "sidekick",

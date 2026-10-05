@@ -56,7 +56,9 @@ function M.add(comment)
   comment.id = comment.id or M.next_id()
   comment.created_at = comment.created_at or os.time()
   comment.status = comment.status or "open" -- "open" | "needs_response" | "resolved"
-  if comment.tag == nil and M.active_tag then
+  -- scratch threads (ask mode) are NOT review material: they never join a tag,
+  -- a batch, or a briefing, so sticky tagging must not sweep them in either
+  if comment.tag == nil and M.active_tag and not comment.scratch then
     comment.tag = M.active_tag -- sticky tagging mode: new threads inherit the active tag
   end
   table.insert(M.comments, comment)
@@ -242,6 +244,33 @@ function M.clear()
   end
 end
 
+-- Every scratch (ask-mode) thread, any status — the set <prefix>I /
+-- :ObelusAskClear sweeps.
+function M.scratch()
+  return vim.tbl_filter(function(c)
+    return c.scratch == true
+  end, M.comments)
+end
+
+-- Remove every scratch thread and nothing else (review threads, batches and
+-- meta threads stay). Returns the removed records — the caller cancels any live
+-- job on them first (review.ask_clear) and repaints.
+function M.clear_scratch()
+  local removed = {}
+  for i = #M.comments, 1, -1 do
+    local c = M.comments[i]
+    if c.scratch then
+      table.remove(M.comments, i)
+      M.detach_from_batches(c.id) -- belt and braces: pending() never batches scratch
+      removed[#removed + 1] = c
+    end
+  end
+  if #removed > 0 and opts().persist.auto then
+    M.save_soon()
+  end
+  return removed
+end
+
 function M.all()
   return M.comments
 end
@@ -350,7 +379,11 @@ end
 -- and saved (drafted) replies alike.
 function M.pending()
   return vim.tbl_filter(function(c)
-    if c.meta or c.status == "resolved" or c.dispatching then
+    -- ask threads are questions, not review items: never swept into a batch
+    -- submit / dispatch-all / batch round, even with a draft waiting — gated on
+    -- `ask` itself, so ask.scratch = false can't turn a question into a
+    -- write-capable review dispatch. (scratch: the same, for any other scratch.)
+    if c.meta or c.ask or c.scratch or c.status == "resolved" or c.dispatching then
       return false
     end
     local t = M.turns(c)
@@ -666,6 +699,9 @@ function M.tag_comment(id, tag)
   if c.meta then
     return -- the project thread is never batch-curated; a tag on it would be a phantom
   end
+  if c.scratch then
+    return -- an ask thread is a question, not review material: tags are batch curation
+  end
   local new_tag = (tag and tag ~= "") and tag or nil
   local old_tag = c.tag
   c.tag = new_tag
@@ -683,7 +719,7 @@ end
 ---@param tag string
 function M.tag_members(tag)
   return vim.tbl_filter(function(c)
-    return not c.meta and c.tag == tag
+    return not c.meta and not c.scratch and c.tag == tag
   end, M.comments)
 end
 

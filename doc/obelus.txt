@@ -14,9 +14,10 @@ CONTENTS                                                          *obelus*
   6. Mentions (@files) ............................ |obelus-mentions|
   7. Renderers ..................................... |obelus-renderers|
   8. Transports .................................... |obelus-transports|
-  9. Project thread ............................... |obelus-project-thread|
- 10. API ........................................... |obelus-api|
- 11. Debugging ..................................... |obelus-debug|
+  9. Ask mode (questions, read-only) ............... |obelus-ask|
+ 10. Project thread ............................... |obelus-project-thread|
+ 11. API ........................................... |obelus-api|
+ 12. Debugging ..................................... |obelus-debug|
 
 ==============================================================================
 1. INTRODUCTION                                        *obelus-introduction*
@@ -63,6 +64,37 @@ context                                                *obelus-config-context*
     Default: `{ before = 3, after = 3 }`
     Lines of surrounding context captured with every comment (no git/diff
     dependency) — `before`/`after` line counts around the commented range.
+
+ask                                                        *obelus-config-ask*
+    Default: `{ model = "fast", context = "function", lines = 20,
+                max_lines = 120, scratch = true }`
+    Ask mode (|obelus-ask|) — `<prefix>i` / |:ObelusAsk|, a one-key question
+    about the line or selection:
+      model     ("fast") — which `transport.cli.models` slot answers:
+                 "fast" | "send" | "batch" (each falls back to `send` like
+                 everywhere else), or a literal model id passed verbatim.
+      context   ("function") — what surrounds the asked lines in the prompt:
+                 "function" = the enclosing function/method found via
+                 treesitter (any grammar whose node type names a function,
+                 method, closure, lambda or constructor), falling back to
+                 `lines` when the buffer has no parser or the lines sit in
+                 no function (or span several); "lines" = `lines` each
+                 side; an integer = that many lines each side.
+      lines     (20) — the each-side window for the "lines" cases.
+      max_lines (120) — a hard cap on context lines; a longer enclosing
+                 function is trimmed to a window of this size around the
+                 asked lines (the prompt says so).
+      scratch   (true) — flag ask threads `scratch`: kept out of tags, the
+                 project/tag briefings and write-back fan-outs, and cleared
+                 together by `<prefix>I` / |:ObelusAskClear|. `false` = an
+                 ask thread stays after the sweep, may be tagged, and shows
+                 in briefings like any thread. Either way an ask thread is
+                 NEVER pending for a batch submit / dispatch-all / batch
+                 round, and every send on it is read-only — those follow
+                 from `ask`, not from `scratch`.
+    A bad value is replaced by its default. The gutter glyph for an ask
+    thread is `render.annotations.ask_sign` ("?") in `ask_sign_hl`
+    ("DiagnosticHint").
 
 mode                                                      *obelus-config-mode*
     Default: `"inline"`     Enum: `"inline"` | `"sidebar"`
@@ -696,6 +728,10 @@ out of the group below in a which-key popup).
     Suffix ~   Action ~
     c  (n)     Comment the current line
     c  (x)     Comment the visual selection
+    i  (n)     ASK about the current line — sent at once, read-only, the
+               ask model (|obelus-ask|)
+    i  (x)     ASK about the visual selection
+    I          Clear every ask thread
     t          Toggle annotations (buffer)
     T          Toggle annotations (global)
     l          Open the review list
@@ -779,6 +815,15 @@ Every command is one line; `()` marks a cross-reference for more detail.
 
 :[range]ObelusComment                                      *:ObelusComment*
     Comment the current line, or the range/visual selection.
+:[range]ObelusAsk [question]                                   *:ObelusAsk*
+    Ask about the current line, or the range/visual selection
+    (|obelus-ask|). With a question on the command line there is no
+    composer: the thread is created and sent in one go. A typed range
+    (`:8,12ObelusAsk why?`) asks about those lines; `:'<,'>ObelusAsk` from
+    visual mode keeps the charwise selection.
+:ObelusAskClear                                            *:ObelusAskClear*
+    Remove every ask thread (cancelling any still streaming). Review
+    threads, batches and the project thread stay.
 :ObelusToggle [global]                                       *:ObelusToggle*
     Toggle annotations (buffer, or globally with "global").
 :ObelusList [buffer / quickfix / split]                        *:ObelusList*
@@ -1075,7 +1120,55 @@ Session/batch continuation ~
     automatically.
 
 ==============================================================================
-9. PROJECT THREAD                                  *obelus-project-thread*
+9. ASK MODE                                                       *obelus-ask*
+
+Reading code and wanting to ask "what does this do?" is not a review
+comment: nothing should be addressed, nothing edited, and the question
+should not end up in the next batch. Ask mode is that one-key path.
+
+`<prefix>i` (or a visual selection + `<prefix>i`, or |:ObelusAsk|) opens the
+usual composer titled "ask: <file>"; `<CR>` creates the thread AND sends it
+at once — no second key. `:ObelusAsk <question>` skips the composer. The
+reply streams into the thread exactly like a chat reply (hover preview,
+inline band or sidebar per your mode); `<prefix>r` follows up in the same
+session.
+
+What makes an ask different from a comment + dispatch:
+
+  Framing    The prompt opens "# Question about code … NOT a change
+             request: do not modify any file", quotes the ENCLOSING
+             FUNCTION (treesitter; |obelus-config-ask| `context`) and then
+             the asked lines, and ends with "**Question:** …". Never the
+             "Code review feedback … please address" preamble. The file
+             still lands as a real `@path` mention, so the mention send
+             policy (|obelus-mentions|) applies as for any thread.
+  Read-only  EVERY send on an ask thread — the question and each follow-up
+             — runs with the CLI's read-only/plan mode AND the OS sandbox
+             pinned to read-only, regardless of |:ObelusEdits| /
+             |:ObelusPerms| (even `unrestricted`). The write-back protocol
+             is never injected. Other threads are untouched.
+  Model      `ask.model` (default the `fast` slot) — a quick answer; the
+             composer's send-fast (`<M-CR>`) still means fast.
+  Never      An ask thread never counts as pending for |:ObelusSubmit| /
+  batched    |:ObelusDispatchAll| / a batch round — a question is not a
+             review item, whatever `ask.scratch` says. `<prefix>d` on one
+             sends its waiting draft through the ask path.
+  Scratch    With `ask.scratch` (default true) the thread is also flagged
+             `scratch`: it can't be tagged, is absent from the project/tag
+             briefings and from write-back fan-outs, and `<prefix>I` /
+             |:ObelusAskClear| removes every scratch thread in one go. Ask
+             threads wear a `?` gutter sign and a `?ask` chip in the thread
+             header and sidebar list.
+
+A cancel-with-text (`<Esc>` with something typed) keeps the question as an
+unsent draft on an ask thread; `<prefix>d` / |:ObelusDispatch| sends it
+later through the same read-only path. If the session is lost, the next
+send re-founds with the full ask prompt plus the conversation so far.
+`:ObelusPrompt` shows the exact prompt sent; `:ObelusLogs` records the argv
+of a failed run (look for `--permission-mode plan` and the sandbox wrapper).
+
+==============================================================================
+10. PROJECT THREAD                                 *obelus-project-thread*
 
 ONE meta-level chat with context over EVERY review thread in the project —
 about the review as a whole, not one file/range. Get-or-create it and open
@@ -1223,7 +1316,7 @@ Tag threads ~                                        *obelus-tag-thread*
     thread keeps using `models.send`, as before.
 
 ==============================================================================
-10. API                                                           *obelus-api*
+11. API                                                           *obelus-api*
 
 The public surface of `require("obelus")` (some functions re-export from
 `require("obelus.review")`, which the module returned by `require("obelus")`
@@ -1235,6 +1328,17 @@ comment()                                                  *obelus.comment()*
     Capture a review comment for the current line.
 comment_visual()                                    *obelus.comment_visual()*
     Capture a review comment for the visual selection.
+ask({question?})                                               *obelus.ask()*
+    Ask about the current line (|obelus-ask|); with `question`, no composer.
+ask_visual({question?})                                 *obelus.ask_visual()*
+    Ask about the visual selection.
+ask_lines({sl}, {el}, {question?})                       *obelus.ask_lines()*
+    Ask about lines `sl..el` of the current buffer.
+ask_send({id?})                                           *obelus.ask_send()*
+    Send an ask thread's waiting question/draft (what `<prefix>d` does on
+    an ask thread).
+ask_clear()                                              *obelus.ask_clear()*
+    Remove every ask thread; returns the count.
 toggle({scope?})                                            *obelus.toggle()*
     Toggle annotations; `"global"` toggles everywhere, else just the
     current buffer.
@@ -1308,7 +1412,7 @@ clear()                                                      *obelus.clear()*
     Clear all comments.
 
 ==============================================================================
-11. DEBUGGING                                                 *obelus-debug*
+12. DEBUGGING                                                 *obelus-debug*
 
 |:ObelusPrompt|      Shows the exact last prompt handed to the agent
                      process for the "cli" transport (including the

@@ -104,50 +104,79 @@ end
 
 M.prompt = prompt
 
-function M._capture(bufnr, file, kind, sl, sc, el, ec)
+-- opts (all optional — ask mode's hooks; plain comments pass none):
+--   title      composer title (default "review: <file>")
+--   fields     extra record fields merged into the new comment (ask = true, …)
+--   text       the comment text, given up front: no composer, create at once
+--   on_create  function(c, submitted, action) after the record exists and is
+--              rendered; `submitted` is false for a cancel-with-text or <C-s>
+--              (kept as a draft); `action` is the composer's "send" |
+--              "send_fast" | "save" | nil (cancel / opts.text)
+function M._capture(bufnr, file, kind, sl, sc, el, ec, opts)
+  opts = opts or {}
   local selected = get_selected_text(bufnr, kind, sl, sc, el, ec)
   local context = get_context(bufnr, sl, el)
   -- Same inline composer as replies — adding a comment opens a new thread box. It's created on
   -- submit OR on cancel-with-text: escape/quit still SAVES the comment (as an unsent "· draft"),
-  -- so you never lose it; delete it (<prefix>d) if you didn't mean to.
-  local function create(text)
+  -- so you never lose it; delete it (<prefix>x) if you didn't mean to.
+  local function create(text, submitted, action)
     if not (text and text ~= "") then
       return
     end
-    local c = store.add({
+    local record = {
       file = file,
       range = { sl = sl, sc = sc, el = el, ec = ec },
       kind = kind,
       selected_text = selected,
       context = context,
       comment = text,
-    })
+    }
+    for k, v in pairs(opts.fields or {}) do
+      record[k] = v
+    end
+    local c = store.add(record)
     render.place(bufnr, c)
     render.render_all() -- show it everywhere now (bands + the sidebar list)
+    if opts.on_create then
+      opts.on_create(c, submitted, action)
+    end
+  end
+  if opts.text then
+    return create(opts.text, true)
   end
   render.compose({
-    title = "review: " .. vim.fn.fnamemodify(file, ":t"),
+    title = opts.title or ("review: " .. vim.fn.fnamemodify(file, ":t")),
     row = (el - sl) + 1,
-    on_submit = create,
-    on_cancel = create,
+    -- <C-s> is "save as a draft" everywhere else in obelus: not a submit
+    on_submit = function(text, action)
+      create(text, action ~= "save", action)
+    end,
+    on_cancel = function(text)
+      create(text, false)
+    end,
   })
 end
 
-function M.comment_normal()
+-- The cursor line / the last visual selection as capture args — shared by the
+-- comment and ask entry points. Returns nil (after warning) for a buffer with no
+-- file.
+function M.cursor_range()
   local bufnr = vim.api.nvim_get_current_buf()
   local file = bufpath(bufnr)
   if not file then
-    return vim.notify("obelus: buffer has no file", vim.log.levels.WARN)
+    vim.notify("obelus: buffer has no file", vim.log.levels.WARN)
+    return nil
   end
   local line = vim.api.nvim_win_get_cursor(0)[1]
-  M._capture(bufnr, file, "line", line, nil, line, nil)
+  return bufnr, file, "line", line, nil, line, nil
 end
 
-function M.comment_visual()
+function M.visual_range()
   local bufnr = vim.api.nvim_get_current_buf()
   local file = bufpath(bufnr)
   if not file then
-    return vim.notify("obelus: buffer has no file", vim.log.levels.WARN)
+    vim.notify("obelus: buffer has no file", vim.log.levels.WARN)
+    return nil
   end
   local mode = vim.fn.visualmode()
   local sp, ep = vim.fn.getpos("'<"), vim.fn.getpos("'>")
@@ -156,9 +185,22 @@ function M.comment_visual()
     sl, el, sc, ec = el, sl, ec, sc
   end
   if mode == "V" then
-    M._capture(bufnr, file, "line", sl, nil, el, nil)
-  else
-    M._capture(bufnr, file, "char", sl, sc, el, ec)
+    return bufnr, file, "line", sl, nil, el, nil
+  end
+  return bufnr, file, "char", sl, sc, el, ec
+end
+
+function M.comment_normal()
+  local bufnr, file, kind, sl, sc, el, ec = M.cursor_range()
+  if bufnr then
+    M._capture(bufnr, file, kind, sl, sc, el, ec)
+  end
+end
+
+function M.comment_visual()
+  local bufnr, file, kind, sl, sc, el, ec = M.visual_range()
+  if bufnr then
+    M._capture(bufnr, file, kind, sl, sc, el, ec)
   end
 end
 
