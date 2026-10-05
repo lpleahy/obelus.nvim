@@ -182,6 +182,56 @@ T.it("preset 'claude': acceptEdits cmd + claude state dirs; unknown preset is ig
   T.eq(config.options.transport.cli.cmd, { "claude", "-p" }, "unknown preset falls back to the defaults")
 end)
 
+T.it("read_only (per spawn): plan swap with edits ON; sandbox pinned read-only even under unrestricted", function()
+  setup_cli({ cmd = { "claude", "-p", "--permission-mode", "acceptEdits" } })
+  config.ui.perms = "project-edit"
+  T.eq(cli._base_cmd(nil, "haiku", true), { "claude", "-p", "--permission-mode", "plan", "--model", "haiku" })
+  T.eq(
+    cli._base_cmd(nil, "haiku", false),
+    { "claude", "-p", "--permission-mode", "acceptEdits", "--model", "haiku" },
+    "false/nil keeps the global behaviour"
+  )
+  local seen
+  config.setup({
+    transport = {
+      cli = {
+        permissions = {
+          level = "unrestricted",
+          wrapper = function(cmd, wctx)
+            seen = wctx.mode
+            return cmd
+          end,
+        },
+      },
+    },
+  })
+  config.ui.perms = nil
+  local c = config.options.transport.cli
+  T.eq(cli._enforce({ "claude" }, c, "/proj"), { "claude" }, "unrestricted: no wrap by default")
+  T.is_nil(seen)
+  cli._enforce({ "claude" }, c, "/proj", true)
+  T.eq(seen, "read-only", "read_only pins the wrap to read-only regardless of the level")
+  config.setup({ transport = { cli = { permissions = { enabled = false, wrapper = function() end } } } })
+  seen = nil
+  cli._enforce({ "claude" }, config.options.transport.cli, "/proj", true)
+  T.is_nil(seen, "permissions.enabled = false stays the one global off switch")
+  config.ui.perms = nil
+end)
+
+T.it("env: rides into every spawn's opts verbatim; nil inherits; a non-string map is rejected", function()
+  setup_cli({ cmd = { "claude", "-p" }, env = { CLAUDE_CONFIG_DIR = "/tmp/profile" } })
+  local opts = cli._spawn_opts(config.options.transport.cli)
+  T.eq(opts.env, { CLAUDE_CONFIG_DIR = "/tmp/profile" }, "env passed through to vim.system")
+  T.eq(opts.text, true)
+  T.eq(opts.timeout, 240000, "default run timeout unchanged")
+  setup_cli({ cmd = { "claude", "-p" } })
+  T.is_nil(cli._spawn_opts(config.options.transport.cli).env, "nil = inherit nvim's env untouched")
+  setup_cli({ cmd = { "claude", "-p" }, env = { CLAUDE_CONFIG_DIR = 42 } })
+  T.is_nil(config.options.transport.cli.env, "non-string values fail validation and fall back to nil")
+  setup_cli({ cmd = { "claude", "-p" }, preset = "claude", env = { CLAUDE_CONFIG_DIR = "/tmp/p" } })
+  T.eq(config.options.transport.cli.env, { CLAUDE_CONFIG_DIR = "/tmp/p" }, "survives a preset merge")
+end)
+
 T.it("agent_label: cli basename by default, name override, sidekick name for sidekick dispatch", function()
   config.setup({ transport = { cli = { cmd = { "/opt/homebrew/bin/agy", "--sandbox" } } } })
   T.eq(config.agent_label(), "agy")

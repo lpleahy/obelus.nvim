@@ -156,6 +156,14 @@ M.defaults = {
       -- Display name for the agent's chat turns ("### claude ↩" etc.); nil =
       -- the basename of cmd[1].
       name = nil,
+      -- Extra environment for every spawn, merged OVER nvim's own env (nil =
+      -- inherit untouched). The typical use is a profile/config-dir selector
+      -- the CLI reads from the environment — e.g. `{ CLAUDE_CONFIG_DIR =
+      -- "~/.claude-work" }` so the headless run uses the SAME login as your
+      -- interactive sessions rather than whatever ~/.claude happens to hold.
+      -- Values are passed verbatim (expand `~` yourself). Remember to add any
+      -- such dir to permissions.state so the sandbox lets the CLI write it.
+      env = nil,
       -- ── OS-level permission enforcement (see |obelus-permissions|). The
       -- CLI's own mode flags stay the SEMANTIC layer (they tell the model what
       -- it may do); this sandbox is the GUARANTEE — writes confined at the OS
@@ -799,6 +807,17 @@ local function validate(o)
   end)
   typed(cli, "name", "transport.cli.name", "string|nil", function(v)
     return type(v) == "string"
+  end)
+  typed(cli, "env", "transport.cli.env", "{ NAME = string }|nil", function(v)
+    if type(v) ~= "table" then
+      return false
+    end
+    for k, val in pairs(v) do
+      if type(k) ~= "string" or type(val) ~= "string" then
+        return false
+      end
+    end
+    return true
   end)
   local perms = cli.permissions
   boolean(perms, "enabled", "transport.cli.permissions.enabled", true)

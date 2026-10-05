@@ -174,6 +174,12 @@ Any key set alongside `preset` overrides it, and every knob a preset fills
 `permissions`) is plain config — see `:h obelus-config-transport.cli` for
 wiring a CLI we don't ship a preset for.
 
+`cli.env = { CLAUDE_CONFIG_DIR = "/path" }` adds environment to every spawn,
+on top of nvim's own — the way to make a headless run use the same login
+profile as your interactive sessions when the default one isn't the one you
+use (a logged-out `~/.claude` shows up as "OAuth session expired" in
+`:ObelusLogs`). Add the dir to `permissions.state` too.
+
 **Permissions**: every spawn runs at a level — `read-only` / `project-edit` /
 `unrestricted` (`:ObelusPerms` cycles) — enforced in two layers: the CLI's own
 mode flags (what the model is told) plus an OS sandbox (what the process can

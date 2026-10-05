@@ -388,6 +388,17 @@ transport.cli                                    *obelus-config-transport.cli*
                See lua/obelus/presets.lua for each preset's caveats inline.
       name    (nil) — display name for the agent's chat turns ("### claude ↩"
                etc.); nil = the basename of `cmd[1]`.
+      env     (nil) — `{ NAME = "value", … }` merged OVER nvim's own
+               environment for every spawn (and the post-run `session.command`
+               lookup); nil = inherit nvim's env untouched. Meant for the
+               profile / config-dir selector a CLI reads from its environment
+               — e.g. `{ CLAUDE_CONFIG_DIR = vim.fn.expand("~/.claude-work") }`
+               makes the headless run use the SAME login as your interactive
+               sessions instead of whatever the default `~/.claude` holds (a
+               logged-out default profile surfaces as "OAuth session expired"
+               / "token revoked" in |:ObelusLogs|). Values are passed
+               verbatim — expand `~` yourself — and the dir must also be in
+               `permissions.state` below so the sandbox lets the CLI write it.
       permissions — OS-level file isolation for every spawn; see
                |obelus-permissions|:
                  enabled   (true)  — false = never wrap (native flags only).

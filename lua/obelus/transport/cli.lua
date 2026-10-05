@@ -62,7 +62,9 @@ local function strip_bool_flags(cmd, flags)
   return out
 end
 
-local function base_cmd(resume, model)
+-- read_only: a PER-SPAWN read-only demand (payload.opts.read_only — ask mode)
+-- that wins over the global :ObelusEdits/:ObelusPerms level for this one spawn.
+local function base_cmd(resume, model, read_only)
   local c = config.options.transport.cli or {}
   local f = c.flags or {}
   local model_flag = flag_or(f.model, "--model")
@@ -78,7 +80,7 @@ local function base_cmd(resume, model)
   -- restores their cmd exactly. transport.cli.plan owns the swap recipe: a table
   -- { strip, strip_flags, args } (default: claude's --permission-mode plan), or
   -- a function(cmd) -> cmd for anything the table form can't express.
-  if not config.edits_enabled() then
+  if read_only or not config.edits_enabled() then
     local plan = c.plan or DEFAULT_PLAN
     if type(plan) == "function" then
       cmd = plan(cmd) or cmd
@@ -112,6 +114,15 @@ local function base_cmd(resume, model)
   return cmd, c
 end
 
+-- The vim.system opts every spawn shares: project-root cwd, text streams, the
+-- run timeout, and transport.cli.env merged OVER nvim's own environment (a
+-- CLI's config-dir / profile selector such as CLAUDE_CONFIG_DIR or CODEX_HOME —
+-- nvim inherits the shell's env, which is often NOT the one the agent CLI was
+-- logged in under). nil env = inherit untouched.
+local function spawn_opts(c)
+  return { cwd = store.root(), text = true, timeout = c.timeout or 240000, env = c.env }
+end
+
 -- Append the streaming flags, the optional session-capture log flag, and the
 -- prompt itself (stdin | prompt_flag value | trailing positional). Returns the
 -- temp log-file path when transport.cli.session = { flag, pattern } is set —
@@ -141,9 +152,12 @@ end
 -- temp dirs), secret reads denied; see sandbox.lua. Called AFTER before_spawn
 -- so the wrap is outermost. "unrestricted" and permissions.enabled = false
 -- skip it: the CLI's native flags are then the only permission layer.
-local function enforce(cmd, c, cwd)
+local function enforce(cmd, c, cwd, read_only)
   local perms = c.permissions or {}
-  local level = config.perms_level()
+  -- a per-spawn read-only demand (ask mode) pins the level: even an
+  -- "unrestricted" session wraps this one spawn read-only (where a wrapper
+  -- exists at all — permissions.enabled = false stays the only global off)
+  local level = read_only and "read-only" or config.perms_level()
   if level == "unrestricted" or perms.enabled == false then
     return cmd
   end
@@ -191,7 +205,9 @@ local function captured_session(col, c, logfile, root)
   end
   if not session and type(c.session) == "table" and type(c.session.command) == "table" then
     local ok, res = pcall(function()
-      return vim.system(c.session.command, { cwd = root, text = true }):wait(10000)
+      -- same env as the run itself: a profile selector (CLAUDE_CONFIG_DIR…) must
+      -- point the post-run lookup at the SAME state the agent just wrote
+      return vim.system(c.session.command, { cwd = root, text = true, env = c.env }):wait(10000)
     end)
     if ok and res and res.code == 0 then
       session = (res.stdout or ""):match(c.session.pattern or "([%x%-]+)")
@@ -274,24 +290,25 @@ local function run_oneshot(payload)
   -- the actions file, so demanding it would lose the whole reply (the transient
   -- preview is discarded and apply() finds nothing) — fall back to attaching the
   -- streamed result as a plain reply instead
-  local edits_ok = config.edits_enabled()
+  local read_only = payload.opts and payload.opts.read_only == true
+  local edits_ok = config.edits_enabled() and not read_only
   local use_actions = config.options.transport.actions ~= false and edits_ok
   local prompt = payload.markdown
   if use_actions then
     prompt = prompt .. "\n\n" .. actions.instructions(payload.comments, akey)
   end
-  local cmd, c = base_cmd(payload.opts and payload.opts.resume, payload.opts and payload.opts.model)
+  local cmd, c = base_cmd(payload.opts and payload.opts.resume, payload.opts and payload.opts.model, read_only)
   -- STREAM the batch (not a blocking one-shot wait) so the user sees the agent
   -- working live instead of a spinner that looks hung. The deltas grow a
   -- TRANSIENT progress turn on the first comment; the real per-comment outcomes
   -- still come from the per-job .ai/review-actions-<key>.json via actions.apply().
-  local sysopts = { cwd = store.root(), text = true, timeout = c.timeout or 240000 }
+  local sysopts = spawn_opts(c)
   local logfile = finish_cmd(cmd, c, prompt, sysopts)
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
   local label = config.agent_label() -- the CLI's name, not cmd[1] (post-wrap that's the sandbox binary)
   run_hook(c, sysopts.cwd, cmd, payload, label)
-  cmd = enforce(cmd, c, sysopts.cwd)
+  cmd = enforce(cmd, c, sysopts.cwd, read_only)
 
   for _, cm in ipairs(payload.comments or {}) do
     cancelled[cm.id] = nil
@@ -477,10 +494,13 @@ local function run_stream(payload)
   -- below permits) every id in that list rather than just `target` — acting on
   -- OTHER threads from the project chat is the entire point of that send.
   local actions_comments = payload.opts and payload.opts.actions_comments
-  -- edits OFF (:ObelusEdits): never demand write-backs the read-only plan mode
-  -- can't perform — the streamed reply lands in the thread as usual either way
+  -- edits OFF (:ObelusEdits) — or a per-spawn read-only demand (ask mode):
+  -- never demand write-backs the read-only plan mode can't perform — the
+  -- streamed reply lands in the thread as usual either way
+  local read_only = payload.opts and payload.opts.read_only == true
   local use_actions = (actions_comments ~= nil or config.options.transport.chat_actions == true)
     and config.edits_enabled()
+    and not read_only
   local prompt = payload.markdown
   if use_actions then
     prompt = prompt .. "\n\n" .. actions.instructions(actions_comments or payload.comments, target.id)
@@ -491,14 +511,14 @@ local function run_stream(payload)
     .. "\n\n[Formatting] Reply in normal GitHub-flavored Markdown. Do NOT insert zero-width"
     .. " spaces or other invisible characters. To show a fenced code block INSIDE a code block,"
     .. " use a longer OUTER fence (four or more backticks) instead of escaping the inner fence."
-  local cmd, c = base_cmd(payload.opts and payload.opts.resume, payload.opts and payload.opts.model)
-  local sysopts = { cwd = store.root(), text = true, timeout = c.timeout or 240000 }
+  local cmd, c = base_cmd(payload.opts and payload.opts.resume, payload.opts and payload.opts.model, read_only)
+  local sysopts = spawn_opts(c)
   local logfile = finish_cmd(cmd, c, prompt, sysopts)
   require("obelus.log").set_prompt(prompt) -- :ObelusPrompt shows exactly what was sent
 
   local label = config.agent_label() -- the CLI's name, not cmd[1] (post-wrap that's the sandbox binary)
   run_hook(c, sysopts.cwd, cmd, payload, label)
-  cmd = enforce(cmd, c, sysopts.cwd)
+  cmd = enforce(cmd, c, sysopts.cwd, read_only)
 
   cancelled[target.id] = nil
   store.stream_start(target.id)
@@ -647,6 +667,7 @@ end
 M._base_cmd = base_cmd
 M._enforce = enforce
 M._finish_cmd = finish_cmd
+M._spawn_opts = spawn_opts
 M._captured_session = captured_session
 
 -- callable: `require("obelus.transport.cli")(transport)` registers the backend
