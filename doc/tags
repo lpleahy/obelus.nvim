@@ -1,3 +1,4 @@
+:ObelusApprove	obelus.txt	/*:ObelusApprove*
 :ObelusAsk	obelus.txt	/*:ObelusAsk*
 :ObelusAskClear	obelus.txt	/*:ObelusAskClear*
 :ObelusBandStyle	obelus.txt	/*:ObelusBandStyle*
@@ -38,6 +39,9 @@
 :ObelusToggleResolved	obelus.txt	/*:ObelusToggleResolved*
 obelus	obelus.txt	/*obelus*
 obelus-api	obelus.txt	/*obelus-api*
+obelus-api-approve	obelus.txt	/*obelus-api-approve*
+obelus-api-extension	obelus.txt	/*obelus-api-extension*
+obelus-api-turns	obelus.txt	/*obelus-api-turns*
 obelus-ask	obelus.txt	/*obelus-ask*
 obelus-commands	obelus.txt	/*obelus-commands*
 obelus-config	obelus.txt	/*obelus-config*
@@ -88,10 +92,22 @@ obelus-keymaps	obelus.txt	/*obelus-keymaps*
 obelus-mentions	obelus.txt	/*obelus-mentions*
 obelus-permissions	obelus.txt	/*obelus-permissions*
 obelus-project-thread	obelus.txt	/*obelus-project-thread*
+obelus-quarantine	obelus.txt	/*obelus-quarantine*
 obelus-renderers	obelus.txt	/*obelus-renderers*
 obelus-setup	obelus.txt	/*obelus-setup*
 obelus-tag-thread	obelus.txt	/*obelus-tag-thread*
 obelus-transports	obelus.txt	/*obelus-transports*
+obelus.api.approve()	obelus.txt	/*obelus.api.approve()*
+obelus.api.approve_focus()	obelus.txt	/*obelus.api.approve_focus()*
+obelus.api.backend_for()	obelus.txt	/*obelus.api.backend_for()*
+obelus.api.backends()	obelus.txt	/*obelus.api.backends()*
+obelus.api.capabilities	obelus.txt	/*obelus.api.capabilities*
+obelus.api.claim_schemes()	obelus.txt	/*obelus.api.claim_schemes()*
+obelus.api.claimed_schemes()	obelus.txt	/*obelus.api.claimed_schemes()*
+obelus.api.refresh()	obelus.txt	/*obelus.api.refresh()*
+obelus.api.register_backend()	obelus.txt	/*obelus.api.register_backend()*
+obelus.api.unregister_backend()	obelus.txt	/*obelus.api.unregister_backend()*
+obelus.api.version	obelus.txt	/*obelus.api.version*
 obelus.ask()	obelus.txt	/*obelus.ask()*
 obelus.ask_clear()	obelus.txt	/*obelus.ask_clear()*
 obelus.ask_lines()	obelus.txt	/*obelus.ask_lines()*

@@ -380,6 +380,147 @@ scenario("compose_comment", function()
   C.settle()
 end)
 
+-- ── obelus.api: an extension backend's non-file buffer, and the approve prompt ──
+local GUIDE = {
+  "# Recursion",
+  "",
+  "A recursive function calls itself on a smaller input.",
+  "Every recursion needs a base case that stops it.",
+  "",
+  "Example: factorial(n) = n * factorial(n - 1)",
+}
+
+-- an in-memory backend owning "memo://" buffers, seeded with `threads`; shows
+-- "memo://guide/recursion" in the current window. ctx.sends collects each turn's
+-- emit callback so a scenario can stream into it.
+local function memo_guide(ctx, threads)
+  ctx.sends = {}
+  require("obelus.api").register_backend({
+    name = "memo",
+    schemes = { "memo" },
+    match = function(b)
+      return vim.api.nvim_buf_get_name(b):match("^memo://") ~= nil
+    end,
+    store = {
+      list = function()
+        return vim.deepcopy(threads)
+      end,
+      create = function(_, new)
+        return { id = "new", range = new.range, turns = { { author = "you", text = new.text } } }
+      end,
+      update = function() end,
+      delete = function() end,
+      resolve = function() end,
+    },
+    transport = {
+      send = function(_, emit)
+        ctx.sends[#ctx.sends + 1] = emit
+      end,
+    },
+  })
+  local buf = vim.api.nvim_create_buf(true, true)
+  vim.api.nvim_buf_set_name(buf, "memo://guide/recursion")
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, GUIDE)
+  vim.api.nvim_set_current_buf(buf)
+  return buf
+end
+
+local MEMO_THREAD = {
+  id = 1,
+  range = { sl = 4, el = 4 },
+  turns = {
+    { author = "you", text = "what counts as a base case here?" },
+    { author = "agent", text = "The input where the answer is **known** without recursing: `factorial(0) = 1`." },
+  },
+}
+
+-- a backend thread rendered as an inline band on the backend's buffer
+scenario("api_backend_band", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  memo_guide(ctx, { MEMO_THREAD })
+  cursor(4)
+  C.settle()
+end)
+
+-- the popup thread view of a backend thread, with a reply streaming in through
+-- the backend's transport (spinner labelled with the backend's name)
+scenario("api_backend_thread_stream", function()
+  local ctx = fresh()
+  memo_guide(ctx, { MEMO_THREAD })
+  cursor(4)
+  local panel = require("obelus.panel")
+  panel.open_thread("api:memo:1", true)
+  wait_chat(panel)
+  require("obelus").chat_send("api:memo:1", "and for fibonacci?", "send")
+  ctx.sends[1]({ type = "start" })
+  ctx.sends[1]({ type = "delta", text = "Two base cases: `fib(0) = 0` and `fib(1) = 1`." })
+  C.settle()
+end)
+
+-- the approve prompt as it first appears: unfocused, Deny selected
+scenario("api_approve_prompt", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    details = "base case · recursive case · stack depth",
+    on_result = function() end,
+  })
+  C.settle()
+end)
+
+-- the review's blocked-loop case, with a real UI: focus, queue `a` (typeahead and
+-- pending input), block the loop past the unarmed window, let it arm, then run
+-- what is left of the typeahead. The prompt must still be open, focused and
+-- undecided (a decision would show as a notification and close the float).
+scenario("api_approve_queued_typeahead", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    on_result = function(v)
+      vim.notify("approval result: " .. tostring(v))
+    end,
+  })
+  C.settle()
+  assert(require("obelus.api").approve_focus(), "focus failed")
+  vim.api.nvim_feedkeys("a", "t", false)
+  vim.api.nvim_input("a")
+  vim.uv.sleep(750)
+  C.advance(700) -- the unarmed window's timer: drain, then a scheduled drain + arm
+  C.settle()
+  assert(require("obelus.approve")._active().armed, "prompt did not arm")
+  vim.api.nvim_feedkeys("", "x", false)
+  C.settle()
+end)
+
+-- Enter typed (processed normally) while the focused prompt is still UNARMED
+-- denies at once, like Esc/q/<C-c> (Luodda parity): the float is gone and the
+-- decision shows as a notification
+scenario("api_approve_enter_unarmed", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    on_result = function(v)
+      vim.notify("approval result: " .. tostring(v))
+    end,
+  })
+  C.settle()
+  assert(require("obelus.api").approve_focus(), "focus failed")
+  assert(not require("obelus.approve")._active().armed, "should still be unarmed")
+  vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+  C.settle()
+end)
+
+-- a caller's own focus instruction (focus_hint) in place of :ObelusApprove
+scenario("api_approve_focus_hint", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    focus_hint = ",A / :Luodda approve",
+    on_result = function() end,
+  })
+  C.settle()
+end)
+
 -- ── setup / keymap registration path ──────────────────────────────────────────
 scenario("registration", function()
   fresh()

@@ -8,8 +8,19 @@ A mutation counts as **caught** only when the run reaches comparison and reports
 baseline mismatch with no harness error. A harness error under a mutation counts as
 **invalid**. The real tree is never modified.
 
-Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **19 caught (18 visual
-or setup, 1 harness), 0 missed, 0 invalid**, 149 s under `nice -n 10`.
+Behaviour mutations (`spec_mutate`) are judged by NAME: each lists the
+regression(s) that must fail. If any other test fails too, a paired pristine
+control runs right away; if that control also fails, the mutation is INVALID
+(an unrelated or flaky failure), otherwise the extra failures are recorded as
+collateral. Every failing test name is printed. Self-test mutations name the
+self-test case that must fail. `OBELUS_MUT_ONLY=name,…` runs a subset.
+
+Last run: 2026-11-09 (finished before 10:57 AM PT), Neovim v0.12.6, 53 baselines (41 + 12
+from `obelus.api`). Result: **56 caught (18 visual or setup, 1 harness, 7
+containment, 2 real-UI behaviour, 28 behaviour specs, each failing its named
+regression), 0 missed, 0 invalid** under `nice -n 10`; 17 behaviour mutations had
+collateral failures, all with a clean pristine control. The per-row counts below for the first 18
+rows are from the 41-baseline run; the `api_*` baselines add to some of them.
 
 | Mutation | Change in the copy | Result |
 | --- | --- | --- |
@@ -31,6 +42,43 @@ or setup, 1 harness), 0 missed, 0 invalid**, 149 s under `nice -n 10`.
 | keymap-callback-swap-same-desc | `<prefix>?` callback calls `M.toggle_mode()` instead of `M.toggle_hints()`; description unchanged | caught: 1 (registration) |
 | command-callback-swap-same-desc | `:ObelusEdit` callback calls `M.delete()`; description unchanged | caught: 1 (registration) |
 | first-use-overwrites-default-Y | `quick_reply()` maps `Y` to `dd` the first time it runs | caught: 2 (both `compose_quick_reply_hints` sizes) |
+| api-cli-fallthrough (behaviour) | `transport/init.lua`: the `obelus.api` route in `submit()` is skipped | caught: 16 `[api]` specs |
+| api-cli-guard-removed (behaviour) | `transport/cli.lua`: the CLI transport's own eligibility refusal is removed | caught: 2 `[api]` specs (a spawn is attempted) |
+| api-eligibility-ignores-claims (behaviour) | `store.lua`: `agent_eligible` no longer consults the claimed schemes | caught: 7 `[api]` specs (restart, unloaded, @thread/briefing, claim_schemes, …) |
+| claims-corrupt-fails-open (behaviour) | `claims.lua`: unclassifiable claims no longer block `scheme://` records | caught: 1 `[api]` spec |
+| claims-not-persisted (behaviour) | `claims.lua`: the exclusive per-scheme create never happens | caught: 5 `[api]` specs (incl. the real-restart and two-editor subprocesses) |
+| claims-malformed-fails-open (behaviour) | `claims.lua`: an entry that is not a regular file named after a valid scheme is ignored | caught: 1 `[api]` spec |
+| claims-stat-error-fails-open (behaviour) | `claims.lua`: any stat error is taken as "no claims" | caught: 1 `[api]` spec |
+| approve-headless-falls-through (behaviour) | `approve.lua`: no-UI check removed, so a headless prompt opens instead of denying | caught: 2 `[api]` specs |
+| approve-no-unarmed-phase (behaviour) | `approve.lua`: focusing arms at once | caught: 3 `[api]` specs |
+| approve-no-drain (behaviour) | `approve.lua`: each `getchar(0)` in the drain reports "nothing queued" | caught: 5 `[api]` specs (queued input with a blocked loop, …) |
+| approve-cap-exhaustion-arms (behaviour) | `approve.lua`: running out of the drain cap reports "empty" and the prompt arms | caught: 4 `[api]` specs (between-drains 15001 keys, overflow, sustained input) |
+| approve-no-drain-ui (real-UI snapshot) | the same mutation, judged by the harness | caught: 2 (`api_approve_queued_typeahead`, both sizes) |
+| api-turn-id-not-reused (behaviour) | `api.lua`: every send gets a fresh `turn_id` | caught: 3 `[api]` specs (retry after answer failure, cancel, lost ack) |
+| api-refresh-no-revalidation (behaviour) | `api.lua`: refresh trusts a `list()` result after `list()` replaced the registration | caught: 1 `[api]` spec |
+| api-generation-check-removed (behaviour) | `api.lua`: a send callback no longer checks it owns its record and job | caught: 1 `[api]` spec |
+| api-replace-keeps-old-sends (behaviour) | `api.lua`: unregister/replace no longer cancels the old registration's sends | caught: 2 `[api]` specs |
+| api-thread-saved-to-jsonl (behaviour) | `store.lua`: backend threads are no longer skipped by `save()` | caught: 2 `[api]` specs |
+| xdg-guard-lua-removed (containment) | `tests/xdg_guard.lua` returns at once | caught: 2 `xdg-guard` self-test failures (a direct `nvim … run.lua` with HOME at the decoy writes into its store) |
+| xdg-guard-specs-sh-removed (containment) | `tests/specs.sh` no longer checks before starting nvim | caught: 1 `xdg-guard` self-test failure (nvim's startup log lands in the decoy) |
+| claims-mkdir-eexist-fails (behaviour) | `claims.lua`: a competitor's EEXIST is not re-checked | named: "a competing creator's EEXIST" |
+| claims-sync-not-verified (behaviour) | `claims.lua`: an existing marker counts as durable without a sync | named: "a claim whose sync fails is not reported durable" |
+| approve-enter-unarmed-ignored (behaviour) | `approve.lua`: Enter back on the armed-only path | named: "approve: Enter while still unarmed denies at once" |
+| approve-enter-unarmed-ignored-ui (real-UI snapshot) | the same | caught: 2 (`api_approve_enter_unarmed`) |
+| approve-handle-focus-not-scoped (behaviour) | `approve.lua`: a handle's `focus()` acts on the open prompt | named: "approve handle: A open, B queued" |
+| api-edit-keeps-turn-id (behaviour) | `store.lua`: an edited draft keeps its old turn id | named: "turn_id: fail → edit → refresh → dispatch" |
+| api-create-result-relabelled (behaviour) | `api.lua`: a `create()` result is adopted after its registration was replaced | named: "re-entrant create(): a replacement with a colliding id" |
+| api-match-stale-owner (behaviour) | `api.lua`: a `match()` answer is trusted after it removed/replaced its registration | named: "re-entrant match()" |
+| api-cancel-reason-always-user (behaviour) | `api.lua`: every cancel is reported as "user" | named: "cancel reasons: an explicit user cancel" |
+| review-cancel-without-user-reason (behaviour) | `review.lua`: the explicit cancel passes no reason | named: "cancel reasons: an explicit user cancel" |
+| xdg-guard-sh-defaults-by-spelling (containment) | `tests/xdg_guard.sh`: the defaults are matched by spelling only | named self-test: "xdg-guard: private.sh, alias root" |
+| xdg-guard-lua-defaults-by-spelling (containment) | `tests/xdg_guard.lua`: the same on the nvim side | named self-test: "xdg-guard: direct nvim run.lua, alias root" |
+| xdg-guard-log-symlink-allowed (containment) | `tests/xdg_guard.sh`: a symlinked `NVIM_LOG_FILE` passes | named self-test: "xdg-guard: private.sh, log file is a symlink" |
+| api-late-cancel-loses-reason (behaviour) | `api.lua`: a cancel function returned after the send ended is called with no reason (and after done/error too) | named: "terminated INSIDE send()" |
+| claims-chain-skips-an-ancestor (behaviour) | `claims.lua`: the sync chain skips every other ancestor directory | named: "every claim syncs its marker, claims/ and every ancestor" (+ the any-depth restart spec) |
+| approve-hint-allows-format-controls (behaviour) | `approve.lua`: bidi embeddings/overrides and line/paragraph separators pass | named: "approve: focus_hint rejects bidi, format and C1 controls" |
+| xdg-guard-sh-relative-allowed (containment) | `tests/xdg_guard.sh`: relative values are accepted | named self-test: "xdg-guard: private.sh, relative XDG values" |
+| launcher-unsafe-tmpdir-base (containment) | `tests/private.sh`: the inherited TMPDIR is used unchecked | named self-test: "xdg-guard: private.sh, inherited TMPDIR in a home's .local" |
 | supervisor-skips-member-teardown (harness) | `supervise.pl`: the `teardown();` call is removed, so the group is released while members still run (R4-B1) | caught: 4 self-test failures (`parent-exit`, `parent-exit-harness`: exit 42 with log `reaped` only, straggler still alive) |
 
 The setup and zindex mutations come from the first independent review. Before the

@@ -674,6 +674,9 @@ M._captured_session = captured_session
 return setmetatable(M, {
   __call = function(_, transport)
     transport.register("cli", function(payload)
+      if not store.all_agent_eligible(payload.comments, payload.opts and payload.opts.actions_comments) then
+        error("obelus: refusing to run the CLI agent on a backend or backend-claimed thread", 0) -- obelus.api
+      end
       if payload.opts and payload.opts.stream then
         run_stream(payload)
       else

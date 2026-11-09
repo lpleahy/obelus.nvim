@@ -40,7 +40,9 @@ M.delete = with_comment(function(c)
   -- subprocess with no comment left to report its result to). Say so — for a batch,
   -- the OTHER members' in-flight round dies with the shared process too.
   local killed = jobs.is_running(c.id) and jobs.cancel(c.id)
-  store.remove(c.id)
+  if not store.remove(c.id) then
+    return render.render_all() -- obelus.api: the backend refused; it said why
+  end
   render.render_all()
   vim.notify(
     killed and "obelus: comment deleted — its in-flight dispatch (and any batch round sharing it) was cancelled"
@@ -270,7 +272,7 @@ M.cancel = with_comment(function(c)
     return vim.notify("obelus: nothing to cancel here", vim.log.levels.INFO)
   end
   pcall(function()
-    jobs.cancel(c.id) -- kill the job (best effort; the owning transport decides how)
+    jobs.cancel(c.id, "user") -- kill the job (best effort; the owning transport decides how)
   end)
   store.abort(c.id) -- ALWAYS un-stick the thread, even if the process is wedged/already gone
   require("obelus.progress").cancel(c.id) -- clear the (possibly frozen) spinner job
@@ -454,7 +456,7 @@ local function do_respond(c, text, mode)
     -- the meta record itself — cli.lua's run_stream would otherwise scope
     -- `allowed` to just the meta id).
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      return not x.meta and not x.scratch and x.tag == tag
+      return not x.meta and not x.scratch and x.tag == tag and store.agent_eligible(x)
     end, store.all())
     tag_ctx = { tag = tag }
   elseif tag then
@@ -507,7 +509,7 @@ local function do_respond(c, text, mode)
     -- needs_response on any thread in the project, not only the one it's
     -- nominally "about".
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      return not x.meta and not x.scratch -- ask threads are never write-back targets
+      return not x.meta and not x.scratch and store.agent_eligible(x) -- ask/backend-claimed threads are never write-back targets
     end, store.all())
   else
     -- case D: an ordinary thread — untouched for one that was NEVER tagged (see
@@ -682,8 +684,8 @@ M.ask_send = with_comment(function(c, mode)
   -- only a WAITING you-turn is sendable: a fresh ask (its question is turn 1)
   -- or a saved follow-up draft. An answered thread with no draft has nothing
   -- to send — re-sending the original question would just ask it again.
-  local text = store.pending_you_text(c)
-  if not text or text == "" then
+  local text = store.pending_you_text(c) or (c.backend and "" or nil) -- obelus.api: no draft = its stored question (by turn_id)
+  if not text or (text == "" and not c.backend) then
     return vim.notify("obelus: nothing waiting on this ask thread — reply first (<prefix>r)", vim.log.levels.WARN)
   end
   do_respond(c, text, mode == "fast" and "fast" or "ask")

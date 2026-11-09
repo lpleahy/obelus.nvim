@@ -55,7 +55,7 @@ OBELUS_UI_ONLY=band,chat make ui-snapshots    # only scenarios whose name contai
 
 `make test` runs the specs first, then the snapshots, even under `make -j`. The
 specs report executed and skipped counts separately. With a private XDG setup the
-21 markview and render-markdown specs are skipped (458 passed, 21 skipped). They run
+21 markview and render-markdown specs are skipped (488 passed, 21 skipped) inside the private root. They run
 only when those plugins are on the runtimepath.
 
 The harness reports two kinds of problem. `FAIL` means a rendering differs from its
@@ -97,7 +97,11 @@ diff.
   small mutations to a temp copy, covering visuals, extmarks, float stacking and
   setup. A mutation counts as caught only on a baseline mismatch with no harness
   error. One more mutation removes the supervisor's member teardown and must fail
-  the parent-exit self-tests. See `MUTATIONS.md` for the last results.
+  the parent-exit self-tests. Eleven more mutate the `obelus.api` guards, which
+  mostly draw nothing, and must fail the `[api]` behaviour specs; one more
+  removes the approve prompt's input drain and must fail the real-UI
+  `api_approve_queued_typeahead` snapshot. See `MUTATIONS.md`
+  for the last results.
 - `make ui-selftest` (`tests/ui/selftest.sh`, about 1 min) checks the harness
   itself:
   - a forced RPC timeout, a scenario error, SIGTERM mid-run, SIGKILL of the
@@ -119,6 +123,36 @@ diff.
 
 ## Hermeticity and determinism
 
+- Containment: every test entry point runs only inside one private root.
+  - `make` routes every test target through `tests/private.sh`, the one launcher:
+    it clears inherited Neovim/Lua env (`NVIM*`, `VIMINIT`, `MYVIMRC`,
+    `VIMRUNTIME`, `LUA_*`), creates a root with `mktemp`, points every XDG home
+    and dirs variable, `XDG_RUNTIME_DIR`, `TMPDIR` and `NVIM_LOG_FILE` into it,
+    and removes that exact root afterwards. It refuses a caller-set XDG home
+    without `OBELUS_TEST_ROOT`.
+  - `tests/specs.sh`, `tests/ui/run.sh`, `selftest.sh` and `mutations.sh` refuse
+    (exit 3) unless `tests/xdg_guard.sh` validates the environment: a root that is
+    not `/`, `HOME` or an ancestor of `HOME`, and every path above inside it and
+    not a real default under `HOME`. A merely non-empty value is not enough.
+    The defaults (`~/.local`, `~/.config`, `~/.cache`), the root and every value
+    are compared by canonical path, so an alias (a symlinked root or component)
+    cannot reach a default. Every value must be absolute: a relative one would
+    follow a later change of directory. The launcher then exports the canonical
+    absolute values. It picks the base for a new root before allocating: the
+    inherited `TMPDIR` only if it is absolute and outside the defaults, else
+    `/tmp`. `NVIM_LOG_FILE` must not be a symlink (dangling or
+    not) and, if it exists, must be a regular file; this is checked before
+    Neovim starts.
+  - The nvim side (`tests/xdg_guard.lua`, first thing in `tests/run.lua`,
+    `tests/ui/run.lua` and `tests/ui/child.lua`) re-checks the same rules plus
+    `stdpath()` for data, state, cache, config, run and log, before anything is
+    required or written. Launching `nvim -c "luafile tests/run.lua"` directly is
+    refused there, but Neovim's own startup files (an empty log, its server
+    socket) are created before any Lua runs; use `tests/specs.sh`.
+  - `make ui-selftest` case `xdg-guard` points each entry point at a decoy home
+    (and at an alias root into a fake home's `.local`, and a log symlink out of
+    the root) and checks the refusal and that the decoy is byte-identical
+    (paths, sizes, mtimes); mutations remove the guards and must fail it.
 - `run.sh` creates one private temp dir for the XDG config, data, state, cache and
   runtime dirs and for `TMPDIR`. It removes the dir afterwards. It also fixes `TZ`
   and the locale.
@@ -232,5 +266,8 @@ before changing code on these paths:
   meta-thread views;
 - the sidebar thread list has one representative snapshot per size, not
   exhaustive coverage;
-- future `obelus.api` surfaces (non-file backends, approve/deny). P1 must add
-  their own behaviour tests and scenarios.
+- `obelus.api`: one inline band, one streaming popup thread view, the
+  unfocused approve prompt and the focused prompt after queued typeahead under a
+  blocked loop are pinned; the sidebar list of backend threads is not. The
+  api's other guards are covered by `tests/api_spec.lua` and the behaviour
+  mutations instead;

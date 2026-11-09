@@ -973,7 +973,7 @@ local function turn_header(comment, t, i, is_last, status, agent)
     end
     -- the trailing "you" turn is the UNSENT draft (a new comment, or a reply you're writing):
     -- mark it "· draft" until it's dispatched, so it reads as editable rather than sent
-    if is_last and not comment.dispatching then
+    if is_last and not comment.dispatching and not t.committed then -- obelus.api: a sent turn is no draft
       header[#header + 1] = { "  · draft", "ObelusThreadMeta", role = "meta" }
     end
   end
@@ -1877,7 +1877,7 @@ function M.build(comment, width, opts)
   for i, t in ipairs(turns) do
     -- when the reply box is open (hide_draft), the trailing draft lives IN the box, so don't
     -- render it in the history too; a read-only view (band / hover preview) still shows "· draft"
-    if opts.hide_draft and i == #turns and t.author == "you" and not comment.dispatching then
+    if opts.hide_draft and i == #turns and t.author == "you" and not comment.dispatching and not t.committed then
       goto continue
     end
     local agent = t.author == "agent"

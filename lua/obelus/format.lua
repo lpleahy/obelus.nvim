@@ -138,7 +138,7 @@ function M.meta_context(opts)
   local pending_parts, resolved_lines = {}, {}
   for _, c in ipairs(store.all()) do
     -- scratch (ask-mode) threads are reading questions, not review status
-    if not c.meta and not c.scratch and (tag == nil or c.tag == tag) then
+    if not c.meta and not c.scratch and store.agent_eligible(c) and (tag == nil or c.tag == tag) then
       if c.status == "resolved" then
         local first = vim.split(c.comment or "", "\n")[1] or ""
         resolved_lines[#resolved_lines + 1] =
@@ -181,7 +181,10 @@ function M.tag_deltas(tag, delta, opts)
     lines[#lines + 1] = M.thread_full(c, { include_drafts = opts.include_drafts })
   end
   for _, l in ipairs(delta.leaves or {}) do
-    if l.c then
+    if l.c and not store.agent_eligible(l.c) then
+      -- obelus.api: a member whose scheme was claimed since: say it left, show nothing of it
+      lines[#lines + 1] = "LEFT the conversation (do not act on it): " .. l.id
+    elseif l.c then
       lines[#lines + 1] = "LEFT the conversation (do not act on it): "
         .. M.relpath(l.c.file)
         .. " "

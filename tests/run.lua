@@ -1,8 +1,12 @@
--- Headless test runner. Invoked by `make test`:
---   nvim --headless -u NONE -i NONE -c "luafile tests/run.lua"
+-- Headless test runner. Invoked by `make specs` / `make test` through
+-- tests/private.sh and tests/specs.sh (which check containment BEFORE starting
+-- nvim, then run: nvim --headless -n -u NONE -i NONE -c "luafile tests/run.lua").
 -- Loads every *_spec.lua, tallies results, and sets the process exit code.
 local src = debug.getinfo(1, "S").source:sub(2)
 local testdir = vim.fn.fnamemodify(src, ":p:h")
+-- containment first: nothing below may run (or write through stdpath) unless
+-- every XDG path is inside a private OBELUS_TEST_ROOT (tests/private.sh)
+dofile(testdir .. "/xdg_guard.lua")("tests/run.lua")
 local root = vim.fn.fnamemodify(testdir, ":h")
 vim.opt.runtimepath:append(root)
 package.path = testdir .. "/?.lua;" .. package.path
@@ -57,6 +61,7 @@ for _, spec in ipairs({
   "panel",
   "mention",
   "mention_completion",
+  "api",
   "markview",
   "render_markdown",
 }) do

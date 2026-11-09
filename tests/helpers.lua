@@ -34,7 +34,25 @@ local function teardown()
   end
 end
 
+-- OBELUS_SPEC_ONLY=substr[,substr...]: run only specs whose name contains one
+-- (used to repeat one spec, and by tests/ui/mutations.sh); others are not counted
+local only = vim.env.OBELUS_SPEC_ONLY
+local function selected(name)
+  if not only or only == "" then
+    return true
+  end
+  for _, pat in ipairs(vim.split(only, ",", { plain = true })) do
+    if pat ~= "" and name:find(pat, 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
 function H.it(name, fn)
+  if not selected(name) then
+    return
+  end
   local ok, err = pcall(fn)
   if ok then
     H.passed = H.passed + 1
@@ -47,6 +65,9 @@ end
 
 -- run `fn` only when `cond` is true, else count it as skipped (e.g. markview absent)
 function H.it_when(cond, name, fn)
+  if not selected(name) then
+    return
+  end
   if cond then
     H.it(name, fn)
   else

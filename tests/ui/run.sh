@@ -19,6 +19,10 @@
 # OBELUS_UI_PAUSE_AFTER_REAP.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
+# Containment first: refuse unless every XDG path is inside OBELUS_TEST_ROOT
+# (make / tests/private.sh set that up). Nothing is written before this.
+. "$here/../xdg_guard.sh"
+obelus_xdg_guard tests/ui/run.sh || exit 3
 # Perl (with its core POSIX and Time::HiRes modules) runs the supervisor. Check
 # before anything is allocated, so a missing Perl leaves nothing behind.
 if ! command -v perl >/dev/null 2>&1 || ! perl -MPOSIX -MTime::HiRes -e 1 >/dev/null 2>&1; then
