@@ -22,7 +22,22 @@ local scenarios = require("scenarios")
 local SIZES = { { 80, 24 }, { 160, 45 } }
 local BASE = uidir .. "/baselines"
 local update = vim.env.OBELUS_UI_UPDATE == "1"
-local only = vim.env.OBELUS_UI_ONLY
+local only = vim.env.OBELUS_UI_ONLY -- comma-separated substrings
+local delay_ms = tonumber(vim.env.OBELUS_UI_DELAY_MS or "") or 0
+
+-- hidden (self-test) scenarios run only when named exactly; others match any
+-- OBELUS_UI_ONLY substring (or all, when unset)
+local function selected(sc)
+  if not only or only == "" then
+    return not sc.hidden
+  end
+  for pat in only:gmatch("[^,]+") do
+    if (sc.hidden and sc.name == pat) or (not sc.hidden and sc.name:find(pat, 1, true)) then
+      return true
+    end
+  end
+  return false
+end
 local outdir = vim.env.OBELUS_UI_OUT
 local tmp = assert(vim.env.OBELUS_UI_TMP, "run via tests/ui/run.sh (OBELUS_UI_TMP unset)")
 
@@ -131,16 +146,23 @@ local function first_diff(a, b)
   end
 end
 
+local function is_fault(msg)
+  return type(msg) == "string" and msg:find("rpc-fault:", 1, true) ~= nil
+end
+
 local function run_one(sc, w, h)
   local root = tmp .. "/proj"
   if vim.fn.isdirectory(root) == 1 then
     vim.fn.delete(root, "rf") -- exact path, recreated per child
   end
   vim.fn.mkdir(root, "p")
-  local child = rpc.spawn({
+  local sok, child = pcall(rpc.spawn, {
     cmd = { vim.v.progpath, "--embed", "-n", "-i", "NONE", "-u", "NONE", "--noplugin" },
     cwd = root,
   })
+  if not sok then
+    return false, child
+  end
   local ok, res = pcall(function()
     child:request("nvim_ui_attach", { w, h, { ext_linegrid = true, rgb = true, ext_hlstate = true } })
     child:lua(
@@ -149,6 +171,11 @@ local function run_one(sc, w, h)
       { repo = repo, root = root, tmp = tmp }
     )
     child:lua("return require('scenarios').run(...)", sc.name)
+    if delay_ms > 0 then
+      -- self-test knob: a real wall-clock stall between arranging and capturing,
+      -- standing in for a loaded host. Snapshots must not change (virtual clock).
+      vim.wait(delay_ms)
+    end
     -- one no-op key through the input queue, then a synchronous round-trip: the
     -- child's state loop runs once, so a pending `startinsert` (open_thread, the
     -- composers) takes effect exactly as it would after a real keypress
@@ -172,13 +199,22 @@ local function run_one(sc, w, h)
     )
     return serialize(sc.name, w, h, cap, child.attrs, describe)
   end)
-  child:close()
+  -- always reap the child (quit -> SIGTERM -> SIGKILL, awaited); a reap failure
+  -- outranks whatever the scenario returned
+  local cok, cerr = pcall(child.close, child)
+  if not cok then
+    return false, cerr
+  end
   return ok, res
 end
 
 local t0 = vim.uv.hrtime()
 vim.fn.mkdir(BASE, "p")
-local failed, passed, written = {}, 0, 0
+-- failed = baseline MISMATCHES (a rendering differs); errors = the harness could
+-- not produce/compare a rendering (scenario error, transport fault, no baseline,
+-- version mismatch). Reported distinctly: tests/ui/mutations.sh counts only the
+-- former as a caught mutation.
+local failed, errors, passed, written = {}, {}, 0, 0
 local function main()
   -- baselines are Neovim-version specific (the grid, treesitter parsers and the
   -- default colorscheme all ship with nvim): refuse to compare across versions
@@ -188,7 +224,7 @@ local function main()
   if update and not only then
     write(vpath, version)
   elseif read(vpath) ~= version then
-    failed[#failed + 1] = string.format(
+    errors[#errors + 1] = string.format(
       "baselines were recorded with %s but this is %s (re-record with OBELUS_UI_UPDATE=1 after reviewing)",
       vim.trim(read(vpath) or "<none>"),
       vim.trim(version)
@@ -196,15 +232,19 @@ local function main()
     return
   end
   for _, sc in ipairs(scenarios.list) do
-    if not only or sc.name:find(only, 1, true) then
+    if selected(sc) then
       for _, size in ipairs(sc.sizes or SIZES) do
         local w, h = size[1], size[2]
         local key = string.format("%s@%dx%d", sc.name, w, h)
         local path = BASE .. "/" .. key .. ".snap"
         local ok, got = run_one(sc, w, h)
         if not ok then
-          failed[#failed + 1] = key .. ": scenario error: " .. tostring(got)
+          errors[#errors + 1] = key .. ": " .. tostring(got)
           io.write("E")
+          if is_fault(got) then
+            errors[#errors + 1] = "transport fault: stopping the suite"
+            return
+          end
         else
           if outdir then
             write(outdir .. "/" .. key .. ".snap", got)
@@ -222,8 +262,8 @@ local function main()
               passed = passed + 1
               io.write(".")
             elseif not want then
-              failed[#failed + 1] = key .. ": no baseline (run with OBELUS_UI_UPDATE=1)"
-              io.write("F")
+              errors[#errors + 1] = key .. ": no baseline (run with OBELUS_UI_UPDATE=1)"
+              io.write("E")
             else
               local ln, a, b = first_diff(want, got)
               failed[#failed + 1] = string.format(
@@ -247,19 +287,23 @@ local function main()
 end
 local mok, merr = xpcall(main, debug.traceback)
 if not mok then
-  failed[#failed + 1] = "harness error: " .. tostring(merr)
+  errors[#errors + 1] = "harness error: " .. tostring(merr)
 end
 io.write("\n")
 for _, f in ipairs(failed) do
   io.write("FAIL " .. f .. "\n")
 end
+for _, e in ipairs(errors) do
+  io.write("ERROR " .. e .. "\n")
+end
 io.write(
   string.format(
-    "obelus ui snapshots: %d passed, %d failed%s (%.1fs)\n",
+    "obelus ui snapshots: %d passed, %d failed, %d errors%s (%.1fs)\n",
     passed,
     #failed,
+    #errors,
     update and string.format(", %d baseline(s) rewritten", written) or "",
     (vim.uv.hrtime() - t0) / 1e9
   )
 )
-vim.cmd(#failed == 0 and "qall!" or "cquit 1")
+vim.cmd((#failed == 0 and #errors == 0) and "qall!" or "cquit 1")

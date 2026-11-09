@@ -4,15 +4,16 @@
 -- transport/cli.lua does, synchronously.
 --
 -- A scenario only arranges state; capture happens afterwards in child.lua. Keep
--- every scenario deterministic: no wall-clock waits, only C.settle() (a counted
--- number of event-loop turns) for deferred work.
+-- every scenario deterministic: no wall-clock waits. Timers and vim.schedule run
+-- on the child's VIRTUAL clock (child.lua): C.settle() runs everything runnable
+-- now, to quiescence; C.advance(ms) moves the clock. Host load cannot change it.
 local C = _G.__ui
 
 local S = { list = {} }
 
 local function scenario(name, fn, opts)
   opts = opts or {}
-  S.list[#S.list + 1] = { name = name, fn = fn, kind = opts.kind, sizes = opts.sizes }
+  S.list[#S.list + 1] = { name = name, fn = fn, kind = opts.kind, sizes = opts.sizes, hidden = opts.hidden }
 end
 
 -- the source file every scenario annotates (plain buffer: no filetype/syntax, so
@@ -124,11 +125,12 @@ local function cursor(row, col)
   require("obelus.render").on_cursor()
 end
 
+-- the chat's docked reply box is revealed by deferred work: settle, then REQUIRE
+-- it (a chat that never finished opening must fail the scenario, not be captured)
 local function wait_chat(panel)
-  vim.wait(10000, function()
-    local g = panel.geom()
-    return g ~= nil and g.input_win ~= nil and not g.input_pending_reveal
-  end, 1)
+  C.settle()
+  local g = panel.geom()
+  assert(g ~= nil and g.input_win ~= nil and not g.input_pending_reveal, "chat did not finish opening")
 end
 
 -- ── inline annotations (bands disabled: signs + line tint + eol preview) ──────
@@ -326,8 +328,8 @@ scenario("progress_corner", function()
   C.settle()
 end)
 
--- finish: the brief ✓ on the worked line (captured before its 2 s clear —
--- no settle after finish, so the deferred clear cannot have run)
+-- finish: the brief ✓ on the worked line. Its 2000 ms clear is a virtual-clock
+-- timer, so it is still pending at capture however long the host takes.
 scenario("progress_finish_ok", function()
   local ctx = fresh({ render = { bands = { style = "inline" } } })
   local c = short_thread(ctx, { sl = 11 })
@@ -337,6 +339,19 @@ scenario("progress_finish_ok", function()
   ctx.F.delta("Every value maps to **0**.")
   C.settle()
   ctx.F.finish(true, "sess-1")
+end)
+
+-- …and 2000 virtual ms later the ✓ has cleared (the band stays, the eol mark goes)
+scenario("progress_finish_cleared", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  ctx.F.delta("Every value maps to **0**.")
+  C.settle()
+  ctx.F.finish(true, "sess-1")
+  C.advance(2000)
 end)
 
 -- ── composers ─────────────────────────────────────────────────────────────────
@@ -365,6 +380,17 @@ end)
 scenario("registration", function()
   fresh()
 end, { kind = "registration", sizes = { { 80, 24 } } })
+
+-- ── harness self-tests (hidden: run only when OBELUS_UI_ONLY names them exactly;
+-- see tests/ui/selftest.sh). Never part of the baseline suite.
+scenario("_selftest_hang", function()
+  while true do -- an unresponsive child: the parent's guard must fire and reap it
+  end
+end, { hidden = true, sizes = { { 80, 24 } } })
+
+scenario("_selftest_error", function()
+  error("deliberate scenario failure")
+end, { hidden = true, sizes = { { 80, 24 } } })
 
 function S.run(name)
   for _, sc in ipairs(S.list) do

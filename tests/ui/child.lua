@@ -68,14 +68,14 @@ function C.boot(opts)
     C.notes[#C.notes + 1] = string.format("[%s] %s", tostring(level or "-"), scrub(tostring(msg)))
   end
 
-  -- what exists BEFORE obelus loads (nvim's own default commands/keymaps), so the
-  -- registration snapshot pins only what obelus adds — not the nvim version's defaults
-  C.pre = { cmds = vim.api.nvim_get_commands({ builtin = false }), maps = {} }
-  for _, mode in ipairs({ "n", "x", "s", "o", "i", "c", "t" }) do
-    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
-      C.pre.maps[mode .. " " .. m.lhs] = true
-    end
-  end
+  -- source paths of Lua callbacks are serialized relative to these
+  scrubs[#scrubs + 1] = { opts.repo, "<REPO>" }
+  scrubs[#scrubs + 1] = { vim.env.VIMRUNTIME, "<VIMRUNTIME>" }
+  table.sort(scrubs, function(a, b)
+    return #a[1] > #b[1]
+  end)
+
+  C.install_virtual_clock()
 
   vim.o.shortmess = vim.o.shortmess .. "I"
   vim.o.swapfile = false
@@ -83,15 +83,141 @@ function C.boot(opts)
   vim.o.background = "dark"
   vim.cmd.colorscheme("default")
   vim.o.background = "dark"
+
+  -- the full editor state BEFORE obelus loads (Neovim's own defaults included), so
+  -- the registration snapshot can diff what loading + setup() added, changed or
+  -- removed — taken last, after the harness's own settings above
+  C.pre = C.registry_state()
 end
 
--- Let deferred work (vim.schedule / defer_fn(0) chains: panel fills, preview
--- placement, the first progress tick) run to completion. Iteration-counted, not
--- time-budgeted: each vim.wait turns the loop at least once.
-function C.settle(n)
-  for _ = 1, n or 8 do
-    vim.wait(5)
+-- ── virtual clock ───────────────────────────────────────────────────────────
+-- Every timer and every vim.schedule callback in the child runs on a VIRTUAL
+-- clock that only the harness advances, so no amount of host load or parent delay
+-- can change what is on screen at capture time:
+--   * vim.uv.new_timer() (and so vim.defer_fn, which builds on it) returns a fake
+--     timer that never fires by itself;
+--   * vim.schedule() (and so vim.schedule_wrap) appends to a FIFO queue;
+--   * vim.uv.now() returns the virtual time (0 unless advanced).
+-- C.settle() drains the queue and fires due timers (earliest due first, ties in
+-- start order) until nothing is runnable at the current virtual time. A timer due
+-- later — e.g. progress.finish's 2000 ms ✓ clear, or the spinner's next tick —
+-- stays pending until C.advance(ms) moves the clock; captures never advance it.
+-- These are process-global test doubles installed before obelus loads; lua/ is
+-- untouched.
+local V = { now = 0, seq = 0, timers = {}, queue = {} }
+C.V = V
+
+local Timer = {}
+Timer.__index = Timer
+function Timer:start(timeout, rep, cb)
+  V.seq = V.seq + 1
+  self.due, self.rep, self.cb, self.order, self.active = V.now + (timeout or 0), rep or 0, cb, V.seq, true
+  V.timers[self] = true
+  return 0
+end
+function Timer:stop()
+  self.active = false
+  V.timers[self] = nil
+  return 0
+end
+function Timer:close(cb)
+  self:stop()
+  self.closing = true
+  if cb then
+    cb()
   end
+end
+function Timer:again()
+  if (self.rep or 0) > 0 then
+    self:start(self.rep, self.rep, self.cb)
+  end
+  return 0
+end
+function Timer:is_active()
+  return self.active == true
+end
+function Timer:is_closing()
+  return self.closing == true
+end
+function Timer:set_repeat(r)
+  self.rep = r
+end
+function Timer:get_repeat()
+  return self.rep or 0
+end
+function Timer:get_due_in()
+  return math.max(0, (self.due or V.now) - V.now)
+end
+
+function C.install_virtual_clock()
+  vim.uv.new_timer = function()
+    return setmetatable({}, Timer)
+  end
+  vim.uv.now = function()
+    return V.now
+  end
+  vim.schedule = function(fn)
+    V.queue[#V.queue + 1] = fn
+  end
+end
+
+local function next_due(limit)
+  local best
+  for t in pairs(V.timers) do
+    if t.due <= limit and (not best or t.due < best.due or (t.due == best.due and t.order < best.order)) then
+      best = t
+    end
+  end
+  return best
+end
+
+local function fire(t)
+  if (t.rep or 0) > 0 then
+    V.seq = V.seq + 1
+    t.due, t.order = t.due + t.rep, V.seq
+  else
+    t:stop()
+  end
+  t.cb()
+end
+
+-- Run everything runnable at the current virtual time, to quiescence. Errors in a
+-- callback propagate (Neovim would have shown them as an error message).
+function C.settle()
+  for _ = 1, 100000 do
+    if #V.queue > 0 then
+      local q = V.queue
+      V.queue = {}
+      for _, fn in ipairs(q) do
+        fn()
+      end
+    else
+      local t = next_due(V.now)
+      if not t then
+        return true
+      end
+      fire(t)
+    end
+  end
+  error("settle: deferred work never quiesced (a callback keeps rescheduling itself)")
+end
+
+-- Move the virtual clock forward `ms`, firing timers in due order (settling at
+-- each step). Not used by today's scenarios; there for stepping spinner frames.
+function C.advance(ms)
+  local target = V.now + ms
+  C.settle()
+  while true do
+    local t = next_due(target)
+    if not t then
+      break
+    end
+    V.now = math.max(V.now, t.due)
+    fire(t)
+    C.settle()
+  end
+  V.now = target
+  C.settle()
 end
 
 -- deterministic, sorted-key serialization of any Lua value on one line
@@ -267,6 +393,7 @@ end
 
 ---@return table raw capture; the parent resolves attr ids and writes the file
 function C.capture()
+  C.settle()
   vim.cmd("redraw!")
   local rows, cols = vim.o.lines, vim.o.columns
   local text, attrs = {}, {}
@@ -408,90 +535,173 @@ function C.capture()
   }
 end
 
--- the setup/keymap registration path: commands, keymaps, autocmds, highlights —
--- everything obelus.setup() registers globally, serialized order-independently
+-- ── setup / registration state ──────────────────────────────────────────────
+-- Everything that loading obelus + setup() can register or overwrite: user
+-- commands, keymaps (global AND buffer-local, every mode, Neovim's defaults
+-- included), autocmds (every group AND ungrouped), highlight groups, namespaces.
+-- Each entry is { key, sig, fn }: `sig` is the stable serialization (no handles,
+-- ids or line numbers; a Lua callback is named by its source FILE), `fn` the live
+-- callback, compared by identity in-process so swapping one Lua callback for
+-- another with an identical description still reads as "changed".
+local MAP_MODES = { "n", "v", "x", "s", "o", "i", "c", "t", "l" }
+
+local function fn_src(f)
+  if type(f) ~= "function" then
+    return tostring(f)
+  end
+  local info = debug.getinfo(f, "S")
+  return "<lua " .. scrub((info.source or "?"):gsub("^@", "")) .. ">"
+end
+
+local function map_sig(m)
+  return string.format(
+    "desc=%s silent=%s noremap=%s nowait=%s expr=%s script=%s rhs=%s",
+    ser(m.desc),
+    ser(m.silent),
+    ser(m.noremap),
+    ser(m.nowait),
+    ser(m.expr),
+    ser(m.script),
+    m.callback and fn_src(m.callback) or ser(m.rhs or "")
+  )
+end
+
+function C.registry_state()
+  local st = { cmds = {}, maps = {}, aus = {}, hls = {}, ns = {} }
+  for name, c in pairs(vim.api.nvim_get_commands({ builtin = false })) do
+    st.cmds[#st.cmds + 1] = {
+      key = name,
+      sig = string.format(
+        "nargs=%s range=%s count=%s bang=%s bar=%s complete=%s def=%s",
+        ser(c.nargs),
+        ser(c.range),
+        ser(c.count),
+        ser(c.bang),
+        ser(c.bar),
+        ser(c.complete and (type(c.complete) == "string" and c.complete or "<fn>") or nil),
+        ser(c.definition)
+      ),
+    }
+  end
+  for _, mode in ipairs(MAP_MODES) do
+    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+      st.maps[#st.maps + 1] = { key = "global " .. mode .. " " .. m.lhs, sig = map_sig(m), fn = m.callback }
+    end
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(b) then
+        for _, m in ipairs(vim.api.nvim_buf_get_keymap(b, mode)) do
+          st.maps[#st.maps + 1] = {
+            key = "buf(" .. buf_label(b) .. ") " .. mode .. " " .. m.lhs,
+            sig = map_sig(m),
+            fn = m.callback,
+          }
+        end
+      end
+    end
+  end
+  for _, a in ipairs(vim.api.nvim_get_autocmds({})) do
+    local key = string.format(
+      "%s %s pattern=%s buffer=%s",
+      a.group_name or "<ungrouped>",
+      a.event,
+      ser(a.pattern),
+      a.buffer and a.buffer > 0 and buf_label(a.buffer) or "-"
+    )
+    st.aus[#st.aus + 1] = {
+      key = key,
+      sig = string.format(
+        "once=%s desc=%s run=%s",
+        ser(a.once),
+        ser(a.desc),
+        (a.command and a.command ~= "") and ser(a.command) or fn_src(a.callback)
+      ),
+      fn = a.callback,
+    }
+  end
+  for name in pairs(vim.api.nvim_get_hl(0, {})) do
+    if type(name) == "string" then
+      st.hls[#st.hls + 1] = { key = name, sig = describe_hl(name) }
+    end
+  end
+  for name in pairs(vim.api.nvim_get_namespaces()) do
+    st.ns[#st.ns + 1] = { key = name, sig = "" }
+  end
+  for _, list in pairs(st) do
+    table.sort(list, function(a, b)
+      if a.key ~= b.key then
+        return a.key < b.key
+      end
+      return a.sig < b.sig
+    end)
+  end
+  return st
+end
+
+-- multiset diff of two entry lists: an entry is unchanged when an unused `pre`
+-- entry has the same key, sig AND callback identity; "changed" when only the key
+-- matches; else added. Leftover pre entries were removed.
+local function diff_entries(pre, post)
+  local used, out = {}, {}
+  local function take(pred)
+    for i, e in ipairs(pre) do
+      if not used[i] and pred(e) then
+        used[i] = true
+        return e
+      end
+    end
+  end
+  for _, e in ipairs(post) do
+    local same = take(function(p)
+      return p.key == e.key and p.sig == e.sig and rawequal(p.fn, e.fn)
+    end)
+    if not same then
+      local was = take(function(p)
+        return p.key == e.key
+      end)
+      if was then
+        local why = was.sig ~= e.sig and "" or "  (same description, different callback)"
+        out[#out + 1] = "~ " .. e.key .. "\n    was: " .. was.sig .. "\n    now: " .. e.sig .. why
+      else
+        out[#out + 1] = "+ " .. e.key .. "  " .. e.sig
+      end
+    end
+  end
+  for i, p in ipairs(pre) do
+    if not used[i] then
+      out[#out + 1] = "- " .. p.key .. "  " .. p.sig
+    end
+  end
+  return out
+end
+
+-- the setup/keymap registration path: a diff of the full editor state before
+-- obelus loaded vs after setup() (+ opening a file), then the complete
+-- after-state of commands, keymaps and autocmds (Neovim defaults included, so an
+-- overwritten default shows twice: in the diff and in the full table)
 function C.registration()
+  C.settle()
+  local post = C.registry_state()
   local out = {}
   local function push(s)
     out[#out + 1] = s
   end
-  push("## user commands (added by obelus)")
-  local cmds = vim.api.nvim_get_commands({ builtin = false })
-  local names = vim.tbl_keys(cmds)
-  table.sort(names)
-  for _, n in ipairs(names) do
-    local c = cmds[n]
-    if not C.pre.cmds[n] then
-      push(
-        string.format(
-          "%s nargs=%s range=%s bang=%s complete=%s desc=%s",
-          n,
-          ser(c.nargs),
-          ser(c.range),
-          ser(c.bang),
-          ser(c.complete),
-          ser(c.definition)
-        )
-      )
+  for _, sec in ipairs({
+    { "cmds", "user commands" },
+    { "maps", "keymaps" },
+    { "aus", "autocmds" },
+    { "hls", "highlight groups" },
+    { "ns", "namespaces" },
+  }) do
+    local d = diff_entries(C.pre[sec[1]], post[sec[1]])
+    push(string.format("## diff vs before obelus loaded: %s (%d)", sec[2], #d))
+    vim.list_extend(out, d)
+  end
+  for _, sec in ipairs({ { "cmds", "user commands" }, { "maps", "keymaps" }, { "aus", "autocmds" } }) do
+    push(string.format("## full after setup: %s (%d)", sec[2], #post[sec[1]]))
+    for _, e in ipairs(post[sec[1]]) do
+      push(e.key .. "  " .. e.sig)
     end
   end
-  push("## keymaps (global, added by obelus)")
-  local maps = {}
-  for _, mode in ipairs({ "n", "x", "s", "o", "i", "c", "t" }) do
-    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
-      if not C.pre.maps[mode .. " " .. m.lhs] then
-        maps[#maps + 1] = string.format(
-          "%s %s desc=%s silent=%s noremap=%s nowait=%s expr=%s rhs=%s",
-          mode,
-          m.lhs,
-          ser(m.desc),
-          ser(m.silent),
-          ser(m.noremap),
-          ser(m.nowait),
-          ser(m.expr),
-          ser(m.rhs or (m.callback and "<lua>") or "")
-        )
-      end
-    end
-  end
-  table.sort(maps)
-  vim.list_extend(out, maps)
-  push("## autocmds")
-  local acs = {}
-  for _, a in ipairs(vim.api.nvim_get_autocmds({})) do
-    if a.group_name and a.group_name:lower():find("obelus", 1, true) then
-      acs[#acs + 1] = string.format(
-        "%s %s pattern=%s buffer=%s once=%s desc=%s cmd=%s",
-        a.group_name,
-        a.event,
-        ser(a.pattern),
-        ser(a.buffer and true or false),
-        ser(a.once),
-        ser(a.desc),
-        ser(a.command ~= "" and a.command or "<lua>")
-      )
-    end
-  end
-  table.sort(acs)
-  vim.list_extend(out, acs)
-  push("## highlight groups (Obelus*)")
-  local hls = {}
-  for name in pairs(vim.api.nvim_get_hl(0, {})) do
-    if type(name) == "string" and name:match("^Obelus") then
-      hls[#hls + 1] = describe_hl(name)
-    end
-  end
-  table.sort(hls)
-  vim.list_extend(out, hls)
-  push("## namespaces (obelus*)")
-  local nss = {}
-  for name in pairs(vim.api.nvim_get_namespaces()) do
-    if name:match("^obelus") then
-      nss[#nss + 1] = name
-    end
-  end
-  table.sort(nss)
-  vim.list_extend(out, nss)
   push("## notifications")
   for _, n in ipairs(C.notes or {}) do
     push(n)

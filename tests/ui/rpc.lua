@@ -15,7 +15,11 @@ local uv = vim.uv or vim.loop
 
 local M = {}
 
-local GUARD_MS = 300000 -- deadlock guard only; a healthy call returns in milliseconds
+-- deadlock guard only (a healthy call returns in milliseconds); the self-test
+-- shrinks it via OBELUS_UI_GUARD_MS to exercise the timeout path quickly
+local GUARD_MS = tonumber(vim.env.OBELUS_UI_GUARD_MS or "") or 120000
+-- how long close() waits for each step of the quit -> SIGTERM -> SIGKILL ladder
+local QUIT_MS = 2000
 
 ---@param opts { cmd: string[], cwd: string, env: string[], cols: integer, rows: integer }
 function M.spawn(opts)
@@ -40,8 +44,23 @@ function M.spawn(opts)
     self.exited = true
     self.code, self.signal = code, signal
   end)
-  assert(handle, "spawn failed: " .. tostring(err))
+  if not handle then
+    for _, p in ipairs({ stdin, stdout, stderr }) do
+      p:close()
+    end
+    error("rpc-fault: spawn failed: " .. tostring(err), 0)
+  end
   self.handle, self.stdin = handle, stdin
+  self.pid = handle:get_pid()
+  -- recorded for tests/ui/run.sh: if THIS process dies abruptly (signal), the
+  -- wrapper reaps any child still alive by exact pid
+  if vim.env.OBELUS_UI_PIDFILE then
+    local f = io.open(vim.env.OBELUS_UI_PIDFILE, "a")
+    if f then
+      f:write(self.pid .. "\n")
+      f:close()
+    end
+  end
 
   local unpack = vim.mpack.Unpacker()
   local function on_msg(msg)
@@ -85,21 +104,27 @@ function M.spawn(opts)
 end
 
 function M:request(method, params)
+  if self.exited then
+    error("rpc-fault: " .. method .. ": child already exited; stderr: " .. table.concat(self.stderr), 0)
+  end
   self.next_id = self.next_id + 1
   local id = self.next_id
   self.stdin:write(vim.mpack.encode({ 0, id, method, params }))
-  local ok = vim.wait(GUARD_MS, function()
+  vim.wait(GUARD_MS, function()
     return self.responses[id] ~= nil or self.exited
   end, 2)
   local r = self.responses[id]
   if not r then
+    -- "rpc-fault:" marks a transport failure: run.lua stops the suite (every later
+    -- scenario would only burn another guard interval) and close() reaps the child
     error(
       string.format(
-        "rpc %s: no response (%s); child stderr: %s",
+        "rpc-fault: %s: %s; child stderr: %s",
         method,
-        ok and "child exited" or "deadlock guard",
+        self.exited and "child exited" or ("no response within " .. GUARD_MS .. " ms"),
         table.concat(self.stderr)
-      )
+      ),
+      0
     )
   end
   self.responses[id] = nil
@@ -115,14 +140,29 @@ function M:lua(code, ...)
   return self:request("nvim_exec_lua", { code, { ... } })
 end
 
+local function wait_exit(self, ms)
+  vim.wait(ms, function()
+    return self.exited
+  end, 2)
+  return self.exited
+end
+
+-- Terminate the child and confirm it is gone BEFORE releasing anything: ask it to
+-- quit; if it is wedged (e.g. stuck in Lua), SIGTERM, then SIGKILL, each awaited.
+-- Closing a libuv process handle alone does not end the process. Errors if the
+-- child cannot be reaped, so a leak can never pass silently.
 function M:close()
   if not self.exited then
     pcall(function()
       self.stdin:write(vim.mpack.encode({ 2, "nvim_command", { "qall!" } }))
     end)
-    vim.wait(GUARD_MS, function()
-      return self.exited
-    end, 2)
+    if not wait_exit(self, QUIT_MS) then
+      pcall(self.handle.kill, self.handle, "sigterm")
+      if not wait_exit(self, QUIT_MS) then
+        pcall(self.handle.kill, self.handle, "sigkill")
+        wait_exit(self, 10 * QUIT_MS)
+      end
+    end
   end
   for _, p in ipairs(self.pipes) do
     if not p:is_closing() then
@@ -131,6 +171,9 @@ function M:close()
   end
   if not self.handle:is_closing() then
     self.handle:close()
+  end
+  if not self.exited then
+    error("rpc-fault: child pid " .. tostring(self.pid) .. " could not be terminated", 0)
   end
 end
 
