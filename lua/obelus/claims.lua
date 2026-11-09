@@ -106,15 +106,18 @@ end
 -- the same path at the same time: an EEXIST (or any error) is followed by a
 -- fresh look, and creation counts as done only if a directory is there now.
 -- Real permission or type errors still refuse (the path is not a directory).
-local function ensure_dir(dir)
+-- `fresh` (a list) collects every level that did not exist when we looked:
+-- its new entry lives in its parent, which must be synced for durability.
+local function ensure_dir(dir, fresh)
   local st = uv.fs_stat(dir)
   if st then
     return st.type == "directory"
   end
   local parent = vim.fn.fnamemodify(dir, ":h")
-  if parent ~= dir and not ensure_dir(parent) then
+  if parent ~= dir and not ensure_dir(parent, fresh) then
     return false
   end
+  fresh[#fresh + 1] = dir
   if uv.fs_mkdir(dir, 493) then
     return true
   end
@@ -174,8 +177,9 @@ end
 ---Claim schemes (lowercase names, e.g. { "luodda" }) and persist the claim.
 ---The claim holds for this session even if it cannot be saved. Returns true
 ---only when every scheme's marker file exists, a sync of each marker
----succeeded and the claims directory was synced (where the platform supports
----syncing a directory; otherwise that part is best effort). On false, any
+---succeeded, the claims directory was synced, and so was the parent of every
+---directory this claim had to create (where the platform supports syncing a
+---directory; otherwise that part is best effort). On false, any
 ---marker already created stays: it blocks the scheme for every reader.
 ---@param schemes string[]
 ---@return boolean saved
@@ -192,12 +196,18 @@ function M.claim(schemes)
     session[s] = true
   end
   local dir = M.dir()
-  local saved = ensure_dir(dir)
+  local fresh = {}
+  local saved = ensure_dir(dir, fresh)
   if saved then
     for _, s in ipairs(schemes) do
       saved = persist(dir, s) and saved
     end
     saved = sync_dir(dir) and saved
+    -- every directory this claim had to create is an entry in its parent:
+    -- sync each of those parents too, or a crash could lose the whole path
+    for _, d in ipairs(fresh) do
+      saved = sync_dir(vim.fn.fnamemodify(d, ":h")) and saved
+    end
   end
   local _, corrupt, why = read()
   if corrupt and not warned then

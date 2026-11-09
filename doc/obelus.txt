@@ -1581,8 +1581,9 @@ api.claim_schemes({schemes})                    *obelus.api.claim_schemes()*
     name; returns whether the claim was saved (it holds for the session
     either way). "Saved" means: the scheme's marker file exists (created
     exclusively, or already there from another editor), a sync of that file
-    succeeded and the claims directory was synced; where the platform cannot
-    sync a directory, that part is best effort. Editors creating the claims
+    succeeded, the claims directory was synced, and so was the parent of
+    every directory the claim had to create; where the platform cannot sync
+    a directory, that part is best effort. Editors creating the claims
     directories at the same time do not fail each other. A marker whose sync
     failed is kept (it already blocks the scheme) and the call returns false.
 

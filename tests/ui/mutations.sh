@@ -301,6 +301,10 @@ spec_mutate "claims-stat-error-fails-open" lua/obelus/claims.lua \
 spec_mutate "claims-mkdir-eexist-fails" lua/obelus/claims.lua \
   'local again = uv.fs_stat(dir) -- someone else may have created it meanwhile' 'local again = nil' \
   "a competing creator's EEXIST"
+# the parents of newly created claims directories are never synced (R4-N1)
+spec_mutate "claims-parents-not-synced" lua/obelus/claims.lua \
+  'saved = sync_dir(vim.fn.fnamemodify(d, ":h")) and saved' 'saved = saved' \
+  'a fresh claim syncs the marker, the claims dir and the parent'
 # an existing marker is reported durable without a successful sync (R3-N1)
 spec_mutate "claims-sync-not-verified" lua/obelus/claims.lua \
   'local ok = sync(rfd)' 'local ok = true' \

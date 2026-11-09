@@ -1361,6 +1361,61 @@ T.it("malformed claims fail closed for scheme:// records only and are kept as th
   T.ok(require("obelus.store").agent_eligible({ file = "fugitive:///x" }))
 end)
 
+T.it("a fresh claim syncs the marker, the claims dir and the parent of every directory it created", function()
+  T.fresh()
+  clear_backends()
+  local state = fresh_claims() -- missing: the claim creates every level
+  local uv = vim.uv
+  local open, close, fsync = uv.fs_open, uv.fs_close, uv.fs_fsync
+  local paths, synced, fail_path = {}, {}, nil
+  uv.fs_open = function(path, ...)
+    local fd, e, c = open(path, ...)
+    if fd then
+      paths[fd] = path
+    end
+    return fd, e, c
+  end
+  uv.fs_close = function(fd, ...)
+    paths[fd] = nil
+    return close(fd, ...)
+  end
+  uv.fs_fsync = function(fd)
+    local p = paths[fd]
+    if p and p == fail_path then
+      return nil, "EIO: injected", "EIO"
+    end
+    synced[#synced + 1] = p
+    return fsync(fd)
+  end
+  local msgs, restore = capture_notify()
+  local ok, err = pcall(function()
+    T.eq(api.claim_schemes({ "luodda" }), true)
+    local claims_dir = claims.dir()
+    local required = {
+      claims_dir .. "/luodda", -- the marker
+      claims_dir, -- its directory entry
+      vim.fn.fnamemodify(claims_dir, ":h"), -- parent of the created claims/
+      vim.fn.fnamemodify(claims_dir, ":h:h"), -- parent of the created obelus/
+      state, -- parent of the created nvim/
+      vim.fn.fnamemodify(state, ":h"), -- parent of the created state dir
+    }
+    for _, p in ipairs(required) do
+      T.ok(vim.tbl_contains(synced, p), "synced: " .. p .. "  (all: " .. vim.inspect(synced) .. ")")
+    end
+    -- a failing sync of one of those parents: not durable, marker kept
+    fresh_claims()
+    local d = claims.dir()
+    fail_path = vim.fn.fnamemodify(d, ":h:h") -- the parent of the created obelus/
+    T.eq(api.claim_schemes({ "memo" }), false, "a parent sync failed: not reported durable")
+    T.ok(uv.fs_stat(d .. "/memo"), "the marker is kept")
+  end)
+  uv.fs_open, uv.fs_close, uv.fs_fsync = open, close, fsync
+  restore()
+  if not ok then
+    error(err, 0)
+  end
+end)
+
 T.it("a claim whose sync fails is not reported durable; its marker stays and blocks", function()
   T.fresh()
   clear_backends()
