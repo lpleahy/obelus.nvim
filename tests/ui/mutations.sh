@@ -29,26 +29,52 @@ EOF
 
 caught=0
 missed=0
-mutate() { # name file old new
-  name=$1 file=$2 old=$3 new=$4
+invalid=0
+
+fresh_tree() {
   rm -rf "$work/tree"
   mkdir "$work/tree"
   (cd "$repo" && tar cf - lua tests) | (cd "$work/tree" && tar xf -)
   rm -rf "$work/tree/tests/ui/actual"
+}
+
+# Preflight: the UNMODIFIED tree must pass cleanly in this environment (right
+# nvim version, baselines present, transport healthy). Otherwise every mutation
+# would "fail" for an unrelated reason — refuse to report anything.
+fresh_tree
+out=$(OBELUS_UI_TMPBASE="$work" sh "$work/tree/tests/ui/run.sh" 2>&1)
+if [ $? -ne 0 ]; then
+  echo "INVALID ENVIRONMENT: the unmodified tree does not pass; no mutation can be judged."
+  printf '%s\n' "$out" | grep -E '^(FAIL|ERROR)' | head -5
+  exit 2
+fi
+echo "preflight: unmodified tree passes ($(printf '%s\n' "$out" | tail -1))"
+
+# A mutation is CAUGHT only when the harness ran to comparison and reported a
+# baseline mismatch (FAIL ... differs from baseline) with no harness ERROR; a
+# harness error under a mutation is INVALID (it proves nothing either way).
+mutate() { # name file old new
+  name=$1 file=$2 old=$3 new=$4
+  fresh_tree
   if ! nvim -l "$work/replace.lua" "$work/tree/$file" "$old" "$new"; then
-    echo "SETUP-ERROR $name"
-    missed=$((missed + 1))
+    echo "INVALID $name  (mutation anchor not found)"
+    invalid=$((invalid + 1))
     return
   fi
   out=$(OBELUS_UI_TMPBASE="$work" sh "$work/tree/tests/ui/run.sh" 2>&1)
-  if [ $? -ne 0 ]; then
-    caught=$((caught + 1))
-    first=$(printf '%s\n' "$out" | grep '^FAIL' | head -1 | cut -c1-110)
-    nfail=$(printf '%s\n' "$out" | grep -c '^FAIL')
-    echo "CAUGHT  $name  ($nfail snapshot(s) differ; first: $first)"
-  else
+  rc=$?
+  nfail=$(printf '%s\n' "$out" | grep -c '^FAIL .*differs from baseline')
+  nerr=$(printf '%s\n' "$out" | grep -c '^ERROR')
+  if [ $rc -eq 0 ]; then
     missed=$((missed + 1))
     echo "MISSED  $name"
+  elif [ "$nerr" -gt 0 ] || [ "$nfail" -eq 0 ]; then
+    invalid=$((invalid + 1))
+    echo "INVALID $name  (harness error, not a comparison: $(printf '%s\n' "$out" | grep -E '^(ERROR|FAIL)' | head -1 | cut -c1-110))"
+  else
+    caught=$((caught + 1))
+    first=$(printf '%s\n' "$out" | grep '^FAIL' | head -1 | cut -c1-110)
+    echo "CAUGHT  $name  ($nfail snapshot(s) differ; first: $first)"
   fi
 }
 
@@ -73,5 +99,21 @@ mutate "spinner-priority-extmark-only" lua/obelus/progress.lua \
 mutate "keymap-desc" lua/obelus/init.lua \
   'desc = "obelus: toggle keybind hints",' 'desc = "obelus: toggle hints",'
 
-echo "mutations: $caught caught, $missed missed"
-[ "$missed" -eq 0 ]
+# from the independent review (setup/registration blind spots, float stacking)
+mutate "setup-overwrites-default-Y" lua/obelus/init.lua \
+  'function M.setup(opts)' 'function M.setup(opts)
+  vim.keymap.set("n", "Y", "dd")'
+mutate "setup-ungrouped-autocmd" lua/obelus/init.lua \
+  'function M.setup(opts)' 'function M.setup(opts)
+  vim.api.nvim_create_autocmd("BufEnter", { desc = "review probe", callback = function() end })'
+mutate "setup-new-namespace" lua/obelus/init.lua \
+  'function M.setup(opts)' 'function M.setup(opts)
+  vim.api.nvim_create_namespace("obelus_api_review")'
+mutate "chat-float-zindex" lua/obelus/config.lua \
+  'CHAT = 50,' 'CHAT = 51,'
+mutate "setup-overwrites-highlight" lua/obelus/init.lua \
+  'function M.setup(opts)' 'function M.setup(opts)
+  vim.api.nvim_set_hl(0, "Search", { link = "IncSearch" })'
+
+echo "mutations: $caught caught, $missed missed, $invalid invalid"
+[ "$missed" -eq 0 ] && [ "$invalid" -eq 0 ]

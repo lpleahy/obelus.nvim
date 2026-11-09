@@ -1,7 +1,9 @@
-.PHONY: test specs ui-snapshots ui-snapshots-update lint fmt
+.PHONY: test specs ui-snapshots ui-snapshots-update ui-selftest ui-mutations lint fmt
 
-# Run the headless specs, then the UI snapshot harness.
-test: specs ui-snapshots
+# Run the headless specs, then the UI snapshot harness — in that order even under
+# `make -j` (the snapshot run is a recipe step, not a parallel prerequisite).
+test: specs
+	@$(MAKE) --no-print-directory ui-snapshots
 
 # The behaviour specs. Set OBELUS_TEST_RTP to also run the markview specs, e.g.
 #   OBELUS_TEST_RTP=/path/to/markview.nvim:/path/to/nvim-treesitter make test
@@ -9,13 +11,23 @@ specs:
 	@nvim --headless -u NONE -i NONE -c "luafile tests/run.lua"
 
 # Byte-identical UI snapshots (screen grid + extmarks + highlights) at 80x24 and
-# 160x45 — see tests/ui/README.md. ~5s; part of `make test`.
+# 160x45 — see tests/ui/README.md. ~2s; part of `make test`.
 ui-snapshots:
 	@sh tests/ui/run.sh
 
 # Re-record every baseline (review the diff before committing!).
 ui-snapshots-update:
 	@OBELUS_UI_UPDATE=1 sh tests/ui/run.sh
+
+# Harness self-tests: forced RPC timeout, scenario error, SIGTERM mid-run (no
+# child or temp dir may survive) and a 2.5 s injected stall (snapshots must not
+# change). ~1 min.
+ui-selftest:
+	@sh tests/ui/selftest.sh
+
+# Guard mutations: each one-line visual/setup mutation must fail the harness. ~2 min.
+ui-mutations:
+	@sh tests/ui/mutations.sh
 
 # Check formatting (StyLua) without writing.
 lint:
