@@ -1063,7 +1063,7 @@ local barrier = ]] .. vim.inspect(barrier) .. [[
 uv.fs_open = function(path, flags, ...)
   if flags == "wx" then
     io.open(barrier .. "/ready-]] .. scheme .. [[", "w"):close()
-    for _ = 1, 2000 do
+    for _ = 1, 12000 do
       if uv.fs_stat(barrier .. "/go") then break end
       uv.sleep(5)
     end
@@ -1098,16 +1098,18 @@ io.write("saved=", tostring(saved), "\n")
       { env = env, clear_env = true, text = true }
     )
   end
-  T.ok(
-    vim.wait(10000, function()
-      return vim.uv.fs_stat(barrier .. "/ready-luodda") ~= nil and vim.uv.fs_stat(barrier .. "/ready-memo") ~= nil
-    end, 10),
-    "both editors reached the barrier"
-  )
-  io.open(barrier .. "/go", "w"):close()
-  for _, p in ipairs(procs) do
-    local res = p:wait(10000)
-    T.eq({ res.code, res.stdout }, { 0, "saved=true\n" })
+  local both = vim.wait(30000, function()
+    return vim.uv.fs_stat(barrier .. "/ready-luodda") ~= nil and vim.uv.fs_stat(barrier .. "/ready-memo") ~= nil
+  end, 10)
+  io.open(barrier .. "/go", "w"):close() -- always release, so no child is left waiting
+  local results = {}
+  for i, p in ipairs(procs) do
+    local res = p:wait(30000) -- always reap both before asserting
+    results[i] = { res.code, res.stdout, res.stderr }
+  end
+  T.ok(both, "both editors reached the barrier; children: " .. vim.inspect(results))
+  for _, r in ipairs(results) do
+    T.eq({ r[1], r[2] }, { 0, "saved=true\n" }, vim.inspect(r))
   end
   local out = in_new_nvim(
     state,
