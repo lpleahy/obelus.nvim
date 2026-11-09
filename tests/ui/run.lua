@@ -180,6 +180,21 @@ local t0 = vim.uv.hrtime()
 vim.fn.mkdir(BASE, "p")
 local failed, passed, written = {}, 0, 0
 local function main()
+  -- baselines are Neovim-version specific (the grid, treesitter parsers and the
+  -- default colorscheme all ship with nvim): refuse to compare across versions
+  -- instead of reporting a wall of unrelated diffs
+  local version = vim.split(vim.fn.execute("version"), "\n", { trimempty = true })[1] .. "\n"
+  local vpath = BASE .. "/NVIM_VERSION"
+  if update and not only then
+    write(vpath, version)
+  elseif read(vpath) ~= version then
+    failed[#failed + 1] = string.format(
+      "baselines were recorded with %s but this is %s (re-record with OBELUS_UI_UPDATE=1 after reviewing)",
+      vim.trim(read(vpath) or "<none>"),
+      vim.trim(version)
+    )
+    return
+  end
   for _, sc in ipairs(scenarios.list) do
     if not only or sc.name:find(only, 1, true) then
       for _, size in ipairs(sc.sizes or SIZES) do

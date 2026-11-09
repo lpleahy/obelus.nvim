@@ -68,6 +68,15 @@ function C.boot(opts)
     C.notes[#C.notes + 1] = string.format("[%s] %s", tostring(level or "-"), scrub(tostring(msg)))
   end
 
+  -- what exists BEFORE obelus loads (nvim's own default commands/keymaps), so the
+  -- registration snapshot pins only what obelus adds — not the nvim version's defaults
+  C.pre = { cmds = vim.api.nvim_get_commands({ builtin = false }), maps = {} }
+  for _, mode in ipairs({ "n", "x", "s", "o", "i", "c", "t" }) do
+    for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+      C.pre.maps[mode .. " " .. m.lhs] = true
+    end
+  end
+
   vim.o.shortmess = vim.o.shortmess .. "I"
   vim.o.swapfile = false
   vim.o.termguicolors = true
@@ -406,39 +415,43 @@ function C.registration()
   local function push(s)
     out[#out + 1] = s
   end
-  push("## user commands")
+  push("## user commands (added by obelus)")
   local cmds = vim.api.nvim_get_commands({ builtin = false })
   local names = vim.tbl_keys(cmds)
   table.sort(names)
   for _, n in ipairs(names) do
     local c = cmds[n]
-    push(
-      string.format(
-        "%s nargs=%s range=%s bang=%s complete=%s desc=%s",
-        n,
-        ser(c.nargs),
-        ser(c.range),
-        ser(c.bang),
-        ser(c.complete),
-        ser(c.definition)
+    if not C.pre.cmds[n] then
+      push(
+        string.format(
+          "%s nargs=%s range=%s bang=%s complete=%s desc=%s",
+          n,
+          ser(c.nargs),
+          ser(c.range),
+          ser(c.bang),
+          ser(c.complete),
+          ser(c.definition)
+        )
       )
-    )
+    end
   end
-  push("## keymaps (global)")
+  push("## keymaps (global, added by obelus)")
   local maps = {}
   for _, mode in ipairs({ "n", "x", "s", "o", "i", "c", "t" }) do
     for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
-      maps[#maps + 1] = string.format(
-        "%s %s desc=%s silent=%s noremap=%s nowait=%s expr=%s rhs=%s",
-        mode,
-        m.lhs,
-        ser(m.desc),
-        ser(m.silent),
-        ser(m.noremap),
-        ser(m.nowait),
-        ser(m.expr),
-        ser(m.rhs or (m.callback and "<lua>") or "")
-      )
+      if not C.pre.maps[mode .. " " .. m.lhs] then
+        maps[#maps + 1] = string.format(
+          "%s %s desc=%s silent=%s noremap=%s nowait=%s expr=%s rhs=%s",
+          mode,
+          m.lhs,
+          ser(m.desc),
+          ser(m.silent),
+          ser(m.noremap),
+          ser(m.nowait),
+          ser(m.expr),
+          ser(m.rhs or (m.callback and "<lua>") or "")
+        )
+      end
     end
   end
   table.sort(maps)
