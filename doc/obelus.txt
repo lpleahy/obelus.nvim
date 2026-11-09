@@ -1411,6 +1411,98 @@ submit_all({id}, {text})                                *obelus.submit_all()*
 clear()                                                      *obelus.clear()*
     Clear all comments.
 
+Extension API ~                                         *obelus-api-extension*
+
+`require("obelus.api")` lets another plugin use obelus's comment, thread
+and composer UI on its own NON-FILE buffers, and gives it obelus's
+Approve/Deny prompt. Lua type annotations are in lua/obelus/api.lua.
+
+api.version                                             *obelus.api.version*
+    Semver string, currently "0.1.0". Feature-detect with it: a minor bump
+    adds, a major bump breaks.
+
+api.register_backend({spec})                   *obelus.api.register_backend()*
+    Register (or replace, by name) a backend. Errors on a malformed spec.
+    `spec` fields:
+      name       string, `[%w_-]+`, unique
+      match      fun(bufnr): boolean — does this backend own the buffer?
+                 A `match` that throws counts as a match (fail closed).
+      label      optional spinner label (default: name)
+      store      { list, create, update, delete, resolve }:
+        list(bufnr)           -> Thread[]
+        create(bufnr, new)    -> Thread (must carry the new `id`);
+                              `new` = { range, kind, text, selected_text, ask? }
+        update(id, { text })  edit the comment text
+        delete(id)
+        resolve(id, resolved) resolved = true resolves, false reopens
+      transport  { send }:
+        send(req, emit)       -> optional cancel function
+                              `req` = { id, bufnr, text, thread }
+                              `emit(ev)` with ev.type "start", "delta"
+                              (ev.text appended), "done" (optional ev.text:
+                              the full reply) or "error".
+    A Thread is { id, range = { sl, el, sc?, ec? }, kind? ("line"|"char"),
+    turns = { { author = "you"|"agent", text }, ... } (or `text`),
+    status? ("open"|"resolved"), ask? }. Lines and columns are 1-based.
+
+    What changes on a matched buffer:
+    - its threads are read with `list()` when the buffer is first shown
+      and shown with the usual bands, signs, thread view and composer;
+    - a new comment is created with `create()`; edit, resolve/reopen and
+      delete go to `update()`, `resolve()` and `delete()`;
+    - a reply goes to `transport.send()` and streams into the thread with
+      the usual spinner; the backend records the turn and the answer;
+    - these threads are kept in memory only: never written to obelus's
+      JSONL, never in a batch, a tag, the project thread's briefing or an
+      `@thread` mention;
+    - obelus's own transports (the "cli" agent, which can edit files, and
+      "file", "sidekick", "quickfix") never run on them. A submit that
+      mixes them with other threads is refused.
+    - Any backend failure (a throw, `error`, an empty reply) shows a FIXED
+      message; the backend's own text is never shown. A failed reply
+      leaves nothing in the thread and puts your message back as a draft.
+    With no backend registered, obelus behaves exactly as without this
+    module.
+
+api.unregister_backend({name})               *obelus.api.unregister_backend()*
+    Remove a backend; its threads leave obelus's memory (not the backend).
+
+api.backends()                                       *obelus.api.backends()*
+    Registered backend names, in match order (first match wins).
+
+api.backend_for({bufnr?})                         *obelus.api.backend_for()*
+    The name of the backend owning `bufnr` (default: current), or nil.
+
+api.refresh({bufnr?})                                 *obelus.api.refresh()*
+    Re-read the buffer's threads with `list()` and repaint. Threads with a
+    reply in flight keep their state. Call it after the data changed
+    elsewhere.
+
+api.approve({opts})                                   *obelus.api.approve()*
+                                                        *obelus-api-approve*
+    A keyboard-driven Approve/Deny float. `opts`:
+      summary    string, plain text
+      details    optional string or list of lines
+      on_result  fun(approved: boolean) — called exactly once
+      timeout_ms optional, default 120000 (then Deny)
+    Returns { cancel = fun() } (cancel denies).
+    - The float opens unfocused and cannot be reached with CTRL-W, so
+      typing never lands in it. To decide, focus it with |:ObelusApprove|
+      (or `api.approve_focus()`): keys typed in the next 600 ms are
+      ignored (typeahead), after that `a` approves.
+    - Everything else denies: Enter, Esc, q, CTRL-C, any other key once
+      armed, leaving or closing the prompt, the UI detaching, the timeout,
+      and an error while opening it.
+    - With no UI attached (headless, `#nvim_list_uis() == 0`) it denies at
+      once and shows nothing.
+    - Prompts queue; one is shown at a time.
+
+api.approve_focus()                             *obelus.api.approve_focus()*
+                                                            *:ObelusApprove*
+    Focus the pending approval prompt and start its arming window.
+    `:ObelusApprove` does the same; it is created the first time
+    `api.approve()` runs.
+
 ==============================================================================
 12. DEBUGGING                                                 *obelus-debug*
 

@@ -674,6 +674,9 @@ M._captured_session = captured_session
 return setmetatable(M, {
   __call = function(_, transport)
     transport.register("cli", function(payload)
+      if package.loaded["obelus.api"] then
+        package.loaded["obelus.api"]._guard_cli(payload) -- obelus.api: never on a backend's thread
+      end
       if payload.opts and payload.opts.stream then
         run_stream(payload)
       else

@@ -455,7 +455,7 @@ local function thread_items(root)
   local format = require("obelus.format")
   local out = {}
   for _, c in ipairs(store.all()) do
-    if not c.meta then
+    if not c.meta and not c.backend then -- obelus.api: a backend's threads stay out of agent prompts
       local first = (vim.split(c.comment or "", "\n")[1] or ""):sub(1, 40)
       out[#out + 1] = {
         label = "thread:" .. c.id,
@@ -777,7 +777,7 @@ local function thread_mentions_block(ids, expand_opts)
   local blocks = {}
   for _, id in ipairs(ids) do
     local c = store.get(id)
-    if c and not c.meta then
+    if c and not c.meta and not c.backend then -- obelus.api: never pull a backend's thread into a prompt
       -- expand_opts.include_drafts: the SENDING context's draft policy — a tag
       -- meta's plain RESPOND promises member drafts stay unsent AND unseen; an
       -- explicit @thread pull-back must not smuggle the draft in through the

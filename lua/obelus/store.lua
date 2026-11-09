@@ -61,6 +61,9 @@ function M.add(comment)
   if comment.tag == nil and M.active_tag and not comment.scratch then
     comment.tag = M.active_tag -- sticky tagging mode: new threads inherit the active tag
   end
+  if package.loaded["obelus.api"] then
+    package.loaded["obelus.api"]._adopt(comment) -- obelus.api: a backend buffer's comment goes to its backend
+  end
   table.insert(M.comments, comment)
   if opts().persist.auto then
     M.save_soon()
@@ -174,6 +177,9 @@ function M.update(id, fields)
     for k, v in pairs(fields) do
       c[k] = v
     end
+    if c.backend and package.loaded["obelus.api"] then
+      package.loaded["obelus.api"]._on_update(c, fields) -- obelus.api: forward edit/resolve
+    end
     if opts().persist.auto then
       M.save_soon()
     end
@@ -185,6 +191,9 @@ function M.remove(id)
   for i, c in ipairs(M.comments) do
     if c.id == id then
       table.remove(M.comments, i)
+      if c.backend and package.loaded["obelus.api"] then
+        package.loaded["obelus.api"]._on_remove(c) -- obelus.api: forward the delete
+      end
       M.detach_from_batches(id)
       if opts().persist.auto then
         M.save_soon()
@@ -383,7 +392,7 @@ function M.pending()
     -- submit / dispatch-all / batch round, even with a draft waiting — gated on
     -- `ask` itself, so ask.scratch = false can't turn a question into a
     -- write-capable review dispatch. (scratch: the same, for any other scratch.)
-    if c.meta or c.ask or c.scratch or c.status == "resolved" or c.dispatching then
+    if c.meta or c.ask or c.scratch or c.backend or c.status == "resolved" or c.dispatching then
       return false
     end
     local t = M.turns(c)
@@ -696,8 +705,9 @@ function M.tag_comment(id, tag)
   if not c then
     return
   end
-  if c.meta then
+  if c.meta or c.backend then
     return -- the project thread is never batch-curated; a tag on it would be a phantom
+    -- (obelus.api: nor is an extension backend's thread — it never joins the CLI's batches)
   end
   if c.scratch then
     return -- an ask thread is a question, not review material: tags are batch curation
@@ -914,6 +924,9 @@ function M.save()
   local path = M.store_path()
   local lines = {}
   for _, c in ipairs(M.comments) do
+    if c.backend then
+      goto continue -- obelus.api: a backend's threads live in that backend, never in the JSONL
+    end
     local copy = vim.deepcopy(c)
     copy.extmark_id = nil -- runtime-only fields
     copy.bufnr = nil
@@ -924,6 +937,7 @@ function M.save()
       t.narration_end = nil -- runtime-only (stream.lua's collector offset); never persisted
     end
     table.insert(lines, vim.json.encode(copy))
+    ::continue::
   end
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
   local ok, err = pcall(vim.fn.writefile, lines, path)

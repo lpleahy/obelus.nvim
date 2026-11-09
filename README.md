@@ -147,6 +147,17 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | `submit_all(id, text)` | SUBMIT-ALL: a tag meta's batch round with member drafts folded in |
 | `clear()` | Clear all comments |
 
+### Extension API (`require("obelus.api")`, v0.1.0)
+
+For other plugins: obelus's comment and thread UI on non-file buffers, and an
+Approve/Deny prompt. Full reference: `:h obelus-api-extension`.
+
+| Function | |
+| --- | --- |
+| `register_backend{ name, match, store, transport }` | Own buffers where `match(bufnr)` is true: their threads come from `store` (`list`/`create`/`update`/`delete`/`resolve`) and replies go through `transport.send(req, emit)` (`start`/`delta`/`done`/`error` events). obelus's own transports never run on them. |
+| `unregister_backend(name)` / `backends()` / `backend_for(bufnr?)` / `refresh(bufnr?)` | Manage and inspect backends |
+| `approve{ summary, details?, on_result }` / `approve_focus()` | A floating Approve/Deny prompt. It must be focused (`:ObelusApprove`) and armed before `a` approves; every other exit, and no UI at all, is Deny. |
+
 ## Configuration
 
 Defaults are in [`lua/obelus/config.lua`](lua/obelus/config.lua). Full reference at `:h obelus`

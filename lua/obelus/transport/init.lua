@@ -25,6 +25,15 @@ end
 ---  round/snapshot commits on this.
 function M.submit(name, opts)
   opts = opts or {}
+  -- obelus.api: an extension backend's thread goes to that backend's transport,
+  -- never to a transport below (fail closed). No-op unless a backend is registered.
+  local api = package.loaded["obelus.api"]
+  if api and api._active() then
+    local routed = api._route_submit(opts)
+    if routed ~= nil then
+      return routed
+    end
+  end
   name = name or config.options.transport.default
   local fn = M.transports[name]
   if not fn then
