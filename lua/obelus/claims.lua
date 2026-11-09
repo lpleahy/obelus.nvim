@@ -92,25 +92,91 @@ function M.blocks(scheme)
 end
 
 -- create <dir>/<scheme> exclusively; true when it exists as a regular file
+-- fsync `fd`, retrying a few times; true once a sync succeeded
+local function sync(fd)
+  for _ = 1, 3 do
+    if uv.fs_fsync(fd) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Create `dir` and any missing parents, safe against other editors creating
+-- the same path at the same time: an EEXIST (or any error) is followed by a
+-- fresh look, and creation counts as done only if a directory is there now.
+-- Real permission or type errors still refuse (the path is not a directory).
+local function ensure_dir(dir)
+  local st = uv.fs_stat(dir)
+  if st then
+    return st.type == "directory"
+  end
+  local parent = vim.fn.fnamemodify(dir, ":h")
+  if parent ~= dir and not ensure_dir(parent) then
+    return false
+  end
+  if uv.fs_mkdir(dir, 493) then
+    return true
+  end
+  local again = uv.fs_stat(dir) -- someone else may have created it meanwhile
+  return again ~= nil and again.type == "directory"
+end
+
+-- Make <dir>/<scheme> exist as a regular file, created exclusively, and sync
+-- it. True only when the marker exists AND a sync of it succeeded (an existing
+-- marker from another editor or an earlier run is synced too). A marker whose
+-- sync failed is KEPT: it already blocks the scheme for every reader.
 local function persist(dir, scheme)
   local path = dir .. "/" .. scheme
   local fd, _, code = uv.fs_open(path, "wx", 420)
   if fd then
     local ok = uv.fs_write(fd, "obelus claim v1\n", 0) ~= nil
-    ok = (uv.fs_fsync(fd) ~= nil) and ok
+    ok = sync(fd) and ok
     uv.fs_close(fd)
     return ok
   end
   if code == "EEXIST" then
     local st = uv.fs_lstat(path)
-    return st ~= nil and st.type == "file" -- another editor (or an earlier run) claimed it
+    if not (st and st.type == "file") then
+      return false
+    end
+    local rfd = uv.fs_open(path, "r", 0)
+    if not rfd then
+      return false
+    end
+    local ok = sync(rfd)
+    uv.fs_close(rfd)
+    return ok
   end
   return false
 end
 
+-- Sync the claims directory itself so the new entries are durable. Where the
+-- platform refuses to fsync a directory (EINVAL/ENOTSUP), that part is best
+-- effort; any other failure means "not durable".
+local function sync_dir(dir)
+  local dfd, _, ocode = uv.fs_open(dir, "r", 0)
+  if not dfd then
+    return ocode == "EINVAL" or ocode == "ENOTSUP"
+  end
+  local ok
+  for _ = 1, 3 do
+    local res, _, code = uv.fs_fsync(dfd)
+    if res or code == "EINVAL" or code == "ENOTSUP" then
+      ok = true
+      break
+    end
+  end
+  uv.fs_close(dfd)
+  return ok == true
+end
+
 ---Claim schemes (lowercase names, e.g. { "luodda" }) and persist the claim.
 ---The claim holds for this session even if it cannot be saved. Returns true
----only when every scheme's claim file exists on disk.
+---only when every scheme's marker file exists, a sync of each marker
+---succeeded and the claims directory was synced (where the platform supports
+---syncing a directory; otherwise that part is best effort). On false, any
+---marker already created stays: it blocks the scheme for every reader.
 ---@param schemes string[]
 ---@return boolean saved
 function M.claim(schemes)
@@ -126,17 +192,12 @@ function M.claim(schemes)
     session[s] = true
   end
   local dir = M.dir()
-  local saved = pcall(vim.fn.mkdir, dir, "p") and vim.fn.isdirectory(dir) == 1
+  local saved = ensure_dir(dir)
   if saved then
     for _, s in ipairs(schemes) do
       saved = persist(dir, s) and saved
     end
-    -- make the new directory entries durable too (best effort where supported)
-    local dfd = uv.fs_open(dir, "r", 0)
-    if dfd then
-      uv.fs_fsync(dfd)
-      uv.fs_close(dfd)
-    end
+    saved = sync_dir(dir) and saved
   end
   local _, corrupt, why = read()
   if corrupt and not warned then

@@ -1047,35 +1047,79 @@ T.it("malformed claims fail closed for scheme:// records only and are kept as th
   T.ok(require("obelus.store").agent_eligible({ file = "fugitive:///x" }))
 end)
 
+T.it("a claim whose sync fails is not reported durable; its marker stays and blocks", function()
+  T.fresh()
+  clear_backends()
+  fresh_claims()
+  local store = require("obelus.store")
+  local fsync = vim.uv.fs_fsync
+  vim.uv.fs_fsync = function()
+    return nil, "EIO: injected", "EIO"
+  end
+  local msgs, restore = capture_notify()
+  local ok, err = pcall(function()
+    T.eq(api.claim_schemes({ "luodda" }), false, "first claim: sync failed, not durable")
+    T.ok(vim.uv.fs_stat(claims.dir() .. "/luodda"), "the marker is kept")
+    claims._reset() -- a fresh reader (another editor) sees the marker
+    T.ok(not store.agent_eligible({ file = "luodda://x" }), "and it blocks")
+    T.eq(api.claim_schemes({ "luodda" }), false, "an existing marker is re-synced too: still not durable")
+  end)
+  vim.uv.fs_fsync = fsync
+  restore()
+  if not ok then
+    error(err, 0)
+  end
+  T.eq(api.claim_schemes({ "luodda" }), true, "durable once a sync succeeds")
+  -- a real type error still refuses: the claims path's parent is a file
+  fresh_claims()
+  vim.fn.mkdir(vim.fn.fnamemodify(claims.dir(), ":h:h"), "p")
+  vim.fn.writefile({}, vim.fn.fnamemodify(claims.dir(), ":h"))
+  msgs, restore = capture_notify()
+  T.eq(api.claim_schemes({ "memo" }), false)
+  restore()
+end)
+
 T.it("two editors claiming at once both stay claimed (filesystem barrier, real processes)", function()
-  local state = vim.fn.tempname()
+  local state = vim.fn.tempname() -- missing: both editors must create every level of the claims path
   fresh_claims(state)
   local barrier = vim.fn.tempname()
   vim.fn.mkdir(barrier, "p")
-  -- each editor pauses INSIDE claim, right before it creates its claim file,
-  -- until both have arrived; then they race to finish
+  -- each editor pauses INSIDE claim, right before its FIRST directory creation,
+  -- until both have arrived; then they race through every parent, the claims
+  -- dir and their exclusive claim files
   local function editor(scheme)
     return [[
 local uv = vim.uv
-local open = uv.fs_open
+local mkdir = uv.fs_mkdir
 local barrier = ]] .. vim.inspect(barrier) .. [[
 
-uv.fs_open = function(path, flags, ...)
-  if flags == "wx" then
+local fnmkdir = vim.fn.mkdir
+local waited = false
+local function arrive()
+  if not waited then
+    waited = true
     io.open(barrier .. "/ready-]] .. scheme .. [[", "w"):close()
-    for _ = 1, 12000 do
+    for _ = 1, 6000 do
       if uv.fs_stat(barrier .. "/go") then break end
       uv.sleep(5)
     end
   end
-  return open(path, flags, ...)
+end
+-- whichever creates the first directory (uv or vim.fn), the barrier is there
+uv.fs_mkdir = function(...)
+  arrive()
+  return mkdir(...)
+end
+vim.fn.mkdir = function(...)
+  arrive()
+  return fnmkdir(...)
 end
 local saved = require("obelus.api").claim_schemes({ "]] .. scheme .. [[" })
 io.write("saved=", tostring(saved), "\n")
 ]]
   end
   local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
-  local procs = {}
+  local procs, exited = {}, {}
   for _, scheme in ipairs({ "luodda", "memo" }) do
     local script = vim.fn.tempname() .. ".lua"
     vim.fn.writefile(
@@ -1093,14 +1137,20 @@ io.write("saved=", tostring(saved), "\n")
     )
     local env = vim.fn.environ()
     env.XDG_STATE_HOME = state
-    procs[#procs + 1] = vim.system(
+    local i = #procs + 1
+    procs[i] = vim.system(
       { vim.v.progpath, "--headless", "-n", "-u", "NONE", "-i", "NONE", "-l", script },
-      { env = env, clear_env = true, text = true }
+      { env = env, clear_env = true, text = true },
+      function(res)
+        exited[i] = res
+      end
     )
   end
+  -- fail fast: stop waiting as soon as a child exits before the barrier
   local both = vim.wait(30000, function()
-    return vim.uv.fs_stat(barrier .. "/ready-luodda") ~= nil and vim.uv.fs_stat(barrier .. "/ready-memo") ~= nil
-  end, 10)
+    return (vim.uv.fs_stat(barrier .. "/ready-luodda") ~= nil and vim.uv.fs_stat(barrier .. "/ready-memo") ~= nil)
+      or next(exited) ~= nil
+  end, 10) and next(exited) == nil
   io.open(barrier .. "/go", "w"):close() -- always release, so no child is left waiting
   local results = {}
   for i, p in ipairs(procs) do
