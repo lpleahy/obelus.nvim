@@ -55,6 +55,12 @@ grid, the bundled treesitter parsers and the default colorscheme ship with Neovi
 With a different version the harness refuses to compare. Re-record and review the
 diff.
 
+## Sensitivity
+
+`sh tests/ui/mutations.sh` applies ten one-line visual mutations to a temp copy of
+the tree and requires the harness to fail on each. It takes about a minute. See
+`MUTATIONS.md` for the last results.
+
 ## Hermeticity and determinism
 
 - `run.sh` creates one private temp dir for the XDG config, data, state, cache and
