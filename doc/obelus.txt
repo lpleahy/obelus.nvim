@@ -1505,7 +1505,12 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
       leaves nothing in the thread and puts your message back as a draft.
     Unregistering or replacing a backend, or reloading the store, cancels
     its sends; every send callback checks that it still owns its thread and
-    job before it changes anything.
+    job before it changes anything. Backend callbacks (`match`, the store
+    functions, `send` and its cancel) may call back into this API, e.g.
+    through a synchronous RPC wait: the old registration is detached before
+    its cancels run, only its own threads and jobs are removed, and obelus
+    re-checks the registration and the thread after every callback. When a
+    callback registers the same name again, the latest registration wins.
 
     Claimed schemes ~                                   *obelus-quarantine*
     A record on a "scheme://…" buffer whose scheme a backend ever claimed

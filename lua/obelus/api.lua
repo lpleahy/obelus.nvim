@@ -157,10 +157,13 @@ function M.backend_for(bufnr)
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return nil
   end
-  for _, name in ipairs(order) do
-    local ok, hit = pcall(backends[name].match, bufnr)
-    if not ok or hit then
-      return name
+  for _, name in ipairs(vim.deepcopy(order)) do -- match() is external: it may re-enter
+    local b = backends[name]
+    if b then
+      local ok, hit = pcall(b.match, bufnr)
+      if not ok or hit then
+        return name
+      end
     end
   end
 end
@@ -268,11 +271,14 @@ local function settle(st, kind, text)
   if jobs.get(st.id) == st.spec then
     jobs.clear(st.id)
   end
-  if (kind == "cancel" or kind == "invalidate") and st.cancel then
-    pcall(st.cancel)
-  end
+  -- the backend's cancel is EXTERNAL code (it may re-enter the API): it runs
+  -- last, after every change below, so nothing here acts on a stale `own`
+  local external_cancel = (kind == "cancel" or kind == "invalidate") and st.cancel or nil
   if not own then
     pcall(progress.finish, st.job, false, "")
+    if external_cancel then
+      pcall(external_cancel)
+    end
     return -- stale: touch nothing that a newer registration/record owns
   end
   if kind == "done" then
@@ -296,6 +302,9 @@ local function settle(st, kind, text)
   elseif kind == "invalidate" then
     store.abort(st.id)
     pcall(progress.finish, st.job, false, "")
+  end
+  if external_cancel then
+    pcall(external_cancel)
   end
 end
 
@@ -411,6 +420,11 @@ function M.refresh(bufnr)
   end
   local b = backends[name]
   local ok, list = pcall(b.store.list, bufnr)
+  -- list() is external: if it replaced or removed this registration, or the
+  -- buffer went away, this result is stale (the newer registration refreshed)
+  if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
   if not ok or type(list) ~= "table" then
     notify_failure(name, "could not list its threads")
     return false
@@ -456,8 +470,11 @@ function M.refresh(bufnr)
   return true
 end
 
-local function refresh_loaded(name)
+local function refresh_loaded(name, b)
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if backends[name] ~= b then
+      return -- replaced while refreshing (re-entered): the newer one refreshes itself
+    end
     if vim.api.nvim_buf_is_loaded(buf) and M.backend_for(buf) == name then
       M.refresh(buf)
     end
@@ -486,21 +503,26 @@ local function ensure_autocmds()
   })
 end
 
--- drop a registration's work and mirrors (registration itself stays as is)
-local function drop(name)
-  local old = backends[name]
-  invalidate_sends(function(st)
-    return st.b == old
-  end)
+-- End an OLD registration that the caller has already taken out of the
+-- registry (replaced or removed): drop only that generation's mirrors and sync
+-- marks, then cancel and invalidate its sends. The external cancels run last,
+-- so a nested registration they make is never touched by this.
+local function detach(name, old)
   local store = require("obelus.store")
   for i = #store.comments, 1, -1 do
-    if store.comments[i].backend == name then
+    local c = store.comments[i]
+    if c.backend == name and c._api_gen == old.gen then
       table.remove(store.comments, i)
     end
   end
-  for buf, _ in pairs(synced) do
-    synced[buf] = nil
+  for buf, g in pairs(synced) do
+    if g == old.gen then
+      synced[buf] = nil
+    end
   end
+  invalidate_sends(function(st)
+    return st.b == old
+  end)
 end
 
 ---Register a backend. Registering a name again REPLACES it: the old
@@ -526,12 +548,8 @@ function M.register_backend(spec)
     need(require("obelus.claims").valid(s), "invalid scheme " .. vim.inspect(s) .. " (lowercase, [a-z][a-z0-9+.-]*)")
   end
   require("obelus.claims").claim(spec.schemes)
-  if backends[spec.name] then
-    drop(spec.name) -- replacement: the old generation's work ends here
-  else
-    order[#order + 1] = spec.name
-  end
-  backends[spec.name] = {
+  local old = backends[spec.name]
+  local b = {
     name = spec.name,
     gen = next_gen(),
     match = spec.match,
@@ -539,8 +557,19 @@ function M.register_backend(spec)
     transport = spec.transport,
     label = type(spec.label) == "string" and spec.label or spec.name,
   }
+  if not old then
+    order[#order + 1] = spec.name
+  end
+  backends[spec.name] = b -- the new one owns the name before any old code runs
   ensure_autocmds()
-  refresh_loaded(spec.name)
+  if old then
+    detach(spec.name, old) -- replacement: the old generation's work ends here
+  end
+  -- a cancel above may have registered this name AGAIN (re-entry): the latest
+  -- registration wins and refreshes itself; this one stops here
+  if backends[spec.name] == b then
+    refresh_loaded(spec.name, b)
+  end
   pcall(require("obelus.render").render_all)
   return true
 end
@@ -549,16 +578,17 @@ end
 ---memory (its data stays in the backend).
 ---@param name string
 function M.unregister_backend(name)
-  if not backends[name] then
+  local old = backends[name]
+  if not old then
     return false
   end
-  drop(name)
-  backends[name] = nil
+  backends[name] = nil -- detached first: its external cancels may re-register the name
   for i = #order, 1, -1 do
     if order[i] == name then
       table.remove(order, i)
     end
   end
+  detach(name, old)
   pcall(require("obelus.render").render_all)
   return true
 end
@@ -597,8 +627,10 @@ function M._on_reload()
     return true
   end)
   synced = {}
-  for _, name in ipairs(order) do
-    refresh_loaded(name)
+  for _, name in ipairs(vim.deepcopy(order)) do
+    if backends[name] then
+      refresh_loaded(name, backends[name])
+    end
   end
 end
 
@@ -627,6 +659,21 @@ function M._adopt(c)
     notify_failure(name, "could not save this comment")
     return false
   end
+  -- create() is external: re-read the registration rather than trusting `b`.
+  -- A replacement of the same name owns the backend's records now; gone = refuse.
+  b = backends[name]
+  if not b then
+    notify_failure(name, "went away while saving this comment")
+    return false
+  end
+  local store = require("obelus.store")
+  local id = mirror_id(name, tostring(t.id))
+  for i = #store.comments, 1, -1 do -- a nested refresh may already list it: one copy only
+    local x = store.comments[i]
+    if x.id == id and not inflight[id] then
+      table.remove(store.comments, i)
+    end
+  end
   c.backend = name
   c.backend_id = tostring(t.id)
   c.id = mirror_id(name, c.backend_id)
@@ -649,9 +696,17 @@ function M._on_update(c, fields)
     end
     return not persisted
   end
+  -- update()/resolve() are external: afterwards this record must still be the
+  -- live mirror of the same registration, or the change is not applied here
+  local function still_mine()
+    return owner(c) == b and require("obelus.store").get(c.id) == c
+  end
   if type(fields.comment) == "string" and fields.comment ~= c.comment then
     if not pcall(b.store.update, c.backend_id, { text = fields.comment }) then
       notify_failure(b.name, "could not save the edit")
+      return false
+    end
+    if not still_mine() then
       return false
     end
     if c.turns and c.turns[1] then
@@ -663,6 +718,9 @@ function M._on_update(c, fields)
     if resolved ~= (c._api_status == "resolved") then
       if not pcall(b.store.resolve, c.backend_id, resolved) then
         notify_failure(b.name, resolved and "could not resolve the thread" or "could not reopen the thread")
+        return false
+      end
+      if not still_mine() then
         return false
       end
       c._api_status = fields.status -- acknowledged only now
@@ -682,6 +740,8 @@ function M._on_remove(c)
     notify_failure(b.name, "could not delete the thread")
     return false
   end
+  -- delete() is external; store.remove re-finds the record by identity after
+  -- this returns, so a re-entrant refresh cannot make it drop another record
   invalidate_sends(function(st)
     return st.c == c
   end)

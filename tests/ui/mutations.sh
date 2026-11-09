@@ -265,6 +265,9 @@ spec_mutate "api-turn-id-not-reused" lua/obelus/api.lua \
 spec_mutate "api-generation-check-removed" lua/obelus/api.lua \
   'and require("obelus.store").get(st.id) == st.c
     and require("obelus.jobs").get(st.id) == st.spec' 'and true'
+# refresh trusts a list() result after list() re-entered and replaced the registration
+spec_mutate "api-refresh-no-revalidation" lua/obelus/api.lua \
+  'if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) then' 'if false then'
 # replacing/unregistering a backend no longer cancels its sends
 spec_mutate "api-replace-keeps-old-sends" lua/obelus/api.lua \
   'return st.b == old' 'return false'

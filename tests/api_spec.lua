@@ -698,6 +698,88 @@ T.it("a callback that no longer owns its record and job changes nothing", functi
   end)
 end)
 
+-- ── re-entrancy (R2-B5): backend callbacks that call back into the API ─────────
+
+T.it("re-entrant list(): a replacement registered inside the old list() is not overwritten", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local old_list = ctx.B.spec.store.list
+    local NEW = memo_backend()
+    NEW.threads = vim.deepcopy(SEED)
+    NEW.threads[1].turns[1].text = "NEW GENERATION"
+    -- the live (old) registration refreshes; its list() registers a replacement
+    -- of the same name, then returns its OLD list to the outer refresh
+    ctx.B.spec.store.list = function(bufnr)
+      api.register_backend(NEW.spec)
+      return old_list(bufnr)
+    end
+    api.refresh(ctx.buf)
+    local c = ctx.store.get("api:memo:7")
+    T.eq(c.comment, "NEW GENERATION", "the newer registration's records stand")
+    T.eq(#ctx.store.by_file(ctx.file), 1, "one copy")
+    require("obelus").chat_send(c.id, "still yours?", "send")
+    T.eq(#NEW.sends, 1, "a send goes to the live (newest) registration")
+    NEW.sends[1].emit({ type = "done", text = "yes" })
+    T.eq(texts(ctx.store.get(c.id))[#texts(ctx.store.get(c.id))], "agent:yes")
+  end)
+end)
+
+T.it("re-entrant cancel(): unregister whose cancel registers anew and sends keeps the new work", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local NEW = memo_backend()
+    NEW.threads = vim.deepcopy(SEED)
+    local old_send = ctx.B.spec.transport.send
+    ctx.B.spec.transport.send = function(req, emit)
+      old_send(req, emit)
+      return function()
+        ctx.B.cancels = ctx.B.cancels + 1
+        api.register_backend(NEW.spec) -- re-enters from inside the old send's cancel
+        require("obelus").chat_send(id, "nested replacement request", "send")
+      end
+    end
+    api.register_backend(ctx.B.spec)
+    local old = start_send(ctx, id, "old request")
+    api.unregister_backend("memo")
+    T.eq(ctx.B.cancels, 1, "the old send was cancelled")
+    T.eq(api.backends(), { "memo" }, "the nested registration (the latest) stands")
+    local c = ctx.store.get(id)
+    T.ok(c and c.dispatching, "its record exists and is sending")
+    T.ok(require("obelus.jobs").is_running(id), "its job is live")
+    T.eq(#NEW.sends, 1)
+    T.eq(NEW.sends[1].req.text, "nested replacement request")
+    old.emit({ type = "done", text = "OLD" }) -- the old send's late event: ignored
+    T.ok(require("obelus.jobs").is_running(id), "still live")
+    NEW.sends[1].emit({ type = "done", text = "new answer" })
+    T.eq(texts(ctx.store.get(id))[#texts(ctx.store.get(id))], "agent:new answer")
+    T.ok(not require("obelus.jobs").is_running(id))
+  end)
+end)
+
+T.it("re-entrant delete()/resolve(): a refresh inside them never drops or edits the wrong record", function()
+  local seed = vim.deepcopy(SEED)
+  seed[2] = { id = 8, range = { sl = 3, el = 3 }, turns = { { author = "you", text = "keep me", turn_id = "k" } } }
+  with_backend(seed, function(ctx)
+    local del, res = ctx.B.spec.store.delete, ctx.B.spec.store.resolve
+    ctx.B.spec.store.delete = function(id)
+      del(id)
+      api.refresh(ctx.buf) -- e.g. a synchronous RPC wait that pumps the loop
+    end
+    ctx.B.spec.store.resolve = function(id, r)
+      res(id, r)
+      api.refresh(ctx.buf)
+    end
+    api.register_backend(ctx.B.spec)
+    require("obelus.review").resolve("api:memo:8")
+    T.eq(ctx.store.get("api:memo:8").status, "resolved", "the refreshed mirror shows the backend's truth")
+    local msgs, restore = capture_notify()
+    require("obelus.review").delete("api:memo:7")
+    restore()
+    T.is_nil(ctx.store.get("api:memo:7"))
+    T.ok(ctx.store.get("api:memo:8"), "the other thread is still there")
+    T.eq(#ctx.store.by_file(ctx.file), 1)
+  end)
+end)
+
 T.it("a store reload rebuilds the mirrors and ends in-flight sends", function()
   with_backend(vim.deepcopy(SEED), function(ctx)
     local id = "api:memo:7"

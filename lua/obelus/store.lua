@@ -217,8 +217,19 @@ end
 function M.remove(id)
   for i, c in ipairs(M.comments) do
     if c.id == id then
-      if c.backend and package.loaded["obelus.api"] and not package.loaded["obelus.api"]._on_remove(c) then
-        return nil -- obelus.api: the backend refused the delete; the thread stays
+      if c.backend and package.loaded["obelus.api"] then
+        if not package.loaded["obelus.api"]._on_remove(c) then
+          return nil -- obelus.api: the backend refused the delete; the thread stays
+        end
+        i = nil -- the backend's delete() may have re-entered: find the record again by identity
+        for j, x in ipairs(M.comments) do
+          if x == c then
+            i = j
+          end
+        end
+        if not i then
+          return c -- already gone (a re-entrant refresh dropped it)
+        end
       end
       table.remove(M.comments, i)
       M.detach_from_batches(id)
