@@ -1428,6 +1428,9 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
       name       string, `[%w_-]+`, unique
       match      fun(bufnr): boolean — does this backend own the buffer?
                  A `match` that throws counts as a match (fail closed).
+      schemes    the URI schemes it owns, lowercase, e.g. { "luodda" }
+                 (non-empty). Registering claims them (see
+                 |obelus.api.claim_schemes()|).
       label      optional spinner label (default: name)
       store      { list, create, update, delete, resolve }:
         list(bufnr)           -> Thread[]
@@ -1478,17 +1481,32 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
     its sends; every send callback checks that it still owns its thread and
     job before it changes anything.
 
-    Non-file records ~                                  *obelus-quarantine*
-    Every record on a buffer named like "scheme://…" (not an ordinary file)
+    Claimed schemes ~                                   *obelus-quarantine*
+    A record on a "scheme://…" buffer whose scheme a backend ever claimed
     is never sent to obelus's agents or expanded into their prompts,
-    whether or not a backend is registered, loaded or matches it — e.g. a
-    comment saved in obelus's JSONL before its backend existed. Such a
-    record is quarantined: it stays on disk and on screen, and a submit that
-    includes it is refused. Ordinary file buffers are unaffected.
+    whether or not that backend is registered yet, the buffer is loaded or
+    `match` accepts it — e.g. a comment saved in obelus's JSONL before the
+    backend existed. Such a record is quarantined: it stays on disk and on
+    screen, and a submit that includes it is refused. Claims persist in
+    `stdpath("state")/obelus/claimed_schemes.json` (written atomically), so
+    they hold after a restart. If that file exists but cannot be read or
+    parsed, every "scheme://…" record is quarantined until it is fixed or
+    removed (removing it releases all claims). Ordinary files and unclaimed
+    schemes (fugitive://, oil://, …) behave exactly as without this module.
 
 api.unregister_backend({name})               *obelus.api.unregister_backend()*
     Remove a backend: cancel its sends; its threads leave obelus's memory
     (not the backend).
+
+api.claim_schemes({schemes})                    *obelus.api.claim_schemes()*
+    Claim URI schemes (lowercase, e.g. { "luodda" }) before your backend
+    registers — call it from your plugin/ file — so their records are
+    quarantined from the start (|obelus-quarantine|). Errors on an invalid
+    name; returns whether the claim was saved (it holds for the session
+    either way).
+
+api.claimed_schemes()                         *obelus.api.claimed_schemes()*
+    The claimed schemes (saved and this session), sorted.
 
 api.backends()                                       *obelus.api.backends()*
     Registered backend names, in match order (first match wins).

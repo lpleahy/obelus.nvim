@@ -509,7 +509,7 @@ local function do_respond(c, text, mode)
     -- needs_response on any thread in the project, not only the one it's
     -- nominally "about".
     submit_opts.actions_comments = vim.tbl_filter(function(x)
-      return not x.meta and not x.scratch and store.agent_eligible(x) -- ask/non-file threads are never write-back targets
+      return not x.meta and not x.scratch and store.agent_eligible(x) -- ask/backend-claimed threads are never write-back targets
     end, store.all())
   else
     -- case D: an ordinary thread — untouched for one that was NEVER tagged (see

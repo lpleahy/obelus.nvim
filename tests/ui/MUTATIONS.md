@@ -9,8 +9,8 @@ baseline mismatch with no harness error. A harness error under a mutation counts
 **invalid**. The real tree is never modified.
 
 Last run: 2026-11-09, Neovim v0.12.6, 49 baselines (41 + 8 from `obelus.api`).
-Result: **29 caught (18 visual or setup, 1 harness, 1 real-UI behaviour, 9
-behaviour specs), 0 missed, 0 invalid**, 242 s under `nice -n 10`. The per-row
+Result: **31 caught (18 visual or setup, 1 harness, 1 real-UI behaviour, 11
+behaviour specs), 0 missed, 0 invalid** under `nice -n 10`. The per-row
 counts below for the first 18 rows are from the 41-baseline run; the `api_*`
 baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49).
 
@@ -36,7 +36,9 @@ baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49)
 | first-use-overwrites-default-Y | `quick_reply()` maps `Y` to `dd` the first time it runs | caught: 2 (both `compose_quick_reply_hints` sizes) |
 | api-cli-fallthrough (behaviour) | `transport/init.lua`: the `obelus.api` route in `submit()` is skipped | caught: 9 `[api]` specs |
 | api-cli-guard-removed (behaviour) | `transport/cli.lua`: the CLI transport's own eligibility refusal is removed | caught: 2 `[api]` specs (a spawn is attempted) |
-| api-eligibility-ignores-uri (behaviour) | `store.lua`: `agent_eligible` no longer recognises `scheme://` records | caught: 3 `[api]` specs (restart, unloaded, @thread/briefing) |
+| api-eligibility-ignores-claims (behaviour) | `store.lua`: `agent_eligible` no longer consults the claimed schemes | caught: 7 `[api]` specs (restart, unloaded, @thread/briefing, claim_schemes, …) |
+| claims-corrupt-fails-open (behaviour) | `claims.lua`: an unreadable/corrupt claims file no longer blocks `scheme://` records | caught: 1 `[api]` spec |
+| claims-not-persisted (behaviour) | `claims.lua`: a claim is never written to disk | caught: 2 `[api]` specs (incl. the real-restart subprocess) |
 | approve-headless-falls-through (behaviour) | `approve.lua`: no-UI check removed, so a headless prompt opens instead of denying | caught: 2 `[api]` specs |
 | approve-no-unarmed-phase (behaviour) | `approve.lua`: focusing arms at once | caught: 3 `[api]` specs |
 | approve-no-drain (behaviour) | `approve.lua`: the `getchar(0)` drain is removed | caught: 1 `[api]` spec (queued input with a blocked loop) |

@@ -4,6 +4,15 @@ T.describe("api")
 
 local api = require("obelus.api")
 local approve = require("obelus.approve")
+local claims = require("obelus.claims")
+
+-- every spec claims into its own temp file: never the user's state dir
+local function fresh_claims(dir)
+  dir = dir or vim.fn.tempname()
+  claims._path = dir .. "/nvim/obelus/claimed_schemes.json" -- = stdpath("state") with XDG_STATE_HOME=dir
+  claims._reset()
+  return dir
+end
 
 -- An in-memory backend. B.threads is its "database"; B.calls logs every store
 -- call; B.sends every transport.send (with the emit callback to drive it).
@@ -25,6 +34,7 @@ local function memo_backend()
   B.spec = {
     name = "memo",
     label = "memo",
+    schemes = { "memo" },
     match = function(bufnr)
       return vim.api.nvim_buf_get_name(bufnr):match("^memo://") ~= nil
     end,
@@ -128,6 +138,7 @@ end
 local function setup(seed)
   local ctx = T.fresh()
   clear_backends()
+  fresh_claims()
   local B = memo_backend()
   B.threads = seed or {}
   api.register_backend(B.spec)
@@ -193,6 +204,11 @@ T.it("api.version is semver 0.1.x and register_backend validates its spec", func
   bad = vim.deepcopy(B.spec)
   bad.name = "has space"
   T.ok(not pcall(api.register_backend, bad), "name charset")
+  for _, schemes in ipairs({ vim.NIL, {}, { "Memo" }, { "" }, { "me mo" } }) do
+    bad = vim.deepcopy(B.spec)
+    bad.schemes = schemes ~= vim.NIL and schemes or nil
+    T.ok(not pcall(api.register_backend, bad), "schemes " .. vim.inspect(schemes) .. " rejected")
+  end
   T.eq(api.backends(), {})
 end)
 
@@ -204,6 +220,7 @@ T.it("register/match: a backend owns its buffers only; a throwing match fails cl
     T.is_nil(api.backend_for(plain), "a file buffer is not matched")
     api.register_backend({
       name = "broken",
+      schemes = { "broken" },
       match = function()
         error("boom")
       end,
@@ -561,9 +578,12 @@ local function real_cli(payload)
   return spawned, ok, err
 end
 
-T.it("restart with a URI record in the JSONL: quarantined, kept on disk, never sent (no backend yet)", function()
+T.it("restart with a claimed-scheme record in the JSONL: quarantined, kept on disk, never sent", function()
   local ctx = T.fresh()
   clear_backends()
+  fresh_claims()
+  api.claim_schemes({ "memo" })
+  claims._reset() -- "restart": this process's claims are gone, only the file remains
   local path = ctx.store.store_path()
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
   vim.fn.writefile({
@@ -650,9 +670,128 @@ T.it("@thread mentions and briefings never expand a legacy or backend thread", f
   end)
 end)
 
+-- run `lua_src` in a NEW nvim (a real restart) with XDG_STATE_HOME = state_home;
+-- returns its stdout
+local function in_new_nvim(state_home, lua_src)
+  local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+  local script = vim.fn.tempname() .. ".lua"
+  vim.fn.writefile(vim.split("vim.opt.rtp:prepend(" .. vim.inspect(root) .. ")\n" .. lua_src, "\n"), script)
+  local env = vim.fn.environ()
+  env.XDG_STATE_HOME = state_home
+  local res = vim
+    .system({ vim.v.progpath, "--headless", "-n", "-u", "NONE", "-i", "NONE", "-l", script }, {
+      env = env,
+      clear_env = true,
+      text = true,
+    })
+    :wait(20000)
+  os.remove(script)
+  return (res.stdout or "") .. (res.stderr or "")
+end
+
+T.it("a claim persists: after a real restart the record is ineligible before any backend registers", function()
+  local state = vim.fn.tempname()
+  fresh_claims(state)
+  api.claim_schemes({ "memo" })
+  local out = in_new_nvim(
+    state,
+    [[
+local store = require("obelus.store")
+io.write("claimed=", table.concat(require("obelus.api").claimed_schemes(), ","), "\n")
+io.write("memo=", tostring(store.agent_eligible({ file = "memo://guide/1" })), "\n")
+io.write("fugitive=", tostring(store.agent_eligible({ file = "fugitive:///repo/.git//0/a.lua" })), "\n")
+io.write("file=", tostring(store.agent_eligible({ file = "/tmp/a.lua" })), "\n")
+]]
+  )
+  T.contains(out, "claimed=memo\n")
+  T.contains(out, "memo=false\n")
+  T.contains(out, "fugitive=true\n")
+  T.contains(out, "file=true\n")
+  local saved = vim.json.decode(table.concat(vim.fn.readfile(claims.path()), "\n"))
+  T.eq(saved, { version = 1, schemes = { "memo" } })
+end)
+
+T.it("claim_schemes with no backend: that scheme is quarantined at once; names are validated", function()
+  T.fresh()
+  clear_backends()
+  fresh_claims()
+  local store = require("obelus.store")
+  T.ok(store.agent_eligible({ file = "luodda://guide/1" }), "unclaimed: eligible as before")
+  T.ok(api.claim_schemes({ "luodda" }))
+  T.ok(not store.agent_eligible({ file = "luodda://guide/1" }))
+  T.ok(not store.agent_eligible({ file = "LUODDA://guide/1" }), "schemes are case-insensitive")
+  T.ok(store.agent_eligible({ file = "fugitive:///x" }))
+  T.eq(api.claimed_schemes(), { "luodda" })
+  for _, bad in ipairs({ {}, { "Luodda" }, { "1x" }, { "a/b" }, "luodda" }) do
+    T.ok(not pcall(api.claim_schemes, bad), vim.inspect(bad) .. " rejected")
+  end
+  local log, restore = spy_transports()
+  local msgs, restore_n = capture_notify()
+  local r = require("obelus.transport").submit("cli", { comments = { legacy("luodda://guide/1") } })
+  restore_n()
+  restore()
+  T.eq(r, false)
+  T.eq(log, {})
+  T.ok(#msgs == 1)
+end)
+
+T.it("a corrupt claims file fails closed for scheme:// records only, and is never overwritten", function()
+  T.fresh()
+  clear_backends()
+  fresh_claims()
+  vim.fn.mkdir(vim.fn.fnamemodify(claims.path(), ":h"), "p")
+  vim.fn.writefile({ "{ not json" }, claims.path())
+  local store = require("obelus.store")
+  T.ok(not store.agent_eligible({ file = "fugitive:///x" }), "unclassifiable scheme: closed")
+  T.ok(not store.agent_eligible({ file = "oil:///tmp/" }))
+  T.ok(store.agent_eligible({ file = "/tmp/a.lua" }), "ordinary files untouched")
+  T.ok(store.agent_eligible({ file = vim.fn.getcwd() }), "a directory (the project thread) untouched")
+  local msgs, restore = capture_notify()
+  T.eq(api.claim_schemes({ "luodda" }), false, "not saved")
+  restore()
+  T.eq(vim.fn.readfile(claims.path()), { "{ not json" }, "left as it was")
+  T.contains(vim.inspect(msgs), "unreadable")
+  -- an invalid entry is corrupt too
+  vim.fn.writefile({ vim.json.encode({ version = 1, schemes = { "ok", "NOT OK" } }) }, claims.path())
+  claims._reset()
+  T.ok(not store.agent_eligible({ file = "fugitive:///x" }))
+  -- removing the file recovers (claims made since still hold)
+  os.remove(claims.path())
+  claims._reset()
+  T.ok(store.agent_eligible({ file = "fugitive:///x" }))
+end)
+
+T.it("unclaimed scheme:// comments behave as before: with no backend and with a luodda backend", function()
+  local ctx = T.fresh()
+  clear_backends()
+  fresh_claims()
+  local fug = ctx.store.add(T.comment({ file = "fugitive:///repo/.git//0/a.lua", comment = "fugitive note" }))
+  local function sends_to_cli()
+    local log, restore = spy_transports()
+    local r = require("obelus.transport").submit("cli", { comments = { fug } })
+    restore()
+    return r, #log, log[1] and log[1].payload.markdown or ""
+  end
+  T.ok(ctx.store.agent_eligible(fug))
+  T.eq(#ctx.store.pending(), 1)
+  local r, n, md = sends_to_cli()
+  T.eq({ r, n }, { true, 1 })
+  T.contains(md, "fugitive note")
+  local B = memo_backend()
+  B.spec.name, B.spec.schemes = "luodda", { "luodda" }
+  api.register_backend(B.spec)
+  T.ok(ctx.store.agent_eligible(fug), "still eligible with a luodda backend")
+  r, n = sends_to_cli()
+  T.eq({ r, n }, { true, 1 })
+  T.contains(require("obelus.mention").prompt_suffix("see @thread:" .. fug.id) or "", "fugitive note")
+  T.ok(not ctx.store.agent_eligible({ file = "luodda://guide/1" }))
+  clear_backends()
+end)
+
 T.it("with no backend registered, ordinary file comments are untouched", function()
   local ctx = T.fresh()
   clear_backends()
+  fresh_claims()
   local c = ctx.store.add(T.comment({ file = ctx.root .. "/a.lua" }))
   T.is_nil(c.backend)
   T.ok(c.id:match("^%d+%-%d+$"), "obelus's own id scheme")

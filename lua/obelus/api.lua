@@ -7,7 +7,8 @@
 --     "luodda://guide/*"). Threads on a matched buffer live in the backend's
 --     store (never in obelus's JSONL) and turns go through the backend's
 --     transport. obelus's own transports never run on them (fail closed — see
---     store.agent_eligible, which also quarantines unowned non-file records).
+--     store.agent_eligible, which also quarantines records on a scheme a
+--     backend ever claimed: obelus.claims, persisted across restarts).
 --   * approve{ summary, details?, on_result }: a keyboard-driven Approve/Deny
 --     float where every non-approve exit (and no UI at all) is Deny.
 --
@@ -79,6 +80,7 @@ M.version = "0.1.0"
 ---@field store obelus.api.Store
 ---@field transport obelus.api.Transport
 ---@field label? string shown on the spinner (default: name)
+---@field schemes string[] the URI schemes this backend owns (lowercase, e.g. { "luodda" }); claimed and persisted
 
 local backends = {} ---@type table<string, table> name -> registration (with .gen)
 local order = {} ---@type string[] registration order; first match wins
@@ -469,6 +471,11 @@ function M.register_backend(spec)
     need(type(spec.store[fn]) == "function", "store." .. fn .. " must be a function")
   end
   need(type(spec.transport) == "table" and type(spec.transport.send) == "function", "transport.send must be a function")
+  need(type(spec.schemes) == "table" and #spec.schemes > 0, "schemes must be a non-empty list")
+  for _, s in ipairs(spec.schemes) do
+    need(require("obelus.claims").valid(s), "invalid scheme " .. vim.inspect(s) .. " (lowercase, [a-z][a-z0-9+.-]*)")
+  end
+  require("obelus.claims").claim(spec.schemes)
   if backends[spec.name] then
     drop(spec.name) -- replacement: the old generation's work ends here
   else
@@ -504,6 +511,22 @@ function M.unregister_backend(name)
   end
   pcall(require("obelus.render").render_all)
   return true
+end
+
+---Claim URI schemes (lowercase, e.g. { "luodda" }) before a backend registers —
+---call it from your plugin/ file. Records on those schemes never reach obelus's
+---own agents again, across restarts (see :h obelus-quarantine). Errors on an
+---invalid name; returns whether the claim was saved to disk.
+---@param schemes string[]
+---@return boolean saved
+function M.claim_schemes(schemes)
+  return require("obelus.claims").claim(schemes)
+end
+
+---Schemes claimed so far (on disk and in this session), sorted.
+---@return string[]
+function M.claimed_schemes()
+  return require("obelus.claims").list()
 end
 
 ---Names of the registered backends, in match order.

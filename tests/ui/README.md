@@ -55,7 +55,7 @@ OBELUS_UI_ONLY=band,chat make ui-snapshots    # only scenarios whose name contai
 
 `make test` runs the specs first, then the snapshots, even under `make -j`. The
 specs report executed and skipped counts separately. With a private XDG setup the
-21 markview and render-markdown specs are skipped (484 passed, 21 skipped). They run
+21 markview and render-markdown specs are skipped (488 passed, 21 skipped). They run
 only when those plugins are on the runtimepath.
 
 The harness reports two kinds of problem. `FAIL` means a rendering differs from its
@@ -97,7 +97,7 @@ diff.
   small mutations to a temp copy, covering visuals, extmarks, float stacking and
   setup. A mutation counts as caught only on a baseline mismatch with no harness
   error. One more mutation removes the supervisor's member teardown and must fail
-  the parent-exit self-tests. Nine more mutate the `obelus.api` guards, which
+  the parent-exit self-tests. Eleven more mutate the `obelus.api` guards, which
   mostly draw nothing, and must fail the `[api]` behaviour specs; one more
   removes the approve prompt's input drain and must fail the real-UI
   `api_approve_queued_typeahead` snapshot. See `MUTATIONS.md`

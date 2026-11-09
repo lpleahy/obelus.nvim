@@ -397,6 +397,7 @@ local function memo_guide(ctx, threads)
   ctx.sends = {}
   require("obelus.api").register_backend({
     name = "memo",
+    schemes = { "memo" },
     match = function(b)
       return vim.api.nvim_buf_get_name(b):match("^memo://") ~= nil
     end,

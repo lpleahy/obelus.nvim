@@ -48,12 +48,17 @@ end
 
 -- obelus.api: may this record's content reach obelus's own agents (the CLI and
 -- every other transport, prompts, briefings, @thread expansion)? Not for an
--- extension backend's thread, and not for any record on a non-file buffer
--- ("scheme://…"): such a record without a live owner is QUARANTINED — kept and
--- shown, never sent or expanded. Decided from the record alone, so it holds
--- after a restart, for unloaded buffers and before any backend registers.
+-- extension backend's thread, and not for a record on a "scheme://…" buffer
+-- whose scheme a backend ever claimed (obelus.claims, persisted): that one is
+-- QUARANTINED — kept and shown, never sent or expanded — even after a restart,
+-- for unloaded buffers and before its backend registers. Ordinary files and
+-- unclaimed schemes (fugitive://, oil://, …) are eligible exactly as before.
 function M.agent_eligible(c)
-  return type(c) == "table" and c.backend == nil and not (type(c.file) == "string" and c.file:match("^%a[%w+.-]*://"))
+  if type(c) ~= "table" or c.backend ~= nil then
+    return false
+  end
+  local scheme = type(c.file) == "string" and c.file:match("^(%a[%w+.-]*)://")
+  return not scheme or not require("obelus.claims").blocks(scheme)
 end
 
 ---True when every record of every given list is agent_eligible.
@@ -729,7 +734,7 @@ function M.tag_comment(id, tag)
   end
   if c.meta or not M.agent_eligible(c) then
     return -- the project thread is never batch-curated; a tag on it would be a phantom
-    -- (obelus.api: nor is a non-file/backend thread — it never joins the CLI's batches)
+    -- (obelus.api: nor is a backend or backend-claimed thread — it never joins the CLI's batches)
   end
   if c.scratch then
     return -- an ask thread is a question, not review material: tags are batch curation

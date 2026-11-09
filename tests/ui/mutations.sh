@@ -216,9 +216,15 @@ spec_mutate "api-cli-fallthrough" lua/obelus/transport/init.lua \
 # the CLI transport's own refusal of non-file/backend threads is removed
 spec_mutate "api-cli-guard-removed" lua/obelus/transport/cli.lua \
   'if not store.all_agent_eligible(payload.comments, payload.opts and payload.opts.actions_comments) then' 'if false then'
-# the eligibility predicate stops recognising non-file (URI) records
-spec_mutate "api-eligibility-ignores-uri" lua/obelus/store.lua \
-  'c.backend == nil and not (type(c.file) == "string"' 'c.backend == nil and not (false and type(c.file) == "string"'
+# the eligibility predicate stops consulting the claimed schemes
+spec_mutate "api-eligibility-ignores-claims" lua/obelus/store.lua \
+  'return not scheme or not require("obelus.claims").blocks(scheme)' 'return true'
+# an unreadable/corrupt claims file fails OPEN instead of closed
+spec_mutate "claims-corrupt-fails-open" lua/obelus/claims.lua \
+  'return corrupt or set[scheme] == true' 'return set[scheme] == true'
+# a claim is never persisted (it would not survive a restart)
+spec_mutate "claims-not-persisted" lua/obelus/claims.lua \
+  'assert(vim.uv.fs_rename(tmp, p))' 'assert(os.remove(tmp))'
 # approve with no UI opens a float instead of denying at once
 spec_mutate "approve-headless-falls-through" lua/obelus/approve.lua \
   'if not M.available() then
