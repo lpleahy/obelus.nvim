@@ -5,41 +5,29 @@
 # is passed through: OBELUS_UI_UPDATE=1, OBELUS_UI_ONLY=<substr,...>,
 # OBELUS_UI_OUT=<dir>, OBELUS_UI_DELAY_MS, OBELUS_UI_GUARD_MS (see run.lua).
 #
-# Process hygiene (ownership-safe — nothing is ever signalled by a recorded pid):
-#   * rpc.lua reaps each child itself (quit -> SIGTERM -> SIGKILL, awaited) and
-#     errors if it cannot; a normal exit therefore leaves no child to clean up.
-#   * The parent nvim runs in the background and is awaited, so INT/TERM reach the
-#     trap at once. The trap first SIGSTOPs the parent (still OUR unreaped child,
-#     so its pid cannot have been reused); a stopped parent cannot reap, so its
-#     children's pids stay pinned too. It then SIGKILLs exactly the processes
-#     whose parent is that pid (pgrep -P), then the parent, then removes $dir.
-#   * SIGKILL of this script runs no trap: run.lua notices it was reparented,
-#     stops after the current scenario (its child is still reaped by rpc.lua) and
-#     removes $dir itself (exact path, OBELUS_UI_DIR).
+# Process hygiene: no code path signals a pid NUMBER. This script execs into
+# supervise.pl, which forks the parent nvim into a dedicated process group and is
+# the only thing that ever signals it — only while that group's leader is still
+# its own unreaped child (see supervise.pl). The parent's children (the embedded
+# nvims) are in the same group; rpc.lua also reaps each one through the handle it
+# holds. INT/TERM: the supervisor TERMs, then KILLs, the group, reaps it and
+# removes $dir. SIGKILL of the supervisor: run.lua notices it was orphaned, stops
+# before the next capture and removes $dir itself (exact path, OBELUS_UI_DIR).
+# Self-test knobs (tests/ui/selftest.sh): OBELUS_UI_SUPERVISE_LOG,
+# OBELUS_UI_PAUSE_AFTER_REAP.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 base=${OBELUS_UI_TMPBASE:-${TMPDIR:-/tmp}}
 dir=$(mktemp -d "${base%/}/obelus-ui.XXXXXX") || exit 2
-parent=
+trap 'rm -rf "$dir"' EXIT # only until the exec below hands $dir to the supervisor
+mkdir -p "$dir/config" "$dir/data" "$dir/state" "$dir/cache" "$dir/run" "$dir/tmp" || exit 2
 
-cleanup() {
-  rc=$?
-  if [ -n "$parent" ]; then
-    kill -STOP "$parent" 2>/dev/null
-    for kid in $(pgrep -P "$parent" 2>/dev/null); do
-      kill -KILL "$kid" 2>/dev/null
-    done
-    kill -KILL "$parent" 2>/dev/null
-  fi
-  rm -rf "$dir"
-  exit "$rc"
-}
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-mkdir -p "$dir/config" "$dir/data" "$dir/state" "$dir/cache" "$dir/run" "$dir/tmp"
-env -u NVIM -u NVIM_APPNAME -u VIMINIT -u MYVIMRC -u NVIM_LISTEN_ADDRESS -u OBELUS_TEST_RTP \
+set -- --rmdir "$dir"
+[ -n "${OBELUS_UI_SUPERVISE_LOG:-}" ] && set -- "$@" --log "$OBELUS_UI_SUPERVISE_LOG"
+[ -n "${OBELUS_UI_PAUSE_AFTER_REAP:-}" ] && set -- "$@" --pause-after-reap "$OBELUS_UI_PAUSE_AFTER_REAP"
+trap - EXIT
+exec perl "$here/supervise.pl" "$@" -- \
+  env -u NVIM -u NVIM_APPNAME -u VIMINIT -u MYVIMRC -u NVIM_LISTEN_ADDRESS -u OBELUS_TEST_RTP \
   XDG_CONFIG_HOME="$dir/config" \
   XDG_DATA_HOME="$dir/data" \
   XDG_STATE_HOME="$dir/state" \
@@ -52,9 +40,4 @@ env -u NVIM -u NVIM_APPNAME -u VIMINIT -u MYVIMRC -u NVIM_LISTEN_ADDRESS -u OBEL
   OBELUS_UI_TMP="$dir/tmp" \
   OBELUS_UI_DIR="$dir" \
   TZ=UTC LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
-  "${OBELUS_NVIM:-nvim}" --headless -n -i NONE -u NONE --noplugin -c "luafile $here/run.lua" &
-parent=$!
-wait "$parent"
-rc=$?
-parent=
-exit "$rc"
+  "${OBELUS_NVIM:-nvim}" --headless -n -i NONE -u NONE --noplugin -c "luafile $here/run.lua"

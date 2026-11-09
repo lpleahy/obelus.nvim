@@ -676,7 +676,14 @@ function C.registry_state()
     if a.buffer and a.buffer > 0 then
       pat = "<buffer>"
     elseif type(pat) == "string" and pat:match("^%d+$") and a.event:match("^Win") then
-      pat = "<winid>"
+      -- keep WHICH window it targets (by role: its buffer and kind), not the id
+      local w = tonumber(pat)
+      if vim.api.nvim_win_is_valid(w) then
+        local float = (vim.api.nvim_win_get_config(w).relative or "") ~= ""
+        pat = "<win " .. buf_label(vim.api.nvim_win_get_buf(w)) .. (float and " float" or " split") .. ">"
+      else
+        pat = "<win closed>"
+      end
     end
     local key = string.format(
       "%s %s pattern=%s buffer=%s",

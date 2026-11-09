@@ -208,10 +208,13 @@ local function run_one(sc, w, h)
   return ok, res
 end
 
--- Our wrapper (run.sh) is our parent. If it is SIGKILLed it cannot run its trap,
--- so we notice the reparenting, stop starting scenarios, and remove the run's
--- private dir ourselves (the exact path run.sh created, passed as OBELUS_UI_DIR).
-local wrapper_ppid = vim.uv.os_getppid()
+-- Our parent is the supervisor (supervise.pl), which tells us its pid at launch
+-- (OBELUS_UI_SUPERVISOR_PID) — compared from the very first check, so a supervisor
+-- killed even before this file ran is still noticed. If it is SIGKILLed it cannot
+-- clean up, so we stop before the next capture and remove the run's private dir
+-- ourselves (the exact path run.sh created, passed as OBELUS_UI_DIR). We only
+-- COMPARE pids here; nothing is signalled.
+local wrapper_ppid = tonumber(vim.env.OBELUS_UI_SUPERVISOR_PID or "") or vim.uv.os_getppid()
 local function orphaned()
   return vim.uv.os_getppid() ~= wrapper_ppid
 end
@@ -240,12 +243,12 @@ local function main()
     return
   end
   for _, sc in ipairs(scenarios.list) do
-    if orphaned() then
-      errors[#errors + 1] = "wrapper (run.sh) died: stopping"
-      return
-    end
     if selected(sc) then
       for _, size in ipairs(sc.sizes or SIZES) do
+        if orphaned() then
+          errors[#errors + 1] = "supervisor died: stopping"
+          return
+        end
         local w, h = size[1], size[2]
         local key = string.format("%s@%dx%d", sc.name, w, h)
         local path = BASE .. "/" .. key .. ".snap"
@@ -319,6 +322,9 @@ io.write(
   )
 )
 if orphaned() and vim.env.OBELUS_UI_DIR and vim.env.OBELUS_UI_DIR ~= "" then
-  vim.fn.delete(vim.env.OBELUS_UI_DIR, "rf") -- exact path; every child is already reaped
+  -- exact path; every child is already reaped (rpc.close)
+  if vim.fn.delete(vim.env.OBELUS_UI_DIR, "rf") ~= 0 then
+    io.write("could not remove " .. vim.env.OBELUS_UI_DIR .. "\n")
+  end
 end
 vim.cmd((#failed == 0 and #errors == 0) and "qall!" or "cquit 1")
