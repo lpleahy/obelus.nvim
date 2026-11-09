@@ -1487,12 +1487,17 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
     whether or not that backend is registered yet, the buffer is loaded or
     `match` accepts it — e.g. a comment saved in obelus's JSONL before the
     backend existed. Such a record is quarantined: it stays on disk and on
-    screen, and a submit that includes it is refused. Claims persist in
-    `stdpath("state")/obelus/claimed_schemes.json` (written atomically), so
-    they hold after a restart. If that file exists but cannot be read or
-    parsed, every "scheme://…" record is quarantined until it is fixed or
-    removed (removing it releases all claims). Ordinary files and unclaimed
-    schemes (fugitive://, oil://, …) behave exactly as without this module.
+    screen, and a submit that includes it is refused. Each claim is one
+    immutable file, `stdpath("state")/obelus/claims/<scheme>`, created
+    exclusively, so editors claiming at the same time never lose each
+    other's claim and a claim holds after a restart. If that directory
+    cannot be read (a stat or listing error other than "missing"), is not a
+    directory, or holds an entry that is not a regular file named after a
+    valid scheme, every "scheme://…" record is quarantined; obelus never
+    rewrites or removes those entries (removing a bad one by hand restores
+    classification; removing a claim file releases that claim). Ordinary
+    files and unclaimed schemes (fugitive://, oil://, …) behave exactly as
+    without this module.
 
 api.unregister_backend({name})               *obelus.api.unregister_backend()*
     Remove a backend: cancel its sends; its threads leave obelus's memory

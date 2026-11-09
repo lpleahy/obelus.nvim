@@ -233,7 +233,13 @@ spec_mutate "claims-corrupt-fails-open" lua/obelus/claims.lua \
   'return corrupt or set[scheme] == true' 'return set[scheme] == true'
 # a claim is never persisted (it would not survive a restart)
 spec_mutate "claims-not-persisted" lua/obelus/claims.lua \
-  'assert(vim.uv.fs_rename(tmp, p))' 'assert(os.remove(tmp))'
+  'local fd, _, code = uv.fs_open(path, "wx", 420)' 'local fd, _, code = nil, nil, "EEXIST"'
+# a malformed claims entry (bad name, not a regular file) is ignored, not fail-closed
+spec_mutate "claims-malformed-fails-open" lua/obelus/claims.lua \
+  'corrupt, why = true, "unexpected entry "' 'corrupt, why = false, "unexpected entry "'
+# a stat error other than ENOENT is taken as "no claims"
+spec_mutate "claims-stat-error-fails-open" lua/obelus/claims.lua \
+  'if code == "ENOENT" then' 'if true then'
 # approve with no UI opens a float instead of denying at once
 spec_mutate "approve-headless-falls-through" lua/obelus/approve.lua \
   'if not M.available() then

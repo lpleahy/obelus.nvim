@@ -9,7 +9,7 @@ local claims = require("obelus.claims")
 -- every spec claims into its own temp file: never the user's state dir
 local function fresh_claims(dir)
   dir = dir or vim.fn.tempname()
-  claims._path = dir .. "/nvim/obelus/claimed_schemes.json" -- = stdpath("state") with XDG_STATE_HOME=dir
+  claims._dir = dir .. "/nvim/obelus/claims" -- = stdpath("state")/obelus/claims with XDG_STATE_HOME=dir
   claims._reset()
   return dir
 end
@@ -708,8 +708,7 @@ io.write("file=", tostring(store.agent_eligible({ file = "/tmp/a.lua" })), "\n")
   T.contains(out, "memo=false\n")
   T.contains(out, "fugitive=true\n")
   T.contains(out, "file=true\n")
-  local saved = vim.json.decode(table.concat(vim.fn.readfile(claims.path()), "\n"))
-  T.eq(saved, { version = 1, schemes = { "memo" } })
+  T.eq(vim.fn.readdir(claims.dir()), { "memo" }, "one immutable file per scheme")
 end)
 
 T.it("claim_schemes with no backend: that scheme is quarantined at once; names are validated", function()
@@ -736,30 +735,152 @@ T.it("claim_schemes with no backend: that scheme is quarantined at once; names a
   T.ok(#msgs == 1)
 end)
 
-T.it("a corrupt claims file fails closed for scheme:// records only, and is never overwritten", function()
+-- the claims dir in a malformed shape: every scheme:// record fails closed,
+-- ordinary files don't care, and nothing there is rewritten or removed
+local function malformed_case(label, make, cleanup)
   T.fresh()
   clear_backends()
   fresh_claims()
-  vim.fn.mkdir(vim.fn.fnamemodify(claims.path(), ":h"), "p")
-  vim.fn.writefile({ "{ not json" }, claims.path())
+  local dir = claims.dir()
+  make(dir)
+  claims._reset()
   local store = require("obelus.store")
-  T.ok(not store.agent_eligible({ file = "fugitive:///x" }), "unclassifiable scheme: closed")
-  T.ok(not store.agent_eligible({ file = "oil:///tmp/" }))
-  T.ok(store.agent_eligible({ file = "/tmp/a.lua" }), "ordinary files untouched")
-  T.ok(store.agent_eligible({ file = vim.fn.getcwd() }), "a directory (the project thread) untouched")
-  local msgs, restore = capture_notify()
-  T.eq(api.claim_schemes({ "luodda" }), false, "not saved")
-  restore()
-  T.eq(vim.fn.readfile(claims.path()), { "{ not json" }, "left as it was")
-  T.contains(vim.inspect(msgs), "unreadable")
-  -- an invalid entry is corrupt too
-  vim.fn.writefile({ vim.json.encode({ version = 1, schemes = { "ok", "NOT OK" } }) }, claims.path())
+  local ok, err = pcall(function()
+    T.ok(not store.agent_eligible({ file = "fugitive:///x" }), label .. ": unclassifiable scheme fails closed")
+    T.ok(not store.agent_eligible({ file = "oil:///tmp/" }), label)
+    T.ok(store.agent_eligible({ file = "/tmp/a.lua" }), label .. ": ordinary files untouched")
+    T.ok(store.agent_eligible({ file = vim.fn.getcwd() }), label .. ": the project thread untouched")
+  end)
+  if cleanup then
+    cleanup(dir)
+  end
+  if not ok then
+    error(err, 0)
+  end
+end
+
+T.it("malformed claims fail closed for scheme:// records only and are kept as they are", function()
+  malformed_case("claims path is a regular file", function(dir)
+    vim.fn.mkdir(vim.fn.fnamemodify(dir, ":h"), "p")
+    vim.fn.writefile({ "luodda" }, dir)
+  end)
+  malformed_case("entry with an invalid name", function(dir)
+    vim.fn.mkdir(dir, "p")
+    vim.fn.writefile({}, dir .. "/Bad_Name") -- (not "LUODDA": APFS is case-insensitive)
+    vim.fn.writefile({}, dir .. "/memo")
+    local msgs, restore = capture_notify()
+    T.eq(api.claim_schemes({ "luodda" }), true, "its own claim is still made durable")
+    restore()
+    T.contains(vim.inspect(msgs), "cannot be classified")
+    T.eq(vim.fn.readdir(dir), { "Bad_Name", "luodda", "memo" }, "nothing rewritten or removed")
+  end)
+  malformed_case("a hidden entry", function(dir)
+    vim.fn.mkdir(dir, "p")
+    vim.fn.writefile({}, dir .. "/.tmp123")
+  end)
+  malformed_case("an entry that is a directory", function(dir)
+    vim.fn.mkdir(dir .. "/luodda", "p")
+  end)
+  malformed_case("an entry that is a symlink", function(dir)
+    vim.fn.mkdir(dir, "p")
+    vim.uv.fs_symlink("/etc/hosts", dir .. "/luodda")
+  end)
+  malformed_case("the claims dir cannot be listed (EACCES)", function(dir)
+    vim.fn.mkdir(dir, "p")
+    vim.fn.writefile({}, dir .. "/memo")
+    vim.uv.fs_chmod(dir, 0)
+  end, function(dir)
+    vim.uv.fs_chmod(dir, 448)
+  end)
+  malformed_case("stat fails with an error other than ENOENT (EACCES)", function(dir)
+    vim.fn.mkdir(dir, "p")
+    vim.uv.fs_chmod(vim.fn.fnamemodify(dir, ":h"), 0)
+  end, function(dir)
+    vim.uv.fs_chmod(vim.fn.fnamemodify(dir, ":h"), 448)
+  end)
+  -- recovery is manual: removing the bad entry restores classification
+  fresh_claims()
+  vim.fn.mkdir(claims.dir() .. "/bad name", "p")
   claims._reset()
-  T.ok(not store.agent_eligible({ file = "fugitive:///x" }))
-  -- removing the file recovers (claims made since still hold)
-  os.remove(claims.path())
-  claims._reset()
-  T.ok(store.agent_eligible({ file = "fugitive:///x" }))
+  T.ok(not require("obelus.store").agent_eligible({ file = "fugitive:///x" }))
+  vim.fn.delete(claims.dir() .. "/bad name", "d")
+  T.ok(require("obelus.store").agent_eligible({ file = "fugitive:///x" }))
+end)
+
+T.it("two editors claiming at once both stay claimed (filesystem barrier, real processes)", function()
+  local state = vim.fn.tempname()
+  fresh_claims(state)
+  local barrier = vim.fn.tempname()
+  vim.fn.mkdir(barrier, "p")
+  -- each editor pauses INSIDE claim, right before it creates its claim file,
+  -- until both have arrived; then they race to finish
+  local function editor(scheme)
+    return [[
+local uv = vim.uv
+local open = uv.fs_open
+local barrier = ]] .. vim.inspect(barrier) .. [[
+
+uv.fs_open = function(path, flags, ...)
+  if flags == "wx" then
+    io.open(barrier .. "/ready-]] .. scheme .. [[", "w"):close()
+    for _ = 1, 2000 do
+      if uv.fs_stat(barrier .. "/go") then break end
+      uv.sleep(5)
+    end
+  end
+  return open(path, flags, ...)
+end
+local saved = require("obelus.api").claim_schemes({ "]] .. scheme .. [[" })
+io.write("saved=", tostring(saved), "\n")
+]]
+  end
+  local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
+  local procs = {}
+  for _, scheme in ipairs({ "luodda", "memo" }) do
+    local script = vim.fn.tempname() .. ".lua"
+    vim.fn.writefile(
+      vim.split(
+        "dofile("
+          .. vim.inspect(root .. "/tests/xdg_guard.lua")
+          .. ")('claims race child')\n"
+          .. "vim.opt.rtp:prepend("
+          .. vim.inspect(root)
+          .. ")\n"
+          .. editor(scheme),
+        "\n"
+      ),
+      script
+    )
+    local env = vim.fn.environ()
+    env.XDG_STATE_HOME = state
+    procs[#procs + 1] = vim.system(
+      { vim.v.progpath, "--headless", "-n", "-u", "NONE", "-i", "NONE", "-l", script },
+      { env = env, clear_env = true, text = true }
+    )
+  end
+  T.ok(
+    vim.wait(10000, function()
+      return vim.uv.fs_stat(barrier .. "/ready-luodda") ~= nil and vim.uv.fs_stat(barrier .. "/ready-memo") ~= nil
+    end, 10),
+    "both editors reached the barrier"
+  )
+  io.open(barrier .. "/go", "w"):close()
+  for _, p in ipairs(procs) do
+    local res = p:wait(10000)
+    T.eq({ res.code, res.stdout }, { 0, "saved=true\n" })
+  end
+  local out = in_new_nvim(
+    state,
+    [[
+local store = require("obelus.store")
+io.write("luodda=", tostring(store.agent_eligible({ file = "luodda://guide/secret" })), "\n")
+io.write("memo=", tostring(store.agent_eligible({ file = "memo://x" })), "\n")
+io.write("claimed=", table.concat(require("obelus.api").claimed_schemes(), ","), "\n")
+]]
+  )
+  T.contains(out, "luodda=false\n")
+  T.contains(out, "memo=false\n")
+  T.contains(out, "claimed=luodda,memo\n")
 end)
 
 T.it("unclaimed scheme:// comments behave as before: with no backend and with a luodda backend", function()
