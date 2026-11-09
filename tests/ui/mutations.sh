@@ -303,7 +303,7 @@ spec_mutate "claims-mkdir-eexist-fails" lua/obelus/claims.lua \
   "a competing creator's EEXIST"
 # the parents of newly created claims directories are never synced (R4-N1)
 spec_mutate "claims-parents-not-synced" lua/obelus/claims.lua \
-  'saved = sync_dir(vim.fn.fnamemodify(d, ":h")) and saved' 'saved = saved' \
+  'synced[parent] = sync_dir(parent)' 'synced[parent] = true' \
   'a fresh claim syncs the marker, the claims dir and the parent'
 # only the directories THIS call created get their parents synced; a retry skips the failed one (R5-B1)
 spec_mutate "claims-retry-skips-failed-parent" lua/obelus/claims.lua \
