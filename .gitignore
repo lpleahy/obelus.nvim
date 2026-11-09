@@ -2,3 +2,6 @@
 # obelus runtime scratch (review-actions.json, review.md, jsonl backend)
 .ai/
 test.md
+
+# ui snapshot harness: renderings that differed from their baseline (for review)
+tests/ui/actual/
