@@ -8,8 +8,8 @@ A mutation counts as **caught** only when the run reaches comparison and reports
 baseline mismatch with no harness error. A harness error under a mutation counts as
 **invalid**. The real tree is never modified.
 
-Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **18 caught, 0 missed,
-0 invalid**, 89 s under `nice -n 10`.
+Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **19 caught (18 visual
+or setup, 1 harness), 0 missed, 0 invalid**, 149 s under `nice -n 10`.
 
 | Mutation | Change in the copy | Result |
 | --- | --- | --- |
@@ -31,11 +31,17 @@ Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **18 caught, 0 misse
 | keymap-callback-swap-same-desc | `<prefix>?` callback calls `M.toggle_mode()` instead of `M.toggle_hints()`; description unchanged | caught: 1 (registration) |
 | command-callback-swap-same-desc | `:ObelusEdit` callback calls `M.delete()`; description unchanged | caught: 1 (registration) |
 | first-use-overwrites-default-Y | `quick_reply()` maps `Y` to `dd` the first time it runs | caught: 2 (both `compose_quick_reply_hints` sizes) |
+| supervisor-skips-member-teardown (harness) | `supervise.pl`: the `teardown();` call is removed, so the group is released while members still run (R4-B1) | caught: 4 self-test failures (`parent-exit`, `parent-exit-harness`: exit 42 with log `reaped` only, straggler still alive) |
 
 The setup and zindex mutations come from the first independent review. Before the
 B3 fix, the setup-time `Y` overwrite and the ungrouped autocmd passed the whole
 suite. The last three come from the re-review, and all three passed before the
 R2-B2 fix.
+
+The harness mutation is judged differently: `mutations.sh` first runs the
+`parent-exit` and `parent-exit-harness` self-test cases on the unmodified copy
+(they must pass), then on the mutated copy, where one of them must fail by name.
+Their stragglers end on their own after 8-10 s, so the mutated run leaks nothing.
 
 ## Harness failure modes (`make ui-selftest`)
 
@@ -46,7 +52,11 @@ R2-B2 fix.
 | SIGTERM to the run mid-scenario, child wedged | exit 143. The supervisor sent TERM to its own group (KILL after grace). No live child, no temp dir. |
 | SIGKILL of the supervisor mid-scenario (1.5 s guard) | exit 137. The orphaned parent's guard fires, it reaps the child and removes the run dir. |
 | SIGKILL of the supervisor before the parent's Lua starts | the parent notices at its first check, captures nothing and removes the run dir |
-| TERM after the parent has exited and been reaped | exit 143. The supervisor log shows `reaped` and no `signal`. Dir removed. |
+| TERM after the parent has exited and the group was released | exit 143. The supervisor log shows `reaped` and no `signal`. Dir removed. |
+| Parent exits 42 while a same-group child (ignores TERM, never reads stdin) runs | exit 42. Log: `signal TERM`, `signal KILL`, `reaped`. The child is gone when the supervisor returns (no polling). Dir removed. |
+| Real harness: parent nvim exits 42 300 ms into the RPC of a child busy in Lua | exit 42. Log ends with `reaped` after `signal TERM`. Embedded child gone at return; temp dir removed. |
+| TERM reaches the supervisor ~0.1 s after such a parent exits | exit 143. Child gone at return; dir removed. |
+| `run.sh` with no `perl` on `PATH` | exit 2 with a message; nothing allocated in the temp base |
 | An unrelated `nvim --embed` (the decoy), its pid injected into every pid record, running through all of the above | never signalled; alive at the end. The self-test only observes; the decoy is stopped by its own supervisor. |
 | 2.5 s wall-clock stall before each capture (progress, stream and popup scenarios) | 18/18 byte-identical to the baselines |
 

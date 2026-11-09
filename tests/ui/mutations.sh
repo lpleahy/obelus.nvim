@@ -132,5 +132,44 @@ mutate "first-use-overwrites-default-Y" lua/obelus/init.lua \
   'function M.quick_reply(id)' 'function M.quick_reply(id)
   vim.keymap.set("n", "Y", "dd", { desc = "review lazy overwrite" })'
 
+# Harness mutations: patch the copy's supervisor and run the self-test cases that
+# guard it (tests/ui/selftest.sh, OBELUS_UI_SELFTEST_ONLY). CAUGHT = the unmodified
+# copy passes those cases and the mutated copy fails one of them by name.
+harness_mutate() { # name file old new cases
+  name=$1 file=$2 old=$3 new=$4 cases=$5
+  fresh_tree
+  out=$(OBELUS_UI_TMPBASE="$work" OBELUS_UI_SELFTEST_ONLY="$cases" sh "$work/tree/tests/ui/selftest.sh" 2>&1)
+  if [ $? -ne 0 ]; then
+    invalid=$((invalid + 1))
+    echo "INVALID $name  (unmodified self-test cases fail: $(printf '%s\n' "$out" | grep '^FAIL' | head -1 | cut -c1-110))"
+    return
+  fi
+  if ! nvim -l "$work/replace.lua" "$work/tree/$file" "$old" "$new"; then
+    echo "INVALID $name  (mutation anchor not found)"
+    invalid=$((invalid + 1))
+    return
+  fi
+  out=$(OBELUS_UI_TMPBASE="$work" OBELUS_UI_SELFTEST_ONLY="$cases" sh "$work/tree/tests/ui/selftest.sh" 2>&1)
+  rc=$?
+  nfail=$(printf '%s\n' "$out" | grep -c '^FAIL  parent-exit')
+  if [ $rc -eq 0 ]; then
+    missed=$((missed + 1))
+    echo "MISSED  $name"
+  elif [ "$nfail" -eq 0 ]; then
+    invalid=$((invalid + 1))
+    echo "INVALID $name  (failed for another reason: $(printf '%s\n' "$out" | grep '^FAIL' | head -1 | cut -c1-110))"
+  else
+    caught=$((caught + 1))
+    echo "CAUGHT  $name  ($nfail self-test failure(s); first: $(printf '%s\n' "$out" | grep '^FAIL' | head -1 | cut -c1-90))"
+  fi
+}
+
+# R4-B1: the supervisor releases the group without stopping its remaining members
+harness_mutate "supervisor-skips-member-teardown" tests/ui/supervise.pl \
+  '
+teardown();
+' '
+' parent-exit,parent-exit-harness
+
 echo "mutations: $caught caught, $missed missed, $invalid invalid"
 [ "$missed" -eq 0 ] && [ "$invalid" -eq 0 ]

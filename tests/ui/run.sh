@@ -6,17 +6,25 @@
 # OBELUS_UI_OUT=<dir>, OBELUS_UI_DELAY_MS, OBELUS_UI_GUARD_MS (see run.lua).
 #
 # Process hygiene: no code path signals a pid NUMBER. This script execs into
-# supervise.pl, which forks the parent nvim into a dedicated process group and is
-# the only thing that ever signals it — only while that group's leader is still
-# its own unreaped child (see supervise.pl). The parent's children (the embedded
-# nvims) are in the same group; rpc.lua also reaps each one through the handle it
-# holds. INT/TERM: the supervisor TERMs, then KILLs, the group, reaps it and
-# removes $dir. SIGKILL of the supervisor: run.lua notices it was orphaned, stops
-# before the next capture and removes $dir itself (exact path, OBELUS_UI_DIR).
+# supervise.pl, which forks a guardian that leads a dedicated process group, forks
+# the parent nvim into it, and is the only thing that ever signals the group —
+# only while the guardian is still its own unreaped child (see supervise.pl). The
+# parent's children (the embedded nvims) are in the same group; rpc.lua also reaps
+# each one through the handle it holds. When the parent exits, or on INT/TERM, the
+# supervisor TERMs, then KILLs, any member still in the group, then reaps the
+# guardian and removes $dir. SIGKILL of the supervisor: run.lua notices it was
+# orphaned, stops before the next capture and removes $dir itself (exact path,
+# OBELUS_UI_DIR). Requires perl (POSIX, Time::HiRes): checked before mktemp.
 # Self-test knobs (tests/ui/selftest.sh): OBELUS_UI_SUPERVISE_LOG,
 # OBELUS_UI_PAUSE_AFTER_REAP.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
+# Perl (with its core POSIX and Time::HiRes modules) runs the supervisor. Check
+# before anything is allocated, so a missing Perl leaves nothing behind.
+if ! command -v perl >/dev/null 2>&1 || ! perl -MPOSIX -MTime::HiRes -e 1 >/dev/null 2>&1; then
+  echo "tests/ui/run.sh: perl with the core POSIX and Time::HiRes modules is required (see tests/ui/README.md)" >&2
+  exit 2
+fi
 base=${OBELUS_UI_TMPBASE:-${TMPDIR:-/tmp}}
 dir=$(mktemp -d "${base%/}/obelus-ui.XXXXXX") || exit 2
 trap 'rm -rf "$dir"' EXIT # only until the exec below hands $dir to the supervisor

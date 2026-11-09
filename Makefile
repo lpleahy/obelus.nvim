@@ -19,13 +19,15 @@ ui-snapshots:
 ui-snapshots-update:
 	@OBELUS_UI_UPDATE=1 sh tests/ui/run.sh
 
-# Harness self-tests: forced RPC timeout, scenario error, SIGTERM mid-run (no
-# child or temp dir may survive) and a 2.5 s injected stall (snapshots must not
-# change). ~1 min.
+# Harness self-tests: forced RPC timeout, scenario error, SIGTERM/SIGKILL mid-run,
+# parent exiting first with a live child (no child or temp dir may survive), no
+# perl on PATH, and a 2.5 s injected stall (snapshots must not change). ~1 min.
+# The harness needs perl (core POSIX, Time::HiRes) — see tests/ui/README.md.
 ui-selftest:
 	@sh tests/ui/selftest.sh
 
-# Guard mutations: each one-line visual/setup mutation must fail the harness. ~2 min.
+# Guard mutations: each one-line visual/setup mutation must fail the harness, and
+# removing the supervisor's member teardown must fail the self-tests. ~2.5 min.
 ui-mutations:
 	@sh tests/ui/mutations.sh
 

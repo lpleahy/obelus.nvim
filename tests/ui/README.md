@@ -40,6 +40,14 @@ only: no agents and no network.
 
 ## Run
 
+Requirements: `nvim` (the version in `baselines/NVIM_VERSION`) and `perl` on
+`PATH` with its core `POSIX` and `Time::HiRes` modules, which run the process
+supervisor (`supervise.pl`), plus `ps`. Both modules ship with Perl 5 itself;
+on Linux install the distribution's full `perl` package. A CI job must provide
+it explicitly (this repository has no CI workflow yet). `run.sh` checks for Perl
+and both modules before creating anything, and exits 2 with a message if they
+are missing.
+
 ```sh
 make ui-snapshots          # compare (also part of `make test`, about 2 s)
 OBELUS_UI_ONLY=band,chat make ui-snapshots    # only scenarios whose name contains "band" or "chat"
@@ -88,14 +96,21 @@ diff.
   wrong, the script stops and reports an invalid environment. It then applies 18
   small mutations to a temp copy, covering visuals, extmarks, float stacking and
   setup. A mutation counts as caught only on a baseline mismatch with no harness
-  error. See `MUTATIONS.md` for the last results.
+  error. One more mutation removes the supervisor's member teardown and must fail
+  the parent-exit self-tests. See `MUTATIONS.md` for the last results.
 - `make ui-selftest` (`tests/ui/selftest.sh`, about 1 min) checks the harness
   itself:
   - a forced RPC timeout, a scenario error, SIGTERM mid-run, SIGKILL of the
     supervisor mid-run and SIGKILL of the supervisor before the parent's Lua
     starts each leave no live child and no temp dir;
-  - a TERM that arrives after the parent has exited and been reaped signals
-    nothing;
+  - a TERM that arrives after the parent has exited and the group was released
+    signals nothing;
+  - when the parent exits first (exit 42) while a same-group child is still
+    running — a fixture child that ignores TERM, and the real harness with its
+    embedded child busy in Lua — the supervisor stops the child before it
+    returns, and still exits 42; likewise when a TERM races that exit;
+  - with no `perl` on `PATH`, `run.sh` fails with a message and leaves no temp
+    dir;
   - an unrelated `nvim --embed`, whose pid is injected into every pid record the
     harness writes, survives all of the above. The self-test itself only
     observes, with `ps` and files.
@@ -141,21 +156,31 @@ diff.
     specs (`make specs`) still run on real timers and cover that.
 - Process hygiene: no code path signals a pid number taken from a record, a
   shell variable or `ps`.
-  - `run.sh` execs into `supervise.pl`. It forks the parent nvim into a new
-    process group, which the parent's embedded children share, and it is the
-    only thing that signals that group. It does so only while the group leader
-    is its own unreaped child: an unreaped child, running or zombie, pins the
-    group id, so it can't belong to anyone else.
-  - Signals are blocked outside `sigsuspend`, so a leader that has exited is
-    always reaped and noted before a handler can act. After that the supervisor
-    signals nothing.
-  - On INT or TERM the supervisor sends TERM to the group, waits a grace second,
-    sends KILL, reaps, and removes the run dir by exact path.
+  - `run.sh` execs into `supervise.pl`. It first forks a guardian, which leads
+    a new process group and only waits on a pipe; then it forks the parent nvim
+    into that group, which the parent's embedded children share. The supervisor
+    is the only thing that signals the group, and only by group id while the
+    guardian is its own unreaped child: an unreaped child, running or zombie,
+    pins its pid and so the group id, which therefore can't belong to anyone
+    else. The parent can be reaped as soon as it exits; the guardian is reaped
+    last.
+  - Teardown runs whenever the parent exits, and on INT or TERM. If any process
+    besides the guardian is still in the group (read from `ps`, observation
+    only), the supervisor sends TERM to the group, waits up to a grace second,
+    sends KILL if any member is left, and waits until none is. Only then does it
+    close the guardian's pipe, reap it, and remove the run dir by exact path.
+    After that it signals nothing. A clean run has no members left, so it sends
+    no signal. The parent's exit status is kept (128+N for signal N; 143/130
+    if the supervisor itself got TERM/INT).
+  - Signals are blocked outside `sigsuspend`; the handlers only record state.
   - `rpc.lua` ends each embedded child through the libuv handle it holds:
     `:qall!`, then SIGTERM, then SIGKILL, each awaited. libuv reaps only while
     its loop runs, so a child not yet reported as exited is still unreaped when
     it is signalled. `rpc.lua` errors if the child can't be reaped.
-  - SIGKILL of the supervisor runs no handler. Before every capture the parent
+  - If a member is still there ~10 s after KILL (e.g. stuck in the kernel), the
+    supervisor reports it on stderr and exits 1 instead of 0.
+  - SIGKILL of the supervisor runs no handler; the guardian sees EOF on its
+    pipe and exits. Before every capture the parent
     compares its parent pid with the supervisor pid it was given at launch, so
     this also works when the supervisor died before the parent's Lua started.
     Once orphaned, it stops (its current child is still reaped through the
@@ -176,8 +201,9 @@ diff.
 - Window-targeted autocmds (e.g. `WinClosed`) are keyed by the target window's
   role (its buffer label and float or split), not its id. Two windows with the
   same role are indistinguishable.
-- Process containment covers the parent nvim and its direct embedded children,
-  i.e. the supervisor's process group. A descendant that double-forks and calls
+- Process containment covers the parent nvim, its embedded children and anything
+  else that stays in the supervisor's process group, including when the parent
+  exits or crashes first. A descendant that double-forks and calls
   `setsid()` leaves the group and is not cleaned up. Today's synthetic scenarios
   spawn no such jobs: the fake transport runs no subprocess, and provider jobs
   are out of scope.

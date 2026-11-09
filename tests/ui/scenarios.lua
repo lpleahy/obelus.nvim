@@ -388,8 +388,14 @@ end, { kind = "registration", sizes = { { 80, 24 } } })
 -- ── harness self-tests (hidden: run only when OBELUS_UI_ONLY names them exactly;
 -- see tests/ui/selftest.sh). Never part of the baseline suite.
 scenario("_selftest_hang", function()
-  while true do -- an unresponsive child: the parent's guard must fire and reap it
+  -- an unresponsive child: the parent's guard (or the supervisor) must stop it.
+  -- OBELUS_UI_HANG_MAX_MS bounds the loop so a self-test that FAILS to stop it
+  -- (e.g. under a teardown mutation) cannot leave it running for ever.
+  local max = tonumber(vim.env.OBELUS_UI_HANG_MAX_MS or "")
+  local deadline = max and vim.uv.hrtime() + max * 1e6
+  while not deadline or vim.uv.hrtime() < deadline do
   end
+  os.exit(0)
 end, { hidden = true, sizes = { { 80, 24 } } })
 
 scenario("_selftest_error", function()

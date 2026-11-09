@@ -24,6 +24,9 @@ local BASE = uidir .. "/baselines"
 local update = vim.env.OBELUS_UI_UPDATE == "1"
 local only = vim.env.OBELUS_UI_ONLY -- comma-separated substrings
 local delay_ms = tonumber(vim.env.OBELUS_UI_DELAY_MS or "") or 0
+-- self-test knob (tests/ui/selftest.sh): the parent exits with this code 300 ms
+-- into a scenario RPC, leaving its busy child for the supervisor to stop
+local crash_code = tonumber(vim.env.OBELUS_UI_SELFTEST_PARENT_EXIT or "")
 
 -- hidden (self-test) scenarios run only when named exactly; others match any
 -- OBELUS_UI_ONLY substring (or all, when unset)
@@ -170,6 +173,11 @@ local function run_one(sc, w, h)
       uidir .. "/child.lua",
       { repo = repo, root = root, tmp = tmp }
     )
+    if crash_code then
+      vim.defer_fn(function()
+        os.exit(crash_code)
+      end, 300)
+    end
     child:lua("return require('scenarios').run(...)", sc.name)
     if delay_ms > 0 then
       -- self-test knob: a real wall-clock stall between arranging and capturing,
