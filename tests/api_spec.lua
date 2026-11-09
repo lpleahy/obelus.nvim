@@ -813,6 +813,52 @@ T.it('cancel reasons: an explicit user cancel is "user"; every internal path is 
   end)
 end)
 
+T.it("terminated INSIDE send(): the cancel runs once with its reason; done/error never cancel", function()
+  local function case(label, during)
+    local reasons, calls = {}, 0
+    local result
+    with_backend(vim.deepcopy(SEED), function(ctx)
+      ctx.B.spec.transport.send = function(req, emit)
+        during(ctx, emit) -- terminates the send before it returns its cancel function
+        return function(info)
+          calls = calls + 1
+          reasons[#reasons + 1] = type(info) == "table" and info.reason or "<none>"
+        end
+      end
+      api.register_backend(ctx.B.spec)
+      local msgs, restore = capture_notify()
+      require("obelus").chat_send("api:memo:7", label, "send")
+      restore()
+      result = { calls = calls, reasons = reasons }
+    end)
+    return result
+  end
+  T.eq(
+    case("user cancel inside send", function()
+      require("obelus").cancel("api:memo:7")
+    end),
+    { calls = 1, reasons = { "user" } }
+  )
+  T.eq(
+    case("unregister inside send", function()
+      api.unregister_backend("memo")
+    end),
+    { calls = 1, reasons = { "invalidate" } }
+  )
+  T.eq(
+    case("done inside send", function(_, emit)
+      emit({ type = "done", text = "already answered" })
+    end),
+    { calls = 0, reasons = {} }
+  )
+  T.eq(
+    case("error inside send", function(_, emit)
+      emit({ type = "error" })
+    end),
+    { calls = 0, reasons = {} }
+  )
+end)
+
 T.it("cancel, then a late done: ignored, and the backend is told", function()
   with_backend(vim.deepcopy(SEED), function(ctx)
     local id = "api:memo:7"

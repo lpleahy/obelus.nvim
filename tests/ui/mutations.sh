@@ -363,6 +363,10 @@ spec_mutate "api-create-result-relabelled" lua/obelus/api.lua \
 spec_mutate "api-match-stale-owner" lua/obelus/api.lua \
   'if not same then' 'if false then' \
   're-entrant match()'
+# the stored reason is not used when send() returns its cancel function late
+spec_mutate "api-late-cancel-loses-reason" lua/obelus/api.lua \
+  'fire_cancel(st) -- cancelled/invalidated while send() ran: now, with its reason' 'if st.done then pcall(cancel) end' \
+  'terminated INSIDE send()'
 # every cancel is reported as "user": a reload/replace would make the backend revoke live work
 spec_mutate "api-cancel-reason-always-user" lua/obelus/api.lua \
   'local reason = { reason = (kind == "cancel" and cancel_reason == "user") and "user" or "invalidate" }' 'local reason = { reason = "user" }' \

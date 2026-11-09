@@ -1511,7 +1511,11 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
                             server work only on "user"; on "invalidate" the
                             answer can still complete and be listed later.
                             Either way obelus detaches the send and ignores
-                            its late events;
+                            its late events. The cancel function is called
+                            exactly once, and never after "done" or "error"
+                            — also when the send ended inside `send()`
+                            itself: then it is called, with the same
+                            reason, as soon as `send()` returns it;
       lost acknowledgement  (send threw, no events, the editor went away)
                             retrying with the same `turn_id` is safe.
 

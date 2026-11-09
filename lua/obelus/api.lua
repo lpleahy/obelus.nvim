@@ -290,6 +290,15 @@ end
 -- The ONE terminal transition of a send (idempotent): "done", "error",
 -- "cancel" (the user cancelled; review.cancel tidies the record) or
 -- "invalidate" (its registration or record went away).
+-- Call the backend's cancel function exactly once, with the stored reason, and
+-- only after a cancel or an invalidation — never after "done" or "error".
+local function fire_cancel(st)
+  if st.cancel_info and st.cancel and not st.cancel_fired then
+    st.cancel_fired = true
+    pcall(st.cancel, st.cancel_info)
+  end
+end
+
 local function settle(st, kind, text, cancel_reason)
   if st.done then
     return
@@ -305,16 +314,18 @@ local function settle(st, kind, text, cancel_reason)
   end
   -- the backend's cancel is EXTERNAL code (it may re-enter the API): it runs
   -- last, after every change below, so nothing here acts on a stale `own`
-  local external_cancel = (kind == "cancel" or kind == "invalidate") and st.cancel or nil
   -- the backend learns why: only an explicit user cancel is "user"; every
   -- internal path (reload, DirChanged, replace, unregister, delete, clear) is
-  -- "invalidate" — obelus detaches and ignores late events either way
-  local reason = { reason = (kind == "cancel" and cancel_reason == "user") and "user" or "invalidate" }
+  -- "invalidate" — obelus detaches and ignores late events either way. The
+  -- reason is KEPT on the send: if this runs inside send() (before it returned
+  -- its cancel function), the call happens once that function arrives.
+  if kind == "cancel" or kind == "invalidate" then
+    local reason = { reason = (kind == "cancel" and cancel_reason == "user") and "user" or "invalidate" }
+    st.cancel_info = reason
+  end
   if not own then
     pcall(progress.finish, st.job, false, "")
-    if external_cancel then
-      pcall(external_cancel, reason)
-    end
+    fire_cancel(st)
     return -- stale: touch nothing that a newer registration/record owns
   end
   if kind == "done" then
@@ -339,9 +350,7 @@ local function settle(st, kind, text, cancel_reason)
     store.abort(st.id)
     pcall(progress.finish, st.job, false, "")
   end
-  if external_cancel then
-    pcall(external_cancel, reason)
-  end
+  fire_cancel(st)
 end
 
 -- cancel and invalidate every send matching `pred`
@@ -428,9 +437,7 @@ local function run_turn(c, b)
   local ok, cancel = pcall(b.transport.send, { id = c.backend_id, turn_id = turn_id, text = text }, emit)
   if type(cancel) == "function" then
     st.cancel = cancel
-    if st.done then
-      pcall(cancel) -- already invalidated/cancelled while send() ran
-    end
+    fire_cancel(st) -- cancelled/invalidated while send() ran: now, with its reason
   end
   if not ok then
     settle(st, "error") -- a no-op when send() already finished (done, then threw)
