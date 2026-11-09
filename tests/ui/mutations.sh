@@ -363,6 +363,14 @@ spec_mutate "api-create-result-relabelled" lua/obelus/api.lua \
 spec_mutate "api-match-stale-owner" lua/obelus/api.lua \
   'if not same then' 'if false then' \
   're-entrant match()'
+# every cancel is reported as "user": a reload/replace would make the backend revoke live work
+spec_mutate "api-cancel-reason-always-user" lua/obelus/api.lua \
+  'local reason = { reason = (kind == "cancel" and cancel_reason == "user") and "user" or "invalidate" }' 'local reason = { reason = "user" }' \
+  'cancel reasons: an explicit user cancel'
+# the explicit cancel no longer says it was the user's
+spec_mutate "review-cancel-without-user-reason" lua/obelus/review.lua \
+  'jobs.cancel(c.id, "user")' 'jobs.cancel(c.id)' \
+  'cancel reasons: an explicit user cancel'
 # replacing/unregistering a backend no longer cancels its sends
 spec_mutate "api-replace-keeps-old-sends" lua/obelus/api.lua \
   'return st.b == old' 'return false' \

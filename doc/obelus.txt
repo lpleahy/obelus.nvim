@@ -1429,6 +1429,9 @@ api.capabilities                                   *obelus.api.capabilities*
       approval_handle      `approve{}` returns `{ cancel(), focus() }`
                            scoped to that prompt
       approval_on_open     `approve{}` accepts `on_open`
+      transport_cancel_reason
+                           `transport.send()`'s cancel function receives
+                           `{ reason = "user"|"invalidate" }`
 
 api.register_backend({spec})                   *obelus.api.register_backend()*
     Register a backend. Registering a name again REPLACES it: the old
@@ -1458,6 +1461,10 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
                               backend id, the user turn's stable id and its
                               text. History is never sent: the backend owns
                               it and its replay. See |obelus-api-turns|.
+                              The cancel function is called with
+                              `{ reason = "user" }` for an explicit user
+                              cancel and `{ reason = "invalidate" }` for every
+                              internal path (see |obelus-api-turns|).
                               `emit(ev)` with ev.type "start", "delta"
                               (ev.text appended), "done" (optional ev.text:
                               the full reply) or "error". The first "done"
@@ -1493,7 +1500,18 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
                             draft (matched by `turn_id`, never by text) and
                             a dispatch asks for its answer;
       cancel                the draft keeps its `turn_id`; retrying is safe
-                            whether or not the backend had stored the turn;
+                            whether or not the backend had stored the turn.
+                            The cancel function gets `{ reason = "user" }`
+                            only for an explicit user cancel (the cancel key
+                            or command); every internal path — a store reload
+                            (|:ObelusLoad|, a DirChanged to another root),
+                            replacing or unregistering the backend, deleting
+                            or clearing the thread — passes
+                            `{ reason = "invalidate" }`. A backend should stop
+                            server work only on "user"; on "invalidate" the
+                            answer can still complete and be listed later.
+                            Either way obelus detaches the send and ignores
+                            its late events;
       lost acknowledgement  (send threw, no events, the editor went away)
                             retrying with the same `turn_id` is safe.
 

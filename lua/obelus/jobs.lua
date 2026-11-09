@@ -49,12 +49,14 @@ end
 
 -- Cancel the in-flight job for a comment (best-effort; the owning transport decides
 -- how). Returns whether a job/closure actually existed to cancel.
-function M.cancel(id)
+-- `reason` (optional) is passed to the transport's cancel closure: "user" for
+-- an explicit user cancel (review.cancel); nil for every other path.
+function M.cancel(id, reason)
   local spec = jobs[id]
   if not (spec and spec.cancel) then
     return false
   end
-  pcall(spec.cancel)
+  pcall(spec.cancel, reason)
   return true
 end
 

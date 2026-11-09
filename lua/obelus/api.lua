@@ -34,6 +34,7 @@ local CAPABILITIES = {
   approval_focus_hint = true, -- approve{ focus_hint = "…" }
   approval_handle = true, -- approve{} returns { cancel(), focus() } scoped to that prompt
   approval_on_open = true, -- approve{ on_open = fun(handle) }
+  transport_cancel_reason = true, -- send()'s cancel is called with { reason = "user"|"invalidate" }
 }
 M.capabilities = setmetatable({}, {
   __index = CAPABILITIES,
@@ -107,7 +108,7 @@ M.capabilities = setmetatable({}, {
 ---| { type: "error" }                any message is ignored; obelus shows a fixed one
 
 ---@class obelus.api.Transport
----@field send fun(req: obelus.api.TurnRequest, emit: fun(ev: obelus.api.Event)): (fun()|nil) may return a cancel function
+---@field send fun(req: obelus.api.TurnRequest, emit: fun(ev: obelus.api.Event)): (fun(info: { reason: "user"|"invalidate" })|nil) may return a cancel function
 
 ---@class obelus.api.Backend
 ---@field name string unique, [%w_-]+
@@ -289,7 +290,7 @@ end
 -- The ONE terminal transition of a send (idempotent): "done", "error",
 -- "cancel" (the user cancelled; review.cancel tidies the record) or
 -- "invalidate" (its registration or record went away).
-local function settle(st, kind, text)
+local function settle(st, kind, text, cancel_reason)
   if st.done then
     return
   end
@@ -305,10 +306,14 @@ local function settle(st, kind, text)
   -- the backend's cancel is EXTERNAL code (it may re-enter the API): it runs
   -- last, after every change below, so nothing here acts on a stale `own`
   local external_cancel = (kind == "cancel" or kind == "invalidate") and st.cancel or nil
+  -- the backend learns why: only an explicit user cancel is "user"; every
+  -- internal path (reload, DirChanged, replace, unregister, delete, clear) is
+  -- "invalidate" — obelus detaches and ignores late events either way
+  local reason = { reason = (kind == "cancel" and cancel_reason == "user") and "user" or "invalidate" }
   if not own then
     pcall(progress.finish, st.job, false, "")
     if external_cancel then
-      pcall(external_cancel)
+      pcall(external_cancel, reason)
     end
     return -- stale: touch nothing that a newer registration/record owns
   end
@@ -335,7 +340,7 @@ local function settle(st, kind, text)
     pcall(progress.finish, st.job, false, "")
   end
   if external_cancel then
-    pcall(external_cancel)
+    pcall(external_cancel, reason)
   end
 end
 
@@ -385,8 +390,8 @@ local function run_turn(c, b)
   local st = { b = b, c = c, id = id, draft = draft, turn = c._stream_turn, done = false, acc = "" }
   st.spec = {
     transport = "api:" .. b.name,
-    cancel = function()
-      settle(st, "cancel")
+    cancel = function(reason) -- jobs.cancel(id, "user") from an explicit cancel
+      settle(st, "cancel", nil, reason)
     end,
   }
   inflight[id] = st

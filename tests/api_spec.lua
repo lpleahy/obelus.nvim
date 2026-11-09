@@ -18,7 +18,7 @@ end
 -- call; B.sends every transport.send (with the emit callback to drive it).
 -- B.fail[op] = true makes that store op throw (a raw sentinel message).
 local function memo_backend()
-  local B = { threads = {}, calls = {}, sends = {}, seq = 0, fail = {}, cancels = 0 }
+  local B = { threads = {}, calls = {}, sends = {}, seq = 0, fail = {}, cancels = 0, reasons = {} }
   local function find(id)
     for i, t in ipairs(B.threads) do
       if tostring(t.id) == id then
@@ -77,8 +77,9 @@ local function memo_backend()
     transport = {
       send = function(req, emit)
         B.sends[#B.sends + 1] = { req = req, emit = emit }
-        return function()
+        return function(info)
           B.cancels = B.cancels + 1
+          B.reasons[#B.reasons + 1] = type(info) == "table" and info.reason or "<none>"
         end
       end,
     },
@@ -742,6 +743,75 @@ local function start_send(ctx, id, text)
   T.eq(#ctx.B.sends, n + 1, "send started")
   return ctx.B.sends[n + 1]
 end
+
+T.it('cancel reasons: an explicit user cancel is "user"; every internal path is "invalidate"', function()
+  T.eq(api.capabilities.transport_cancel_reason, true)
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local function last_reason(label, fn)
+      local n = #ctx.B.reasons
+      start_send(ctx, id, label)
+      fn()
+      T.eq(#ctx.B.reasons, n + 1, label .. ": the backend's cancel ran once")
+      return ctx.B.reasons[n + 1]
+    end
+    T.eq(
+      last_reason("user cancel", function()
+        require("obelus").cancel(id)
+      end),
+      "user"
+    )
+    T.eq(
+      last_reason("store reload", function()
+        ctx.store.load()
+      end),
+      "invalidate"
+    )
+    T.eq(
+      last_reason(":ObelusLoad", function()
+        vim.cmd("ObelusLoad")
+      end),
+      "invalidate"
+    )
+    local config = require("obelus.config")
+    local real_root = config.options.root
+    local other = vim.fn.tempname()
+    vim.fn.mkdir(other, "p")
+    T.eq(
+      last_reason("DirChanged to another root", function()
+        config.options.root = function()
+          return other
+        end
+        vim.api.nvim_exec_autocmds("DirChanged", {})
+      end),
+      "invalidate"
+    )
+    config.options.root = real_root
+    ctx.store.maybe_reload()
+    T.eq(
+      last_reason("replace", function()
+        api.register_backend(ctx.B.spec)
+      end),
+      "invalidate"
+    )
+    T.eq(
+      last_reason("delete", function()
+        local msgs, restore = capture_notify()
+        require("obelus.review").delete(id)
+        restore()
+        ctx.B.threads = vim.deepcopy(SEED)
+        api.refresh(ctx.buf)
+      end),
+      "invalidate"
+    )
+    T.eq(
+      last_reason("unregister", function()
+        api.unregister_backend("memo")
+      end),
+      "invalidate"
+    )
+  end)
+end)
 
 T.it("cancel, then a late done: ignored, and the backend is told", function()
   with_backend(vim.deepcopy(SEED), function(ctx)

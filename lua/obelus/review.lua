@@ -272,7 +272,7 @@ M.cancel = with_comment(function(c)
     return vim.notify("obelus: nothing to cancel here", vim.log.levels.INFO)
   end
   pcall(function()
-    jobs.cancel(c.id) -- kill the job (best effort; the owning transport decides how)
+    jobs.cancel(c.id, "user") -- kill the job (best effort; the owning transport decides how)
   end)
   store.abort(c.id) -- ALWAYS un-stick the thread, even if the process is wedged/already gone
   require("obelus.progress").cancel(c.id) -- clear the (possibly frozen) spinner job
