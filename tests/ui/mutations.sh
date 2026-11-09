@@ -55,8 +55,16 @@ echo "preflight: unmodified tree passes ($(printf '%s\n' "$out" | tail -1))"
 # A mutation is CAUGHT only when the harness ran to comparison and reported a
 # baseline mismatch (FAIL ... differs from baseline) with no harness ERROR; a
 # harness error under a mutation is INVALID (it proves nothing either way).
+# OBELUS_MUT_ONLY=name,name: run only these mutations (the preflight still runs)
+want_mut() {
+  [ -z "${OBELUS_MUT_ONLY:-}" ] && return 0
+  case ",$OBELUS_MUT_ONLY," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
 mutate() { # name file old new
   name=$1 file=$2 old=$3 new=$4
+  want_mut "$name" || return 0
   fresh_tree
   if ! nvim -l "$work/replace.lua" "$work/tree/$file" "$old" "$new"; then
     echo "INVALID $name  (mutation anchor not found)"
@@ -139,6 +147,7 @@ mutate "first-use-overwrites-default-Y" lua/obelus/init.lua \
 # copy passes those cases and the mutated copy fails one of them by name.
 harness_mutate() { # name file old new cases [failure-prefix]
   name=$1 file=$2 old=$3 new=$4 cases=$5 fpat=${6:-parent-exit}
+  want_mut "$name" || return 0
   fresh_tree
   out=$(OBELUS_UI_TMPBASE="$work" OBELUS_UI_SELFTEST_ONLY="$cases" sh "$work/tree/tests/ui/selftest.sh" 2>&1)
   if [ $? -ne 0 ]; then
@@ -181,14 +190,24 @@ harness_mutate "xdg-guard-specs-sh-removed" tests/specs.sh \
   'obelus_xdg_guard tests/specs.sh || exit 3' ':' xdg-guard xdg-guard
 
 # Behaviour-guard mutations (obelus.api): these guards draw nothing, so the
-# behaviour specs judge them instead of the snapshots. CAUGHT = the unmodified
-# copy's specs pass and the mutated copy's specs fail in the [api] suite.
+# behaviour specs judge them instead of the snapshots. Attribution is by NAME:
+#   CAUGHT  every expected regression (test-name substrings, "|"-separated)
+#           fails. Any OTHER failing test triggers a paired pristine control
+#           (the unmodified tree, run again right away): if that control fails
+#           too, the run is INVALID (an unrelated or flaky failure), otherwise
+#           the extra failures are recorded as collateral of the mutation.
+#   MISSED  the specs pass, or an expected regression did not fail.
+# Every failing test name is printed.
 run_specs() {
   (cd "$work/tree" && sh tests/specs.sh 2>&1)
 }
+fail_names() {
+  printf '%s\n' "$1" | sed -n 's/^FAIL \[[^]]*\] //p'
+}
 spec_preflight=""
-spec_mutate() { # name file old new
-  name=$1 file=$2 old=$3 new=$4
+spec_mutate() { # name file old new expected
+  name=$1 file=$2 old=$3 new=$4 expected=$5
+  want_mut "$name" || return 0
   if [ -z "$spec_preflight" ]; then
     fresh_tree
     if ! out=$(run_specs); then
@@ -206,74 +225,160 @@ spec_mutate() { # name file old new
   fi
   out=$(run_specs)
   rc=$?
-  nfail=$(printf '%s\n' "$out" | grep -c '^FAIL \[api\]')
+  names=$(fail_names "$out")
   if [ $rc -eq 0 ]; then
     missed=$((missed + 1))
-    echo "MISSED  $name"
-  elif [ "$nfail" -eq 0 ]; then
-    invalid=$((invalid + 1))
-    echo "INVALID $name  (failed outside the api specs: $(printf '%s\n' "$out" | grep -E '^(FAIL|ERROR)' | head -1 | cut -c1-110))"
-  else
-    caught=$((caught + 1))
-    echo "CAUGHT  $name  ($nfail api spec(s) fail; first: $(printf '%s\n' "$out" | grep '^FAIL \[api\]' | head -1 | cut -c1-90))"
+    echo "MISSED  $name  (the specs pass)"
+    return
   fi
+  missing="" rest=$expected
+  while [ -n "$rest" ]; do
+    e=${rest%%|*}
+    [ "$e" = "$rest" ] && rest= || rest=${rest#*|}
+    printf '%s\n' "$names" | grep -qF -- "$e" || missing="$missing [$e]"
+  done
+  others=$(printf '%s\n' "$names" | while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    hit=0 rest=$expected
+    while [ -n "$rest" ]; do
+      e=${rest%%|*}
+      [ "$e" = "$rest" ] && rest= || rest=${rest#*|}
+      case $n in (*"$e"*) hit=1 ;; esac
+    done
+    [ $hit -eq 0 ] && printf '%s\n' "$n"
+  done)
+  if [ -n "$missing" ]; then
+    missed=$((missed + 1))
+    echo "MISSED  $name  (expected regression did not fail:$missing)"
+    printf '%s\n' "$names" | sed 's/^/          failed: /'
+    return
+  fi
+  note=""
+  if [ -n "$others" ]; then
+    fresh_tree
+    if ! ctl=$(run_specs); then
+      invalid=$((invalid + 1))
+      echo "INVALID $name  (unrelated failures: the paired pristine control fails too)"
+      fail_names "$ctl" | sed 's/^/          control failed: /'
+      return
+    fi
+    note=" + $(printf '%s\n' "$others" | grep -c .) collateral (pristine control clean)"
+  fi
+  caught=$((caught + 1))
+  echo "CAUGHT  $name  (named regression fails$note)"
+  printf '%s\n' "$names" | sed 's/^/          failed: /'
 }
 
 # a backend thread falls through to obelus's own transports (the CLI)
 spec_mutate "api-cli-fallthrough" lua/obelus/transport/init.lua \
-  'if api and api._active() then' 'if false then'
+  'if api and api._active() then' 'if false then' \
+  'a turn streams through the backend transport'
 # the CLI transport's own refusal of non-file/backend threads is removed
 spec_mutate "api-cli-guard-removed" lua/obelus/transport/cli.lua \
-  'if not store.all_agent_eligible(payload.comments, payload.opts and payload.opts.actions_comments) then' 'if false then'
+  'if not store.all_agent_eligible(payload.comments, payload.opts and payload.opts.actions_comments) then' 'if false then' \
+  'restart with a claimed-scheme record in the JSONL'
 # the eligibility predicate stops consulting the claimed schemes
 spec_mutate "api-eligibility-ignores-claims" lua/obelus/store.lua \
-  'return not scheme or not require("obelus.claims").blocks(scheme)' 'return true'
-# an unreadable/corrupt claims file fails OPEN instead of closed
+  'return not scheme or not require("obelus.claims").blocks(scheme)' 'return true' \
+  'claim_schemes with no backend'
+# unclassifiable claims fail OPEN instead of closed
 spec_mutate "claims-corrupt-fails-open" lua/obelus/claims.lua \
-  'return corrupt or set[scheme] == true' 'return set[scheme] == true'
+  'return corrupt or set[scheme] == true' 'return set[scheme] == true' \
+  'malformed claims fail closed'
 # a claim is never persisted (it would not survive a restart)
 spec_mutate "claims-not-persisted" lua/obelus/claims.lua \
-  'local fd, _, code = uv.fs_open(path, "wx", 420)' 'local fd, _, code = nil, nil, "EEXIST"'
+  'local fd, _, code = uv.fs_open(path, "wx", 420)' 'local fd, _, code = nil, nil, "EEXIST"' \
+  'a claim persists: after a real restart'
 # a malformed claims entry (bad name, not a regular file) is ignored, not fail-closed
 spec_mutate "claims-malformed-fails-open" lua/obelus/claims.lua \
-  'corrupt, why = true, "unexpected entry "' 'corrupt, why = false, "unexpected entry "'
+  'corrupt, why = true, "unexpected entry "' 'corrupt, why = false, "unexpected entry "' \
+  'malformed claims fail closed'
 # a stat error other than ENOENT is taken as "no claims"
 spec_mutate "claims-stat-error-fails-open" lua/obelus/claims.lua \
-  'if code == "ENOENT" then' 'if true then'
+  'if code == "ENOENT" then' 'if true then' \
+  'malformed claims fail closed'
+# a competing creator's EEXIST is taken as a failure (R3-B4)
+spec_mutate "claims-mkdir-eexist-fails" lua/obelus/claims.lua \
+  'local again = uv.fs_stat(dir) -- someone else may have created it meanwhile' 'local again = nil' \
+  "a competing creator's EEXIST"
+# an existing marker is reported durable without a successful sync (R3-N1)
+spec_mutate "claims-sync-not-verified" lua/obelus/claims.lua \
+  'local ok = sync(rfd)' 'local ok = true' \
+  'a claim whose sync fails is not reported durable'
 # approve with no UI opens a float instead of denying at once
 spec_mutate "approve-headless-falls-through" lua/obelus/approve.lua \
   'if not M.available() then
     return finish(false, a)' 'if false then
-    return finish(false, a)'
+    return finish(false, a)' \
+  'approve: headless (no UI) denies at once'
 # no unarmed phase: focusing arms at once, so typeahead approves
 spec_mutate "approve-no-unarmed-phase" lua/obelus/approve.lua \
-  'a.armed = false' 'a.armed = true'
+  'a.armed = false' 'a.armed = true' \
+  'approve: typing and typeahead in the unarmed window are ignored'
 # the drain is removed: input queued while unarmed survives into the armed prompt
 spec_mutate "approve-no-drain" lua/obelus/approve.lua \
-  'local ok, key = pcall(vim.fn.getchar, 0)' 'local ok, key = true, 0'
+  'local ok, key = pcall(vim.fn.getchar, 0)' 'local ok, key = true, 0' \
+  'approve: input queued while unarmed, with the loop blocked'
 # the drain cap runs out and the prompt arms anyway with input still queued
 spec_mutate "approve-cap-exhaustion-arms" lua/obelus/approve.lua \
   'finish(false, a) -- cap exhausted: dismissed
-  return false' 'return true'
-# the same, judged by the real-UI snapshot (api_approve_queued_typeahead)
+  return false' 'return true' \
+  'approve: 15001 keys queued BETWEEN the drains'
+# the same drain removal, judged by the real-UI snapshot (api_approve_queued_typeahead)
 mutate "approve-no-drain-ui" lua/obelus/approve.lua \
   'local ok, key = pcall(vim.fn.getchar, 0)' 'local ok, key = true, 0'
+# Enter goes back to the armed-only path: ignored while unarmed
+spec_mutate "approve-enter-unarmed-ignored" lua/obelus/approve.lua \
+  'for _, key in ipairs({ "<CR>", "q", "<Esc>", "<C-c>" }) do' 'for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do' \
+  'approve: Enter while still unarmed denies at once'
+# the same, judged by the real-UI snapshot (api_approve_enter_unarmed)
+mutate "approve-enter-unarmed-ignored-ui" lua/obelus/approve.lua \
+  'for _, key in ipairs({ "<CR>", "q", "<Esc>", "<C-c>" }) do' 'for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do'
+# a handle's focus acts on whichever prompt is open (not prompt-scoped)
+spec_mutate "approve-handle-focus-not-scoped" lua/obelus/approve.lua \
+  'return M._focus(a)' 'return M._focus(active)' \
+  'approve handle: A open, B queued'
 # every send gets a fresh turn_id, so a retry of a stored turn becomes a new message
 spec_mutate "api-turn-id-not-reused" lua/obelus/api.lua \
-  'if not (draft.turn_id and draft._api_sent_text == draft.text) then' 'if true then'
+  'if not (draft.turn_id and draft._api_sent_text == draft.text) then' 'if true then' \
+  'turn_id: stored then the answer failed'
+# an edited draft keeps its old turn id until the next send (R3-B1)
+spec_mutate "api-edit-keeps-turn-id" lua/obelus/store.lua \
+  'if tail.turn_id and tail.text ~= text and package.loaded["obelus.api"] then' 'if false then' \
+  'turn_id: fail → edit → refresh → dispatch'
 # a send's callback no longer checks that it owns its record and job
 spec_mutate "api-generation-check-removed" lua/obelus/api.lua \
   'and require("obelus.store").get(st.id) == st.c
-    and require("obelus.jobs").get(st.id) == st.spec' 'and true'
+    and require("obelus.jobs").get(st.id) == st.spec' 'and true' \
+  'a callback that no longer owns its record and job changes nothing'
 # refresh trusts a list() result after list() re-entered and replaced the registration
 spec_mutate "api-refresh-no-revalidation" lua/obelus/api.lua \
-  'if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) then' 'if false then'
+  'if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) or abspath(bufnr) ~= file then' 'if false then' \
+  're-entrant list(): a replacement registered inside the old list()'
+# a create() result is adopted after its registration was replaced (R3-B2)
+spec_mutate "api-create-result-relabelled" lua/obelus/api.lua \
+  'if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) or abspath(bufnr) ~= c.file then' 'if false then' \
+  're-entrant create(): a replacement with a colliding id'
+# a match() answer is trusted after match() removed or replaced its registration (R3-B2)
+spec_mutate "api-match-stale-owner" lua/obelus/api.lua \
+  'if not same then' 'if false then' \
+  're-entrant match()'
 # replacing/unregistering a backend no longer cancels its sends
 spec_mutate "api-replace-keeps-old-sends" lua/obelus/api.lua \
-  'return st.b == old' 'return false'
+  'return st.b == old' 'return false' \
+  'unregister then re-register'
 # a backend's threads leak into obelus's JSONL
 spec_mutate "api-thread-saved-to-jsonl" lua/obelus/store.lua \
-  'goto continue -- obelus.api' 'local _ = nil -- obelus.api'
+  'goto continue -- obelus.api' 'local _ = nil -- obelus.api' \
+  'never into the JSONL'
+
+# Containment guards (R3-B3), judged by named self-test failures
+harness_mutate "xdg-guard-sh-defaults-by-spelling" tests/xdg_guard.sh \
+  'case "$1/" in "$_d"/*)' 'case "$1/" in "$_d"/NEVER*)' xdg-guard "xdg-guard: private.sh, alias root"
+harness_mutate "xdg-guard-lua-defaults-by-spelling" tests/xdg_guard.lua \
+  'if path == real or inside(path, real) then' 'if false then' xdg-guard "xdg-guard: direct nvim run.lua, alias root"
+harness_mutate "xdg-guard-log-symlink-allowed" tests/xdg_guard.sh \
+  'if [ -L "$NVIM_LOG_FILE" ]; then' 'if false; then' xdg-guard "xdg-guard: private.sh, log file is a symlink"
 
 echo "mutations: $caught caught, $missed missed, $invalid invalid"
 [ "$missed" -eq 0 ] && [ "$invalid" -eq 0 ]

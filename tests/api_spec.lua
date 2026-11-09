@@ -635,6 +635,9 @@ T.it("turn_id: fail → edit → refresh → dispatch sends the EDITED wording u
     require("obelus").chat_send("api:memo:7", "original failed message", "send")
     local first = ctx.B.sends[1].req.turn_id
     require("obelus.review").chat_save("api:memo:7", "new unsent wording")
+    local turns = ctx.store.turns(ctx.store.get("api:memo:7"))
+    local edited_id = turns[#turns].turn_id
+    T.ok(edited_id and edited_id ~= first, "the edit got a new id at edit time")
     api.refresh(ctx.buf)
     local c = ctx.store.get("api:memo:7")
     T.eq(ctx.store.pending_you_text(c), "new unsent wording", "the edit survives the refresh")
@@ -927,6 +930,26 @@ T.it("re-entrant match(): one that removes or replaces itself never yields a sta
     T.eq(ctx.store.get("api:memo:7").comment, "FROM THE REPLACEMENT")
     require("obelus").chat_send("api:memo:7", "hello", "send")
     T.eq({ #NEW.sends, #B2.sends }, { 1, 0 })
+    -- while saving a new comment: a match() that replaces its registration
+    -- must not get the comment created in the OLD registration's store
+    local C3 = memo_backend()
+    local NEW2 = memo_backend()
+    local armed = false
+    C3.spec.match = function(bufnr)
+      if armed then
+        armed = false
+        api.register_backend(NEW2.spec)
+      end
+      return vim.api.nvim_buf_get_name(bufnr):match("^memo://") ~= nil
+    end
+    api.register_backend(C3.spec)
+    armed = true
+    local msgs, restore = capture_notify()
+    local c = new_comment(ctx, 3, "while matching")
+    restore()
+    T.is_nil(c, "refused (try again)")
+    T.eq(#calls_of(C3, "create"), 0, "the stale registration's store was never asked to create it")
+    T.contains(vim.inspect(msgs), "changed while saving this comment")
   end)
 end)
 
@@ -1227,9 +1250,26 @@ T.it("a claim whose sync fails is not reported durable; its marker stays and blo
   clear_backends()
   fresh_claims()
   local store = require("obelus.store")
-  local fsync = vim.uv.fs_fsync
-  vim.uv.fs_fsync = function()
-    return nil, "EIO: injected", "EIO"
+  -- fail the syncs of the MARKER file only (the directory sync still works),
+  -- so a marker reported durable without a successful sync is visible
+  local fsync, open, close = vim.uv.fs_fsync, vim.uv.fs_open, vim.uv.fs_close
+  local marker_fds = {}
+  vim.uv.fs_close = function(fd, ...)
+    marker_fds[fd] = nil -- fd numbers are reused (e.g. by the directory's fd)
+    return close(fd, ...)
+  end
+  vim.uv.fs_open = function(path, ...)
+    local fd, e, c = open(path, ...)
+    if fd and type(path) == "string" and path:match("/luodda$") then
+      marker_fds[fd] = true
+    end
+    return fd, e, c
+  end
+  vim.uv.fs_fsync = function(fd)
+    if marker_fds[fd] then
+      return nil, "EIO: injected", "EIO"
+    end
+    return fsync(fd)
   end
   local msgs, restore = capture_notify()
   local ok, err = pcall(function()
@@ -1239,7 +1279,7 @@ T.it("a claim whose sync fails is not reported durable; its marker stays and blo
     T.ok(not store.agent_eligible({ file = "luodda://x" }), "and it blocks")
     T.eq(api.claim_schemes({ "luodda" }), false, "an existing marker is re-synced too: still not durable")
   end)
-  vim.uv.fs_fsync = fsync
+  vim.uv.fs_fsync, vim.uv.fs_open, vim.uv.fs_close = fsync, open, close
   restore()
   if not ok then
     error(err, 0)
@@ -1252,6 +1292,26 @@ T.it("a claim whose sync fails is not reported durable; its marker stays and blo
   msgs, restore = capture_notify()
   T.eq(api.claim_schemes({ "memo" }), false)
   restore()
+end)
+
+T.it("a competing creator's EEXIST on any claims-path level is not a failure (deterministic)", function()
+  T.fresh()
+  clear_backends()
+  fresh_claims()
+  local mkdir = vim.uv.fs_mkdir
+  local hits = 0
+  -- every mkdir loses the race: the "other editor" creates the directory first
+  vim.uv.fs_mkdir = function(path, mode)
+    mkdir(path, mode)
+    hits = hits + 1
+    return nil, "EEXIST: file already exists: " .. path, "EEXIST"
+  end
+  local ok, saved = pcall(api.claim_schemes, { "luodda" })
+  vim.uv.fs_mkdir = mkdir
+  T.ok(ok, tostring(saved))
+  T.ok(hits >= 3, "intermediate parents and the claims dir all raced (" .. hits .. ")")
+  T.eq(saved, true, "the claim is still made durable")
+  T.ok(vim.uv.fs_stat(claims.dir() .. "/luodda"))
 end)
 
 T.it("two editors claiming at once both stay claimed (filesystem barrier, real processes)", function()
