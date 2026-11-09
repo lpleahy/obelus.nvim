@@ -41,11 +41,13 @@ R2-B2 fix.
 
 | Check | Result |
 | --- | --- |
-| Forced RPC timeout (`OBELUS_UI_GUARD_MS=1500`, child stuck in `while true do end`) | reported as a transport fault (`ERROR`), exit 1. `rpc.lua` reaps the child without the wrapper's fallback. No live child, no temp dir. |
+| Forced RPC timeout (`OBELUS_UI_GUARD_MS=1500`, child stuck in `while true do end`) | reported as a transport fault (`ERROR`), exit 1. `rpc.lua` reaps the child. No live child, no temp dir. |
 | Scenario raises an error | `ERROR … deliberate scenario failure`, exit 1. No live child, no temp dir. |
-| SIGTERM to `run.sh` mid-run, child wedged | exit 143. The parent is stopped, then its own children and the parent are killed. No temp dir. |
-| SIGKILL to `run.sh` mid-run, child wedged (1.5 s guard) | the orphaned parent notices, its RPC guard fires, it reaps the child and removes the run dir. No live child, no temp dir. |
-| An unrelated `nvim --embed` (started by the self-test, not the harness) runs through all of the above | never signalled; still alive at the end |
+| SIGTERM to the run mid-scenario, child wedged | exit 143. The supervisor sent TERM to its own group (KILL after grace). No live child, no temp dir. |
+| SIGKILL of the supervisor mid-scenario (1.5 s guard) | exit 137. The orphaned parent's guard fires, it reaps the child and removes the run dir. |
+| SIGKILL of the supervisor before the parent's Lua starts | the parent notices at its first check, captures nothing and removes the run dir |
+| TERM after the parent has exited and been reaped | exit 143. The supervisor log shows `reaped` and no `signal`. Dir removed. |
+| An unrelated `nvim --embed` (the decoy), its pid injected into every pid record, running through all of the above | never signalled; alive at the end. The self-test only observes; the decoy is stopped by its own supervisor. |
 | 2.5 s wall-clock stall before each capture (progress, stream and popup scenarios) | 18/18 byte-identical to the baselines |
 
 A full 41-snapshot run with a 2.5 s stall before every capture was byte-identical

@@ -1,31 +1,39 @@
 #!/bin/sh
-# Self-tests for the UI snapshot harness itself (`make ui-selftest`, ~30 s):
-#   1. timeout: a child wedged in Lua trips the RPC guard; the harness reaps it
-#      (no live child, no temp dir left, no wrapper fallback needed)
-#   2. error:   a scenario that raises is reported as ERROR; child + temp dir gone
-#   3. signal:  SIGTERM to the wrapper mid-run kills the parent and the child and
-#               removes the temp dir
-#   4. delay:   a 2.5 s wall-clock stall between arranging and capturing every
-#               progress/stream/popup scenario leaves the snapshots byte-identical
-#   5. sigkill: SIGKILL to the wrapper (no trap can run): the orphaned parent stops,
-#               its child is reaped and the run's temp dir is still removed
-#   6. foreign: an unrelated `nvim --embed` (started here, NOT by the harness) is
-#               alive through all of the above, including the signal paths, and
-#               must never be signalled
-# Everything runs under a private mktemp dir, removed by exact path at the end.
+# Self-tests for the UI snapshot harness itself (`make ui-selftest`, ~1.5 min).
+#
+# Rule: this script never signals anything. It OBSERVES (ps, files) and asserts.
+# Every signal below is sent by supervise.pl to a process group it created and
+# whose leader it has not yet reaped; the decoy is stopped the same way.
+#
+#   0. foreign: an unrelated `nvim --embed` (the decoy, started here, not by the
+#      harness) runs throughout; its pid is injected into every pid record the
+#      harness writes (the self-test pid logs). It must survive everything.
+#   1. timeout: a child wedged in Lua trips the RPC guard; rpc.lua reaps it
+#   2. error:   a scenario that raises is reported as ERROR
+#   3. SIGTERM mid-run: the supervisor tears down its group and removes the dir
+#   4. delay:   a 2.5 s stall before each progress/stream/popup capture leaves the
+#               snapshots byte-identical
+#   5. SIGKILL of the supervisor mid-run: the orphaned parent stops, its child is
+#      reaped, the dir is removed
+#   6. parent already exited, then TERM: the supervisor signals nothing
+#   7. SIGKILL of the supervisor BEFORE the parent's Lua starts: the parent still
+#      notices, captures nothing, removes the dir
+# After each case: no recorded child (other than the decoy) is alive, the run's
+# temp base is empty.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 base=${OBELUS_UI_TMPBASE:-${TMPDIR:-/tmp}}
 work=$(mktemp -d "${base%/}/obelus-selftest.XXXXXX") || exit 2
-decoy= feeder=
+SUP="perl $here/supervise.pl"
+decoy_sup=
 finish() {
-  [ -n "$decoy" ] && kill -KILL "$decoy" 2>/dev/null
-  [ -n "$feeder" ] && kill -KILL "$feeder" 2>/dev/null
-  wait 2>/dev/null
+  if [ -n "$decoy_sup" ]; then
+    echo stop >"$work/stop-decoy" # its supervisor KILLs the decoy's group, reaps it
+    wait "$decoy_sup" 2>/dev/null
+  fi
   rm -rf "$work"
 }
 trap finish EXIT
-trap 'exit 130' INT TERM
 fails=0
 
 ok() { echo "ok    $1"; }
@@ -33,18 +41,39 @@ bad() {
   echo "FAIL  $1"
   fails=$((fails + 1))
 }
+alive() { ps -p "$1" -o pid= >/dev/null 2>&1; }
+poll() { # poll <tenths> <shell condition>: bounded wait for a condition
+  n=0
+  while [ $n -lt "$1" ]; do
+    eval "$2" && return 0
+    sleep 0.1
+    n=$((n + 1))
+  done
+  return 1
+}
 
-# every pid in $1 must be gone; $2 (a TMPBASE) must hold no leftover entries
+# 0. the decoy: an unrelated embedded nvim, its stdin held open by `sleep`
+cat >"$work/decoy.sh" <<'EOF'
+echo $$ >"$1"
+exec nvim --embed --headless -n -i NONE -u NONE --noplugin
+EOF
+$SUP --signal-after "$work/stop-decoy" --signal KILL -- \
+  sh -c 'sleep 900 | sh "$0" "$1"' "$work/decoy.sh" "$work/decoy.pid" >/dev/null 2>&1 &
+decoy_sup=$!
+poll 100 '[ -s "$work/decoy.pid" ]' || bad "decoy did not start"
+decoy=$(cat "$work/decoy.pid")
+seed() { echo "$decoy" >"$1"; } # inject the foreign pid into a record
+
+# observe only: every recorded pid except the decoy must be gone; base empty
 assert_clean() {
   label=$1 pidlog=$2 tbase=$3
-  if [ ! -s "$pidlog" ]; then
-    bad "$label: no child pid was recorded"
+  if [ "$(wc -l <"$pidlog")" -lt 2 ]; then
+    bad "$label: no harness child pid was recorded"
     return
   fi
   while read -r p; do
-    if kill -0 "$p" 2>/dev/null; then
-      bad "$label: child pid $p still alive"
-      kill -KILL "$p" 2>/dev/null
+    if [ "$p" != "$decoy" ] && alive "$p"; then
+      bad "$label: harness child pid $p still alive"
       return
     fi
   done <"$pidlog"
@@ -52,28 +81,17 @@ assert_clean() {
     bad "$label: temp dir left behind: $(ls -A "$tbase")"
     return
   fi
-  ok "$label: child reaped, temp dir removed"
+  ok "$label: no harness child alive, temp dir removed"
 }
-
-# 6 (setup). a foreign embedded nvim: a sibling of the harness, kept alive by a
-# feeder that holds its stdin open; both pids are ours (this script's) to clean up
-sh -c 'echo $$ >"$1"; exec sleep 900' sh "$work/feeder.pid" | \
-  nvim --embed --headless -n -i NONE -u NONE --noplugin >/dev/null 2>&1 &
-decoy=$!
-n=0
-while [ ! -s "$work/feeder.pid" ] && [ $n -lt 100 ]; do
-  sleep 0.1
-  n=$((n + 1))
-done
-feeder=$(cat "$work/feeder.pid")
 
 # 1. forced RPC timeout
 mkdir "$work/t1"
+seed "$work/t1.pids"
 out=$(OBELUS_UI_TMPBASE="$work/t1" OBELUS_UI_GUARD_MS=1500 OBELUS_UI_ONLY=_selftest_hang \
   OBELUS_UI_PIDLOG="$work/t1.pids" sh "$here/run.sh" 2>&1)
 rc=$?
-if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'rpc-fault' && ! printf '%s' "$out" | grep -q 'reaped leftover'; then
-  ok "timeout: reported as a transport fault (exit $rc), reaped by the harness itself"
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'rpc-fault'; then
+  ok "timeout: reported as a transport fault (exit $rc)"
 else
   bad "timeout: unexpected outcome (exit $rc): $out"
 fi
@@ -81,6 +99,7 @@ assert_clean "timeout" "$work/t1.pids" "$work/t1"
 
 # 2. scenario error
 mkdir "$work/t2"
+seed "$work/t2.pids"
 out=$(OBELUS_UI_TMPBASE="$work/t2" OBELUS_UI_ONLY=_selftest_error \
   OBELUS_UI_PIDLOG="$work/t2.pids" sh "$here/run.sh" 2>&1)
 rc=$?
@@ -91,27 +110,19 @@ else
 fi
 assert_clean "error" "$work/t2.pids" "$work/t2"
 
-# 3. SIGTERM to the wrapper while the child is wedged (guard far away)
+# 3. SIGTERM to the run (its supervisor) while the child is wedged
 mkdir "$work/t3"
+seed "$work/t3.pids"
 OBELUS_UI_TMPBASE="$work/t3" OBELUS_UI_GUARD_MS=600000 OBELUS_UI_ONLY=_selftest_hang \
-  OBELUS_UI_PIDLOG="$work/t3.pids" sh "$here/run.sh" >"$work/t3.out" 2>&1 &
-wrapper=$!
-# wait (bounded) for the child to be spawned: its pid lands in the run's pid file
-n=0
-while [ ! -s "$work/t3.pids" ] && [ $n -lt 600 ]; do
-  sleep 0.1
-  n=$((n + 1))
-done
-sleep 0.5 # let the scenario's busy loop start
-kill -TERM "$wrapper"
-wait "$wrapper"
+  OBELUS_UI_PIDLOG="$work/t3.pids" OBELUS_UI_SUPERVISE_LOG="$work/t3.sup" \
+  $SUP --signal-after "$work/t3.pids" --min-lines 2 --signal TERM -- sh "$here/run.sh" >"$work/t3.out" 2>&1
 rc=$?
-if [ $rc -ne 0 ]; then
-  ok "signal: wrapper exited $rc on SIGTERM"
+if [ $rc -eq 143 ] && grep -q '^signal TERM' "$work/t3.sup"; then
+  ok "sigterm: run exited 143; its supervisor signalled its own group"
 else
-  bad "signal: wrapper exited 0 on SIGTERM"
+  bad "sigterm: exit $rc; supervisor log: $(cat "$work/t3.sup" 2>/dev/null)"
 fi
-assert_clean "signal" "$work/t3.pids" "$work/t3"
+assert_clean "sigterm" "$work/t3.pids" "$work/t3"
 
 # 4. injected wall-clock delay: snapshots must still match byte-for-byte
 mkdir "$work/t4"
@@ -124,32 +135,60 @@ else
   bad "delay: snapshots changed under a 2.5 s stall: $out"
 fi
 
-# 5. SIGKILL to the wrapper while the child is wedged (short guard)
+# 5. SIGKILL of the run's supervisor while the child is wedged (short guard)
 mkdir "$work/t5"
+seed "$work/t5.pids"
 OBELUS_UI_TMPBASE="$work/t5" OBELUS_UI_GUARD_MS=1500 OBELUS_UI_ONLY=_selftest_hang \
-  OBELUS_UI_PIDLOG="$work/t5.pids" sh "$here/run.sh" >"$work/t5.out" 2>&1 &
-wrapper=$!
-n=0
-while [ ! -s "$work/t5.pids" ] && [ $n -lt 600 ]; do
-  sleep 0.1
-  n=$((n + 1))
-done
-sleep 0.5
-kill -KILL "$wrapper"
-wait "$wrapper" 2>/dev/null
-# bounded wait for the orphaned parent to finish its guard + reap + remove the dir
-n=0
-while [ -n "$(ls -A "$work/t5")" ] && [ $n -lt 600 ]; do
-  sleep 0.1
-  n=$((n + 1))
-done
+  OBELUS_UI_PIDLOG="$work/t5.pids" \
+  $SUP --signal-after "$work/t5.pids" --min-lines 2 --signal KILL -- sh "$here/run.sh" >"$work/t5.out" 2>&1
+rc=$?
+poll 600 '[ -z "$(ls -A "$work/t5")" ]'
+if [ $rc -eq 137 ]; then
+  ok "sigkill: supervisor killed (exit $rc)"
+else
+  bad "sigkill: unexpected exit $rc"
+fi
 assert_clean "sigkill" "$work/t5.pids" "$work/t5"
 
-# 6. the foreign embedded nvim survived every run and signal path above
-if kill -0 "$decoy" 2>/dev/null; then
-  ok "foreign: unrelated nvim --embed (pid $decoy) was never signalled"
+# 6. the parent has already exited (and been reaped) when TERM arrives
+mkdir "$work/t6"
+OBELUS_UI_TMPBASE="$work/t6" OBELUS_NVIM=/usr/bin/true OBELUS_UI_SUPERVISE_LOG="$work/t6.sup" \
+  OBELUS_UI_PAUSE_AFTER_REAP=3000 \
+  $SUP --signal-after "$work/t6.sup" --signal TERM -- sh "$here/run.sh" >"$work/t6.out" 2>&1
+rc=$?
+if [ $rc -eq 143 ] && grep -q '^reaped' "$work/t6.sup" && ! grep -q '^signal' "$work/t6.sup" &&
+  [ -z "$(ls -A "$work/t6")" ]; then
+  ok "exited-parent: TERM after the leader was reaped signalled nothing; dir removed"
 else
-  bad "foreign: unrelated nvim --embed (pid $decoy) was killed"
+  bad "exited-parent: exit $rc; log: $(cat "$work/t6.sup" 2>/dev/null); left: $(ls -A "$work/t6")"
+fi
+
+# 7. supervisor SIGKILLed before the parent's Lua runs (a launcher holds it back)
+mkdir "$work/t7"
+cat >"$work/launch.sh" <<'EOF'
+echo ready >"$LAUNCH_READY"
+while [ ! -e "$LAUNCH_GO" ]; do sleep 0.1; done
+exec nvim "$@"
+EOF
+chmod +x "$work/launch.sh"
+LAUNCH_READY="$work/t7.ready" LAUNCH_GO="$work/t7.go" OBELUS_UI_TMPBASE="$work/t7" \
+  OBELUS_NVIM="$work/launch.sh" OBELUS_UI_ONLY=progress_finish_ok OBELUS_UI_PIDLOG="$work/t7.pids" \
+  $SUP --signal-after "$work/t7.ready" --signal KILL -- sh "$here/run.sh" >"$work/t7.out" 2>&1
+rc=$?
+echo go >"$work/t7.go"
+poll 600 '[ -z "$(ls -A "$work/t7")" ] && grep -q "supervisor died" "$work/t7.out"'
+if [ $rc -eq 137 ] && grep -q 'supervisor died' "$work/t7.out" && ! grep -q '^\.' "$work/t7.out" &&
+  [ -z "$(ls -A "$work/t7")" ] && [ ! -s "$work/t7.pids" ]; then
+  ok "early-sigkill: orphaned parent captured nothing and removed the dir"
+else
+  bad "early-sigkill: exit $rc; out: $(cat "$work/t7.out"); left: $(ls -A "$work/t7")"
+fi
+
+# 0. the decoy survived every case above
+if alive "$decoy"; then
+  ok "foreign: unrelated nvim --embed (pid $decoy, injected into every pid record) never signalled"
+else
+  bad "foreign: unrelated nvim --embed (pid $decoy) is gone"
 fi
 
 echo "selftest: $fails failure(s)"

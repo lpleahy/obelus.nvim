@@ -21,9 +21,9 @@
 #   --log FILE           append "reaped" / "signal ..." lines (self-test evidence)
 #   --pause-after-reap MS  linger MS after reaping (self-test: a signal that
 #                          arrives after the leader exited must signal nothing)
-#   --signal-after FILE --signal SIG
-#                        once FILE is non-empty, send SIG to the child group
-#                        (self-test driver; still under the ownership rule)
+#   --signal-after FILE --signal SIG [--min-lines N]
+#                        once FILE has >= N lines (default 1), send SIG to the
+#                        child group (self-test driver; same ownership rule)
 #
 # Exit status: the child's (128+N if killed by signal N); 128+N if WE got INT/TERM.
 use strict;
@@ -32,6 +32,7 @@ use POSIX qw(:sys_wait_h :signal_h);
 use Time::HiRes qw(ualarm usleep time);
 
 my ( $rmdir, $log, $pause, $after, $after_sig );
+my $min_lines = 1;
 while ( @ARGV && $ARGV[0] ne '--' ) {
     my $o = shift @ARGV;
     if    ( $o eq '--rmdir' )            { $rmdir     = shift @ARGV }
@@ -39,6 +40,7 @@ while ( @ARGV && $ARGV[0] ne '--' ) {
     elsif ( $o eq '--pause-after-reap' ) { $pause     = shift @ARGV }
     elsif ( $o eq '--signal-after' )     { $after     = shift @ARGV }
     elsif ( $o eq '--signal' )           { $after_sig = shift @ARGV }
+    elsif ( $o eq '--min-lines' )        { $min_lines = shift @ARGV }
     else                                 { die "supervise.pl: unknown option $o\n" }
 }
 shift @ARGV;
@@ -71,6 +73,14 @@ if ( $pid == 0 ) {
     exec { $ARGV[0] } @ARGV or POSIX::_exit(127);
 }
 setpgrp( $pid, $pid );    # also from here: the group exists before we could signal it
+
+sub lines {
+    open( my $fh, '<', $_[0] ) or return 0;
+    my $n = 0;
+    $n++ while <$fh>;
+    close $fh;
+    return $n;
+}
 
 my ( $reaped, $status ) = ( 0, 0 );
 my $fired = 0;
@@ -105,7 +115,7 @@ while ( !try_reap() ) {
         note("reaped");
         last;
     }
-    if ( $after && !$fired && -s $after ) {
+    if ( $after && !$fired && lines($after) >= $min_lines ) {
         usleep(500_000);
         group_signal($after_sig);
         $fired = 1;

@@ -19,10 +19,13 @@ with a committed baseline. A baseline holds:
 before obelus loads and after `setup()` plus opening a file, then diffs the two:
 user commands, keymaps (every mode, global and buffer-local, Neovim's defaults
 included), autocmds (every group and ungrouped), highlight groups and namespaces.
-Each Lua callback is labelled by its source file plus a hash of its source text
-and of the functions it closes over. The hash survives line shifts and stays the
-same across processes, but changes when the callback body is swapped under an
-unchanged description. User-command callbacks are recorded when the command is
+Each Lua callback is labelled by its source file plus a fingerprint: a hash of its
+source text and of the functions it closes over, three levels deep. The
+fingerprint survives line shifts and stays the same across processes, but changes
+when the callback body is swapped under an unchanged description. Editing a
+comment or the formatting inside a callback also changes it; that is metadata
+churn, not rendered drift. It is a source fingerprint, not a full behaviour
+identity; see "Known limits" below. User-command callbacks are recorded when the command is
 created. So setup adding, changing or removing any of these fails the snapshot. The
 full after-setup tables of commands, keymaps and autocmds follow the diff.
 
@@ -88,9 +91,14 @@ diff.
   error. See `MUTATIONS.md` for the last results.
 - `make ui-selftest` (`tests/ui/selftest.sh`, about 1 min) checks the harness
   itself:
-  - a forced RPC timeout, a scenario error, SIGTERM mid-run and SIGKILL of
-    `run.sh` each leave no live child and no temp dir;
-  - an unrelated `nvim --embed` running alongside is never signalled;
+  - a forced RPC timeout, a scenario error, SIGTERM mid-run, SIGKILL of the
+    supervisor mid-run and SIGKILL of the supervisor before the parent's Lua
+    starts each leave no live child and no temp dir;
+  - a TERM that arrives after the parent has exited and been reaped signals
+    nothing;
+  - an unrelated `nvim --embed`, whose pid is injected into every pid record the
+    harness writes, survives all of the above. The self-test itself only
+    observes, with `ps` and files.
   - a 2.5 s wall-clock stall between arranging and capturing leaves the
     progress, stream and popup snapshots byte-identical.
 
@@ -131,19 +139,48 @@ diff.
   - Virtual timer callbacks do not run in a fast-event context. A callback that
     would hit E5560 for a missing `schedule_wrap` succeeds here. The behaviour
     specs (`make specs`) still run on real timers and cover that.
-- Process hygiene: no process is ever signalled because of a recorded pid.
-  - `rpc.lua` ends each child in three awaited steps: `:qall!`, then SIGTERM,
-    then SIGKILL. It releases the child's handles only after the child has exited,
-    and errors if it can't.
-  - On INT or TERM, `run.sh` first stops the parent with SIGSTOP. The parent is
-    still its own unreaped child, so that pid can't have been reused, and a stopped
-    parent can't reap its children, so their pids stay fixed. `run.sh` then
-    SIGKILLs exactly the parent's children (`pgrep -P`), then the parent, and
-    removes its temp dir.
-  - SIGKILL of `run.sh` runs no trap. Instead the parent notices it has been
-    reparented, stops after the current scenario (its child is still reaped) and
-    removes the run's dir by exact path. Until the current scenario ends,
-    including a pending RPC guard, the parent and child stay alive.
+- Process hygiene: no code path signals a pid number taken from a record, a
+  shell variable or `ps`.
+  - `run.sh` execs into `supervise.pl`. It forks the parent nvim into a new
+    process group, which the parent's embedded children share, and it is the
+    only thing that signals that group. It does so only while the group leader
+    is its own unreaped child: an unreaped child, running or zombie, pins the
+    group id, so it can't belong to anyone else.
+  - Signals are blocked outside `sigsuspend`, so a leader that has exited is
+    always reaped and noted before a handler can act. After that the supervisor
+    signals nothing.
+  - On INT or TERM the supervisor sends TERM to the group, waits a grace second,
+    sends KILL, reaps, and removes the run dir by exact path.
+  - `rpc.lua` ends each embedded child through the libuv handle it holds:
+    `:qall!`, then SIGTERM, then SIGKILL, each awaited. libuv reaps only while
+    its loop runs, so a child not yet reported as exited is still unreaped when
+    it is signalled. `rpc.lua` errors if the child can't be reaped.
+  - SIGKILL of the supervisor runs no handler. Before every capture the parent
+    compares its parent pid with the supervisor pid it was given at launch, so
+    this also works when the supervisor died before the parent's Lua started.
+    Once orphaned, it stops (its current child is still reaped through the
+    handle) and removes the run's dir by exact path. Until the current scenario
+    ends, including a pending RPC guard, the parent and that child stay alive.
+
+## Known limits
+
+- Callback fingerprints:
+  - callbacks without a readable source file (C functions, `loadstring` chunks
+    with a fixed chunk name, missing files) all collapse to `#C` or `#nosrc`;
+  - closures made by one factory and differing only in captured non-function
+    data (strings, tables) share a fingerprint.
+
+  Inside one process, replacing a pre-existing callback is still caught by
+  identity. If such forms enter the protected API, give them explicit labels or
+  behaviour tests.
+- Window-targeted autocmds (e.g. `WinClosed`) are keyed by the target window's
+  role (its buffer label and float or split), not its id. Two windows with the
+  same role are indistinguishable.
+- Process containment covers the parent nvim and its direct embedded children,
+  i.e. the supervisor's process group. A descendant that double-forks and calls
+  `setsid()` leaves the group and is not cleaned up. Today's synthetic scenarios
+  spawn no such jobs: the fake transport runs no subprocess, and provider jobs
+  are out of scope.
 
 ## How it works
 
