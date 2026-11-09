@@ -29,7 +29,9 @@ local M = {}
 M.version = "0.1.0"
 
 -- What this obelus supports, for feature detection without touching private
--- UI: read it by key (`api.capabilities.approval_handle`). Read-only.
+-- UI: read it by key (`api.capabilities.approval_handle`). ADVISORY: any Lua
+-- code in this process can change module tables, so a flag detects a feature,
+-- it does not attest it. The metatable below only guards against mistakes.
 local CAPABILITIES = {
   approval_focus_hint = true, -- approve{ focus_hint = "…" }
   approval_handle = true, -- approve{} returns { cancel(), focus() } scoped to that prompt

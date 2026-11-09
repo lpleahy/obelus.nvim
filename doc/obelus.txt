@@ -1418,13 +1418,21 @@ and composer UI on its own NON-FILE buffers, and gives it obelus's
 Approve/Deny prompt. Lua type annotations are in lua/obelus/api.lua.
 
 api.version                                             *obelus.api.version*
-    Semver string, currently "0.1.0". Feature-detect with it: a minor bump
-    adds, a major bump breaks.
+    Semver string, currently "0.1.0". It describes RELEASED compatibility:
+    a minor bump adds, a major bump breaks; it changes only with a release.
+    Use it to require a compatible API (e.g. major == 0 and at least the
+    minor you were written against). Use |obelus.api.capabilities| to detect
+    individual optional features, which can appear between releases (as on
+    an unreleased branch) without a version change.
 
 api.capabilities                                   *obelus.api.capabilities*
-    Read-only table of feature flags, for detection without touching
-    private UI. Read it by key; writing raises an error. Unknown keys are
-    nil.
+    Advisory feature flags, for detection without touching private UI. Read
+    it by key; a flag that is absent (nil) means the feature is not there.
+    It is feature DETECTION within one trusted Lua process, not an
+    attestation: any Lua code in the same Neovim can change module tables,
+    so a flag cannot prove a behaviour. Ordinary assignment to it is
+    refused, as a guard against mistakes only. Callers should still handle
+    failure at the point of use (e.g. check the `focus()` result).
       approval_focus_hint  `approve{}` accepts `focus_hint`
       approval_handle      `approve{}` returns `{ cancel(), focus() }`
                            scoped to that prompt
