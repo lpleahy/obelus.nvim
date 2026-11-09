@@ -8,11 +8,19 @@ A mutation counts as **caught** only when the run reaches comparison and reports
 baseline mismatch with no harness error. A harness error under a mutation counts as
 **invalid**. The real tree is never modified.
 
-Last run: 2026-11-09, Neovim v0.12.6, 49 baselines (41 + 8 from `obelus.api`).
-Result: **38 caught (18 visual or setup, 1 harness, 2 containment, 1 real-UI
-behaviour, 16 behaviour specs), 0 missed, 0 invalid** under `nice -n 10`. The per-row
-counts below for the first 18 rows are from the 41-baseline run; the `api_*`
-baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49).
+Behaviour mutations (`spec_mutate`) are judged by NAME: each lists the
+regression(s) that must fail. If any other test fails too, a paired pristine
+control runs right away; if that control also fails, the mutation is INVALID
+(an unrelated or flaky failure), otherwise the extra failures are recorded as
+collateral. Every failing test name is printed. Self-test mutations name the
+self-test case that must fail. `OBELUS_MUT_ONLY=name,…` runs a subset.
+
+Last run: 2026-11-09, Neovim v0.12.6, 53 baselines (41 + 12 from `obelus.api`).
+Result: **51 caught (18 visual or setup, 1 harness, 5 containment, 2 real-UI
+behaviour, 25 behaviour specs, each failing its named regression), 0 missed, 0
+invalid** under `nice -n 10`; 13 behaviour mutations had collateral failures,
+all with a clean pristine control. The per-row counts below for the first 18
+rows are from the 41-baseline run; the `api_*` baselines add to some of them.
 
 | Mutation | Change in the copy | Result |
 | --- | --- | --- |
@@ -53,6 +61,19 @@ baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49)
 | api-thread-saved-to-jsonl (behaviour) | `store.lua`: backend threads are no longer skipped by `save()` | caught: 2 `[api]` specs |
 | xdg-guard-lua-removed (containment) | `tests/xdg_guard.lua` returns at once | caught: 2 `xdg-guard` self-test failures (a direct `nvim … run.lua` with HOME at the decoy writes into its store) |
 | xdg-guard-specs-sh-removed (containment) | `tests/specs.sh` no longer checks before starting nvim | caught: 1 `xdg-guard` self-test failure (nvim's startup log lands in the decoy) |
+| claims-mkdir-eexist-fails (behaviour) | `claims.lua`: a competitor's EEXIST is not re-checked | named: "a competing creator's EEXIST" |
+| claims-sync-not-verified (behaviour) | `claims.lua`: an existing marker counts as durable without a sync | named: "a claim whose sync fails is not reported durable" |
+| approve-enter-unarmed-ignored (behaviour) | `approve.lua`: Enter back on the armed-only path | named: "approve: Enter while still unarmed denies at once" |
+| approve-enter-unarmed-ignored-ui (real-UI snapshot) | the same | caught: 2 (`api_approve_enter_unarmed`) |
+| approve-handle-focus-not-scoped (behaviour) | `approve.lua`: a handle's `focus()` acts on the open prompt | named: "approve handle: A open, B queued" |
+| api-edit-keeps-turn-id (behaviour) | `store.lua`: an edited draft keeps its old turn id | named: "turn_id: fail → edit → refresh → dispatch" |
+| api-create-result-relabelled (behaviour) | `api.lua`: a `create()` result is adopted after its registration was replaced | named: "re-entrant create(): a replacement with a colliding id" |
+| api-match-stale-owner (behaviour) | `api.lua`: a `match()` answer is trusted after it removed/replaced its registration | named: "re-entrant match()" |
+| api-cancel-reason-always-user (behaviour) | `api.lua`: every cancel is reported as "user" | named: "cancel reasons: an explicit user cancel" |
+| review-cancel-without-user-reason (behaviour) | `review.lua`: the explicit cancel passes no reason | named: "cancel reasons: an explicit user cancel" |
+| xdg-guard-sh-defaults-by-spelling (containment) | `tests/xdg_guard.sh`: the defaults are matched by spelling only | named self-test: "xdg-guard: private.sh, alias root" |
+| xdg-guard-lua-defaults-by-spelling (containment) | `tests/xdg_guard.lua`: the same on the nvim side | named self-test: "xdg-guard: direct nvim run.lua, alias root" |
+| xdg-guard-log-symlink-allowed (containment) | `tests/xdg_guard.sh`: a symlinked `NVIM_LOG_FILE` passes | named self-test: "xdg-guard: private.sh, log file is a symlink" |
 | supervisor-skips-member-teardown (harness) | `supervise.pl`: the `teardown();` call is removed, so the group is released while members still run (R4-B1) | caught: 4 self-test failures (`parent-exit`, `parent-exit-harness`: exit 42 with log `reaped` only, straggler still alive) |
 
 The setup and zindex mutations come from the first independent review. Before the
