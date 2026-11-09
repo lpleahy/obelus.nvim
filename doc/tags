@@ -101,6 +101,7 @@ obelus.api.approve()	obelus.txt	/*obelus.api.approve()*
 obelus.api.approve_focus()	obelus.txt	/*obelus.api.approve_focus()*
 obelus.api.backend_for()	obelus.txt	/*obelus.api.backend_for()*
 obelus.api.backends()	obelus.txt	/*obelus.api.backends()*
+obelus.api.capabilities	obelus.txt	/*obelus.api.capabilities*
 obelus.api.claim_schemes()	obelus.txt	/*obelus.api.claim_schemes()*
 obelus.api.claimed_schemes()	obelus.txt	/*obelus.api.claimed_schemes()*
 obelus.api.refresh()	obelus.txt	/*obelus.api.refresh()*

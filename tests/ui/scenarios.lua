@@ -510,6 +510,17 @@ scenario("api_approve_enter_unarmed", function()
   C.settle()
 end)
 
+-- a caller's own focus instruction (focus_hint) in place of :ObelusApprove
+scenario("api_approve_focus_hint", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    focus_hint = ",A / :Luodda approve",
+    on_result = function() end,
+  })
+  C.settle()
+end)
+
 -- ── setup / keymap registration path ──────────────────────────────────────────
 scenario("registration", function()
   fresh()

@@ -1770,6 +1770,60 @@ T.it("approve handle: A open, B queued — B's focus is a no-op; B opens after A
   end)
 end)
 
+T.it("api.capabilities: read-only flags that match the behaviour", function()
+  local caps = api.capabilities
+  T.eq({ caps.approval_focus_hint, caps.approval_handle, caps.approval_on_open }, { true, true, true })
+  T.ok(not pcall(function()
+    caps.approval_handle = false
+  end), "read-only")
+  T.ok(not pcall(function()
+    caps.new_flag = true
+  end), "no new keys")
+  T.eq(getmetatable(caps), false, "the freeze cannot be undone")
+  T.is_nil(caps.no_such_capability)
+  with_ui(function()
+    approve.arm_ms = 0
+    local opened, lines
+    local h = api.approve({
+      summary = "caps",
+      focus_hint = ",A / :Luodda approve",
+      on_result = function() end,
+      on_open = function(handle)
+        opened = handle
+        lines = vim.api.nvim_buf_get_lines(approve._active().buf, 0, -1, false)
+      end,
+    })
+    -- approval_handle
+    T.eq({ type(h.cancel), type(h.focus) }, { "function", "function" })
+    -- approval_on_open
+    T.ok(opened == h, "on_open received this prompt's handle")
+    -- approval_focus_hint
+    T.ok(vim.tbl_contains(lines, "Focus: ,A / :Luodda approve, wait, then a approves"), vim.inspect(lines))
+    h.cancel()
+  end)
+end)
+
+T.it("approve: focus_hint is validated; absent, the default instruction is unchanged", function()
+  for _, bad in ipairs({ 42, "two\nlines", "", "   ", string.rep("x", 33), "tab\there" }) do
+    T.ok(
+      not pcall(api.approve, { summary = "x", focus_hint = bad, on_result = function() end }),
+      vim.inspect(bad) .. " rejected"
+    )
+  end
+  T.is_nil(approve._active(), "a rejected call queues nothing")
+  with_ui(function()
+    local lines
+    api.approve({
+      summary = "default",
+      on_result = function() end,
+      on_open = function()
+        lines = vim.api.nvim_buf_get_lines(approve._active().buf, 0, -1, false)
+      end,
+    })
+    T.ok(vim.tbl_contains(lines, "Focus: :ObelusApprove, wait, then a approves"), vim.inspect(lines))
+  end)
+end)
+
 T.it("approve: a queued prompt waits its turn; validation rejects a missing on_result", function()
   T.ok(not pcall(api.approve, { summary = "x" }))
   with_ui(function()

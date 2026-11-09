@@ -28,6 +28,21 @@ local M = {}
 
 M.version = "0.1.0"
 
+-- What this obelus supports, for feature detection without touching private
+-- UI: read it by key (`api.capabilities.approval_handle`). Read-only.
+local CAPABILITIES = {
+  approval_focus_hint = true, -- approve{ focus_hint = "…" }
+  approval_handle = true, -- approve{} returns { cancel(), focus() } scoped to that prompt
+  approval_on_open = true, -- approve{ on_open = fun(handle) }
+}
+M.capabilities = setmetatable({}, {
+  __index = CAPABILITIES,
+  __newindex = function()
+    error("obelus.api.capabilities is read-only", 2)
+  end,
+  __metatable = false, -- getmetatable() can't reach (and so unfreeze) it
+})
+
 ---@class obelus.api.Range
 ---@field sl integer first line (1-based)
 ---@field el integer last line (1-based, inclusive)

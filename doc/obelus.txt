@@ -1421,6 +1421,15 @@ api.version                                             *obelus.api.version*
     Semver string, currently "0.1.0". Feature-detect with it: a minor bump
     adds, a major bump breaks.
 
+api.capabilities                                   *obelus.api.capabilities*
+    Read-only table of feature flags, for detection without touching
+    private UI. Read it by key; writing raises an error. Unknown keys are
+    nil.
+      approval_focus_hint  `approve{}` accepts `focus_hint`
+      approval_handle      `approve{}` returns `{ cancel(), focus() }`
+                           scoped to that prompt
+      approval_on_open     `approve{}` accepts `on_open`
+
 api.register_backend({spec})                   *obelus.api.register_backend()*
     Register a backend. Registering a name again REPLACES it: the old
     registration's sends are cancelled and its late callbacks ignored.
@@ -1577,6 +1586,11 @@ api.approve({opts})                                   *obelus.api.approve()*
       timeout_ms optional, default 120000 (then Deny)
       on_open    optional fun(handle) — called when THIS prompt's float
                  opens (it may first wait behind another prompt)
+      focus_hint optional string shown instead of ":ObelusApprove" in the
+                 float's focus line, e.g. ",A / :Luodda approve". One
+                 line, 1..32 display cells, no control characters;
+                 anything else raises an error. Absent, the float is
+                 exactly as without it.
     Returns a handle scoped to this prompt: { cancel = fun(), focus = fun() }.
     `cancel()` denies it (queued or open). `focus()` focuses it like
     |:ObelusApprove| and returns true, but only while it is the open

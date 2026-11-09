@@ -26,6 +26,7 @@ local M = {}
 ---@field on_result fun(approved: boolean) called exactly once
 ---@field timeout_ms? integer deny after this long (default 120000)
 ---@field on_open? fun(handle: obelus.ApproveHandle) called when THIS prompt's float opens (it may wait in the queue)
+---@field focus_hint? string replaces ":ObelusApprove" in the float's focus line (one line, 1..32 cells)
 
 ---@class obelus.ApproveHandle
 ---@field cancel fun() deny this prompt (queued or open); no-op once decided
@@ -345,6 +346,15 @@ function M.approve(opts)
   if type(opts) ~= "table" or type(opts.on_result) ~= "function" then
     error("obelus.api.approve: opts.on_result must be a function", 2)
   end
+  local hint = opts.focus_hint
+  if hint ~= nil then
+    -- short and single-line: no control characters (newlines included), and
+    -- 1..32 display cells so the focus line fits the float
+    local w = type(hint) == "string" and vim.fn.strdisplaywidth(hint) or 0
+    if type(hint) ~= "string" or hint:find("[%z\1-\31\127]") or vim.trim(hint) == "" or w > 32 then
+      error("obelus.api.approve: focus_hint must be a single-line string of 1..32 cells", 2)
+    end
+  end
   local a = {
     summary = clean(opts.summary or ""),
     details = opts.details,
@@ -352,6 +362,7 @@ function M.approve(opts)
     on_result = opts.on_result,
     timeout_ms = tonumber(opts.timeout_ms) or M.timeout_ms,
     on_open = type(opts.on_open) == "function" and opts.on_open or nil,
+    focus_hint = hint,
     armed = false,
   }
   a.handle = {
@@ -369,6 +380,26 @@ function M.approve(opts)
       return M._focus(a)
     end,
   }
+  if hint then
+    -- swap the caller's instruction into the focus line once the float is
+    -- open (kept out of open(): the prompt's rendering is otherwise unchanged)
+    local user_on_open = a.on_open
+    a.on_open = function(handle)
+      if a.buf and vim.api.nvim_buf_is_valid(a.buf) then
+        local lines = vim.api.nvim_buf_get_lines(a.buf, 0, -1, false)
+        for i, line in ipairs(lines) do
+          if line == "Focus: :ObelusApprove, wait, then a approves" then
+            vim.bo[a.buf].modifiable = true
+            vim.api.nvim_buf_set_lines(a.buf, i - 1, i, false, { "Focus: " .. hint .. ", wait, then a approves" })
+            vim.bo[a.buf].modifiable = false
+          end
+        end
+      end
+      if user_on_open then
+        user_on_open(handle)
+      end
+    end
+  end
   queue[#queue + 1] = a
   pump()
   return a.handle
