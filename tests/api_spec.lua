@@ -1416,6 +1416,65 @@ T.it("a fresh claim syncs the marker, the claims dir and the parent of every dir
   end
 end)
 
+T.it("a failed parent sync is retried: true only once every required sync succeeded", function()
+  T.fresh()
+  clear_backends()
+  fresh_claims()
+  local uv = vim.uv
+  local open, close, fsync = uv.fs_open, uv.fs_close, uv.fs_fsync
+  local paths, attempted, fail_path = {}, {}, nil
+  uv.fs_open = function(path, ...)
+    local fd, e, c = open(path, ...)
+    if fd then
+      paths[fd] = path
+    end
+    return fd, e, c
+  end
+  uv.fs_close = function(fd, ...)
+    paths[fd] = nil
+    return close(fd, ...)
+  end
+  uv.fs_fsync = function(fd)
+    local p = paths[fd]
+    attempted[#attempted + 1] = p
+    if p and p == fail_path then
+      return nil, "EIO: injected", "EIO"
+    end
+    return fsync(fd)
+  end
+  local msgs, restore = capture_notify()
+  local ok, err = pcall(function()
+    -- the review's probe: EIO on the nvim/ level (claims.dir():h:h)
+    local base = vim.fn.fnamemodify(claims.dir(), ":h:h")
+    fail_path = base
+    T.eq(api.claim_schemes({ "luodda" }), false, "first claim: a parent sync failed")
+    T.ok(uv.fs_stat(claims.dir() .. "/luodda"), "the marker is kept")
+    attempted = {}
+    T.eq(api.claim_schemes({ "luodda" }), false, "retry while it still fails: still false")
+    T.ok(vim.tbl_contains(attempted, base), "the retry did try that parent again")
+    fail_path, attempted = nil, {}
+    T.eq(api.claim_schemes({ "luodda" }), true, "retry once it succeeds: true")
+    T.ok(vim.tbl_contains(attempted, base), "and it synced that parent")
+    attempted = {}
+    T.eq(api.claim_schemes({ "memo" }), true, "a later scheme")
+    T.ok(vim.tbl_contains(attempted, base), "re-syncs the chain too")
+    -- another editor (no memory of the failure in this process)
+    fresh_claims()
+    base = vim.fn.fnamemodify(claims.dir(), ":h:h")
+    fail_path = base
+    T.eq(api.claim_schemes({ "luodda" }), false)
+    claims._reset()
+    fail_path, attempted = nil, {}
+    T.eq(api.claim_schemes({ "luodda" }), true)
+    T.ok(vim.tbl_contains(attempted, base), "a fresh process syncs that parent before saying true")
+  end)
+  uv.fs_open, uv.fs_close, uv.fs_fsync = open, close, fsync
+  restore()
+  if not ok then
+    error(err, 0)
+  end
+end)
+
 T.it("a claim whose sync fails is not reported durable; its marker stays and blocks", function()
   T.fresh()
   clear_backends()

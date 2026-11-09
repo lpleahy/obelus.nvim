@@ -1588,10 +1588,13 @@ api.claim_schemes({schemes})                    *obelus.api.claim_schemes()*
     quarantined from the start (|obelus-quarantine|). Errors on an invalid
     name; returns whether the claim was saved (it holds for the session
     either way). "Saved" means: the scheme's marker file exists (created
-    exclusively, or already there from another editor), a sync of that file
-    succeeded, the claims directory was synced, and so was the parent of
-    every directory the claim had to create; where the platform cannot sync
-    a directory, that part is best effort. Editors creating the claims
+    exclusively, or already there from another editor), and in THIS call
+    every required sync succeeded: the marker, the claims directory, the
+    directories holding it (obelus/, the state directory and its parent) and
+    the parent of any directory a claim in this editor had to create above
+    them. An existing marker alone never counts: a claim retried after a
+    failed sync syncs again and returns true only when all succeed. Where
+    the platform cannot sync a directory, that part is best effort. Editors creating the claims
     directories at the same time do not fail each other. A marker whose sync
     failed is kept (it already blocks the scheme) and the call returns false.
 

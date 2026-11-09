@@ -24,6 +24,9 @@ M._dir = nil -- test override
 
 local uv = vim.uv or vim.loop
 local session = {} ---@type table<string, true> claims made in this process
+-- directories this process created ABOVE the fixed chain (see claim()) whose
+-- parent has not been synced successfully yet; retried by every claim
+local pending_parents = {} ---@type table<string, true>
 local cache = { key = nil, set = {}, corrupt = false }
 local warned = false
 
@@ -202,11 +205,37 @@ function M.claim(schemes)
     for _, s in ipairs(schemes) do
       saved = persist(dir, s) and saved
     end
-    saved = sync_dir(dir) and saved
-    -- every directory this claim had to create is an entry in its parent:
-    -- sync each of those parents too, or a crash could lose the whole path
+    -- EVERY claim re-syncs the directory entries the claims path depends on —
+    -- claims/, obelus/, the state base and the base's parent — whether or not
+    -- this call created them: an earlier attempt (here or in another editor)
+    -- may have created them and failed their sync. True means all of these
+    -- syncs succeeded in this call; an existing marker is never enough.
+    local chain = {}
+    local level = dir
+    for _ = 1, 4 do
+      chain[#chain + 1] = level
+      level = vim.fn.fnamemodify(level, ":h")
+    end
+    local synced = {} ---@type table<string, boolean> path -> did its sync succeed
+    for _, d in ipairs(chain) do
+      synced[d] = sync_dir(d)
+      saved = synced[d] and saved
+    end
+    -- a directory created above that chain (a missing state root's ancestors):
+    -- its parent must be synced too; kept pending in this process until it is
     for _, d in ipairs(fresh) do
-      saved = sync_dir(vim.fn.fnamemodify(d, ":h")) and saved
+      pending_parents[d] = true
+    end
+    for d in pairs(pending_parents) do
+      local parent = vim.fn.fnamemodify(d, ":h")
+      if synced[parent] == nil then
+        synced[parent] = sync_dir(parent)
+      end
+      if synced[parent] then
+        pending_parents[d] = nil
+      else
+        saved = false
+      end
     end
   end
   local _, corrupt, why = read()
@@ -244,6 +273,7 @@ end
 -- test hook: forget this process's claims and the cache
 function M._reset()
   session, cache, warned = {}, { key = nil, set = {}, corrupt = false }, false
+  pending_parents = {}
 end
 
 return M
