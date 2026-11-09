@@ -347,8 +347,11 @@ if want xdg-guard; then
   rootb_env="OBELUS_TEST_ROOT=$rb"
   unset_env="-u OBELUS_TEST_ROOT -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_CONFIG_HOME -u XDG_CACHE_HOME \
     -u NVIM_LOG_FILE -u XDG_RUNTIME_DIR -u XDG_CONFIG_DIRS -u XDG_DATA_DIRS -u OBELUS_UI_TMPBASE"
-  check() { # scope (all|owned), label, command (eval'd)
-    if [ "$1" = all ]; then set -- "$dh" "$2" "$3"; else set -- "$owned" "$2" "$3"; fi
+  check() { # scope (all|owned|"<dirs>"), label, command (eval'd)
+    case $1 in
+    all) set -- "$dh" "$2" "$3" ;;
+    owned) set -- "$owned" "$2" "$3" ;;
+    esac
     before=$(listing $1)
     out=$(eval "$3" 2>&1)
     rc=$?
@@ -367,6 +370,28 @@ if want xdg-guard; then
     "env $unset_env HOME='$dh' TMPDIR='$rb/tmp' nvim --headless -n -u NONE -i NONE -c 'luafile $repo/tests/run.lua'"
   check owned "direct nvim run.lua, XDG at the decoy, outside the root" \
     "env $unset_env $decoy_env $rootb_env nvim --headless -n -u NONE -i NONE -c 'luafile $repo/tests/run.lua'"
+  # an ALIAS root: a symlink (outside any home) to a fake home's .local; every
+  # path is "inside the root" by spelling, but resolves into the real default
+  fh="$work/fake-home"
+  mkdir -p "$fh/.local"
+  ln -s "$fh/.local" "$work/alias"
+  for d in share state config cache run tmp; do mkdir -p "$fh/.local/$d"; done
+  mkdir -p "$fh/.local/share/nvim/obelus" "$fh/.local/state/nvim/obelus"
+  a="$work/alias"
+  alias_env="HOME=$fh OBELUS_TEST_ROOT=$a XDG_DATA_HOME=$a/share XDG_STATE_HOME=$a/state XDG_CONFIG_HOME=$a/config \
+    XDG_CACHE_HOME=$a/cache XDG_RUNTIME_DIR=$a/run TMPDIR=$a/tmp XDG_CONFIG_DIRS=$a/config XDG_DATA_DIRS=$a/share \
+    NVIM_LOG_FILE=$a/state/nvim.log"
+  check "$fh" "private.sh, alias root into a home's .local" "env $unset_env $alias_env sh '$repo/tests/private.sh' true"
+  check "$fh" "specs.sh, alias root into a home's .local" "env $unset_env $alias_env sh '$repo/tests/specs.sh'"
+  check "$fh/.local/share/nvim/obelus $fh/.local/state/nvim/obelus" "direct nvim run.lua, alias root" \
+    "env $unset_env $alias_env nvim --headless -n -u NONE -i NONE -c 'luafile $repo/tests/run.lua'"
+  # a log file that is a symlink out of an otherwise valid root (dangling)
+  ln -s "$dh/outside.log" "$rb/state/nvim.log"
+  rb_env="OBELUS_TEST_ROOT=$rb XDG_DATA_HOME=$rb/data XDG_STATE_HOME=$rb/state XDG_CONFIG_HOME=$rb/config \
+    XDG_CACHE_HOME=$rb/cache XDG_RUNTIME_DIR=$rb/run TMPDIR=$rb/tmp XDG_CONFIG_DIRS=$rb/config XDG_DATA_DIRS=$rb/data \
+    NVIM_LOG_FILE=$rb/state/nvim.log"
+  check all "private.sh, log file is a symlink out of the root" "env $unset_env $rb_env sh '$repo/tests/private.sh' true"
+  check all "specs.sh, log file is a symlink out of the root" "env $unset_env $rb_env sh '$repo/tests/specs.sh'"
 fi
 
 # 0. the decoy survived every case above, including the group TERM/KILLs

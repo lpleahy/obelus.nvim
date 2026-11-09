@@ -62,17 +62,32 @@ return function(who)
   if rhome and (rhome == rroot or inside(rhome, rroot)) then
     refuse(who, "OBELUS_TEST_ROOT=" .. root .. " contains HOME (" .. home .. ")")
   end
+  -- the real defaults, canonical (symlinks resolved), so that no spelling of
+  -- a path — an alias root, a symlinked component — can reach them
   local reals = {}
   if home and home ~= "" then
-    reals = { home .. "/.local", home .. "/.config", home .. "/.cache" }
+    for _, d in ipairs({ "/.local", "/.config", "/.cache" }) do
+      reals[#reals + 1] = resolve(home .. d) or (home .. d)
+    end
   end
-  local function check(var, val)
+  local function in_default(path)
     for _, real in ipairs(reals) do
-      if val == real or val:sub(1, #real + 1) == real .. "/" then
-        refuse(who, var .. "=" .. val .. " is a real default (" .. real .. ")")
+      if path == real or inside(path, real) then
+        return real
       end
     end
-    if not inside(resolve(val), rroot) then
+  end
+  local hit = in_default(rroot)
+  if hit then
+    refuse(who, "OBELUS_TEST_ROOT=" .. root .. " resolves into a real default (" .. hit .. ")")
+  end
+  local function check(var, val)
+    local r = resolve(val)
+    hit = r and in_default(r)
+    if hit then
+      refuse(who, var .. "=" .. val .. " resolves into a real default (" .. hit .. ")")
+    end
+    if not inside(r, rroot) then
       refuse(who, var .. "=" .. val .. " is outside OBELUS_TEST_ROOT=" .. root)
     end
   end
@@ -96,6 +111,13 @@ return function(who)
   local log = vim.env.NVIM_LOG_FILE
   if not log or log == "" then
     refuse(who, "NVIM_LOG_FILE is not set")
+  end
+  local lst = uv.fs_lstat(log)
+  if lst and lst.type == "link" then
+    refuse(who, "NVIM_LOG_FILE=" .. log .. " is a symlink")
+  end
+  if lst and lst.type ~= "file" then
+    refuse(who, "NVIM_LOG_FILE=" .. log .. " is not a regular file")
   end
   check("NVIM_LOG_FILE", log)
   for _, what in ipairs({ "data", "state", "cache", "config", "run", "log" }) do

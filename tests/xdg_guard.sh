@@ -8,7 +8,11 @@
 #     XDG_RUNTIME_DIR TMPDIR, every entry of XDG_CONFIG_DIRS / XDG_DATA_DIRS,
 #     the directory of NVIM_LOG_FILE, and OBELUS_UI_TMPBASE when set;
 #   the root is absolute, a directory, not /, and neither HOME nor an ancestor
-#   of HOME; no value is a real default under HOME.
+#   of HOME; nothing resolves into a real default under HOME (.local, .config,
+#   .cache) however it is spelled: the defaults, the root and every value are
+#   compared by their canonical (symlink-free) paths;
+#   NVIM_LOG_FILE is not a symlink (dangling or not) and, if it exists, a
+#   regular file — checked before Neovim starts.
 # Neovim derives stdpath() from these (HOME only when they are unset, which this
 # rejects); obelus derives its store and claims paths from stdpath(). The nvim
 # side re-checks the same rules plus stdpath() itself (tests/xdg_guard.lua).
@@ -19,19 +23,33 @@ obelus_xdg_refuse() { # who, reason
   return 3
 }
 
-# obelus_xdg_inside <who> <var> <value>: value is an existing dir inside the root
+# canonical path of an existing directory (symlinks resolved), or empty
+obelus_xdg_real() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+# obelus_xdg_in_default <canonical path>: prints the real default it falls in
+obelus_xdg_in_default() {
+  for _d in "$_def1" "$_def2" "$_def3"; do
+    [ -n "$_d" ] || continue
+    case "$1/" in "$_d"/*)
+      echo "$_d"
+      return 0
+      ;;
+    esac
+  done
+  return 1
+}
+
+# obelus_xdg_inside <who> <var> <value>: value is an existing dir inside the
+# root and not inside a real default — both judged on canonical paths
 obelus_xdg_inside() {
-  if [ -n "${HOME:-}" ]; then
-    for _real in "$HOME/.local/share" "$HOME/.local/state" "$HOME/.config" "$HOME/.cache" "$HOME/.local"; do
-      case "$3" in "$_real" | "$_real"/*)
-        obelus_xdg_refuse "$1" "$2=$3 is a real default ($_real)"
-        return 3
-        ;;
-      esac
-    done
-  fi
-  if ! _rval=$(cd "$3" 2>/dev/null && pwd -P); then
+  if ! _rval=$(obelus_xdg_real "$3"); then
     obelus_xdg_refuse "$1" "$2=$3 is not an existing directory"
+    return 3
+  fi
+  if _hit=$(obelus_xdg_in_default "$_rval"); then
+    obelus_xdg_refuse "$1" "$2=$3 resolves into a real default ($_hit)"
     return 3
   fi
   case "$_rval/" in "$_rroot"/?*) ;; *)
@@ -62,12 +80,22 @@ obelus_xdg_guard() {
     obelus_xdg_refuse "$_who" "OBELUS_TEST_ROOT is /"
     return 3
   fi
-  if [ -n "${HOME:-}" ] && _rhome=$(cd "$HOME" 2>/dev/null && pwd -P); then
+  # the real defaults, canonical (a default that does not exist yet keeps its
+  # spelling under the canonical HOME)
+  _def1= _def2= _def3=
+  if [ -n "${HOME:-}" ] && _rhome=$(obelus_xdg_real "$HOME"); then
     case "$_rhome/" in "$_rroot"/*)
       obelus_xdg_refuse "$_who" "OBELUS_TEST_ROOT=$_root contains HOME ($HOME)"
       return 3
       ;;
     esac
+    _def1=$(obelus_xdg_real "$HOME/.local") || _def1=$_rhome/.local
+    _def2=$(obelus_xdg_real "$HOME/.config") || _def2=$_rhome/.config
+    _def3=$(obelus_xdg_real "$HOME/.cache") || _def3=$_rhome/.cache
+  fi
+  if _hit=$(obelus_xdg_in_default "$_rroot"); then
+    obelus_xdg_refuse "$_who" "OBELUS_TEST_ROOT=$_root resolves into a real default ($_hit)"
+    return 3
   fi
   for _v in XDG_DATA_HOME XDG_STATE_HOME XDG_CONFIG_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR TMPDIR; do
     eval "_val=\${$_v:-}"
@@ -92,6 +120,14 @@ obelus_xdg_guard() {
   done
   if [ -z "${NVIM_LOG_FILE:-}" ]; then
     obelus_xdg_refuse "$_who" "NVIM_LOG_FILE is not set"
+    return 3
+  fi
+  if [ -L "$NVIM_LOG_FILE" ]; then
+    obelus_xdg_refuse "$_who" "NVIM_LOG_FILE=$NVIM_LOG_FILE is a symlink"
+    return 3
+  fi
+  if [ -e "$NVIM_LOG_FILE" ] && [ ! -f "$NVIM_LOG_FILE" ]; then
+    obelus_xdg_refuse "$_who" "NVIM_LOG_FILE=$NVIM_LOG_FILE is not a regular file"
     return 3
   fi
   obelus_xdg_inside "$_who" "NVIM_LOG_FILE's directory" "$(dirname "$NVIM_LOG_FILE")" || return 3

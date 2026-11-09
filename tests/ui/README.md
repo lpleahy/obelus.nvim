@@ -134,6 +134,11 @@ diff.
     (exit 3) unless `tests/xdg_guard.sh` validates the environment: a root that is
     not `/`, `HOME` or an ancestor of `HOME`, and every path above inside it and
     not a real default under `HOME`. A merely non-empty value is not enough.
+    The defaults (`~/.local`, `~/.config`, `~/.cache`), the root and every value
+    are compared by canonical path, so an alias (a symlinked root or component)
+    cannot reach a default. `NVIM_LOG_FILE` must not be a symlink (dangling or
+    not) and, if it exists, must be a regular file; this is checked before
+    Neovim starts.
   - The nvim side (`tests/xdg_guard.lua`, first thing in `tests/run.lua`,
     `tests/ui/run.lua` and `tests/ui/child.lua`) re-checks the same rules plus
     `stdpath()` for data, state, cache, config, run and log, before anything is
@@ -141,8 +146,9 @@ diff.
     refused there, but Neovim's own startup files (an empty log, its server
     socket) are created before any Lua runs; use `tests/specs.sh`.
   - `make ui-selftest` case `xdg-guard` points each entry point at a decoy home
-    and checks the refusal and that the decoy is byte-identical (paths, sizes,
-    mtimes); two mutations remove the guards and must fail it.
+    (and at an alias root into a fake home's `.local`, and a log symlink out of
+    the root) and checks the refusal and that the decoy is byte-identical
+    (paths, sizes, mtimes); mutations remove the guards and must fail it.
 - `run.sh` creates one private temp dir for the XDG config, data, state, cache and
   runtime dirs and for `TMPDIR`. It removes the dir afterwards. It also fixes `TZ`
   and the locale.
