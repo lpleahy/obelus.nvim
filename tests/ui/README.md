@@ -136,7 +136,11 @@ diff.
     not a real default under `HOME`. A merely non-empty value is not enough.
     The defaults (`~/.local`, `~/.config`, `~/.cache`), the root and every value
     are compared by canonical path, so an alias (a symlinked root or component)
-    cannot reach a default. `NVIM_LOG_FILE` must not be a symlink (dangling or
+    cannot reach a default. Every value must be absolute: a relative one would
+    follow a later change of directory. The launcher then exports the canonical
+    absolute values. It picks the base for a new root before allocating: the
+    inherited `TMPDIR` only if it is absolute and outside the defaults, else
+    `/tmp`. `NVIM_LOG_FILE` must not be a symlink (dangling or
     not) and, if it exists, must be a regular file; this is checked before
     Neovim starts.
   - The nvim side (`tests/xdg_guard.lua`, first thing in `tests/run.lua`,

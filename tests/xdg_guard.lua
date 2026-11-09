@@ -3,7 +3,8 @@
 -- stdpath(): `dofile("<repo>/tests/xdg_guard.lua")("<who>")`. It exits nvim
 -- with status 3 unless OBELUS_TEST_ROOT is a private root (not /, not HOME or
 -- an ancestor of it); every XDG_*_HOME, XDG_RUNTIME_DIR, TMPDIR, every entry of
--- XDG_CONFIG_DIRS / XDG_DATA_DIRS and NVIM_LOG_FILE resolve inside it; none is a
+-- XDG_CONFIG_DIRS / XDG_DATA_DIRS and NVIM_LOG_FILE is ABSOLUTE and resolves
+-- inside it (a relative value would follow a later chdir); none is a
 -- real default under HOME; and stdpath("data"/"state"/"cache"/"config"/"run"/
 -- "log") resolve inside it. Merely non-empty values are not enough.
 local uv = vim.uv or vim.loop
@@ -82,6 +83,11 @@ return function(who)
     refuse(who, "OBELUS_TEST_ROOT=" .. root .. " resolves into a real default (" .. hit .. ")")
   end
   local function check(var, val)
+    if val:sub(1, 1) ~= "/" then
+      -- a relative value resolves against the working directory, which can
+      -- change after this check (vim.fn.chdir, :cd) and carry writes outside
+      refuse(who, var .. "=" .. val .. " is relative (it would follow the working directory)")
+    end
     local r = resolve(val)
     hit = r and in_default(r)
     if hit then
@@ -122,7 +128,7 @@ return function(who)
   check("NVIM_LOG_FILE", log)
   for _, what in ipairs({ "data", "state", "cache", "config", "run", "log" }) do
     local p = vim.fn.stdpath(what)
-    if type(p) ~= "string" or not inside(resolve(p), rroot) then
+    if type(p) ~= "string" or p:sub(1, 1) ~= "/" or not inside(resolve(p), rroot) then
       refuse(who, 'stdpath("' .. what .. '")=' .. tostring(p) .. " is outside OBELUS_TEST_ROOT=" .. root)
     end
   end

@@ -26,7 +26,23 @@ if [ -z "${OBELUS_TEST_ROOT:-}" ]; then
       exit 3
     fi
   done
-  base=${TMPDIR:-/tmp}
+  # the base for the new root: the inherited TMPDIR only if it is absolute,
+  # exists and does not resolve into one of HOME's real defaults; otherwise a
+  # known safe base (/tmp; OBELUS_TEST_SAFE_BASE overrides it for self-tests).
+  # Decided BEFORE anything is allocated.
+  obelus_xdg_defaults
+  safe_base() {
+    case $1 in /*) ;; *) return 1 ;; esac
+    _b=$(obelus_xdg_real "$1") || return 1
+    obelus_xdg_in_default "$_b" >/dev/null && return 1
+    printf '%s' "$_b"
+  }
+  if ! base=$(safe_base "${TMPDIR:-/tmp}"); then
+    if ! base=$(safe_base "${OBELUS_TEST_SAFE_BASE:-/tmp}"); then
+      obelus_xdg_refuse tests/private.sh "no safe base for the private root (TMPDIR=${TMPDIR:-} is relative, missing or in a real default)"
+      exit 3
+    fi
+  fi
   root=$(mktemp -d "${base%/}/obelus-test.XXXXXX") || exit 2
   created=$root
   trap 'rm -rf "$created"' EXIT
@@ -47,5 +63,30 @@ if [ -z "${OBELUS_TEST_ROOT:-}" ]; then
     XDG_DATA_DIRS XDG_RUNTIME_DIR TMPDIR NVIM_LOG_FILE
 fi
 obelus_xdg_guard tests/private.sh || exit 3
+# Export CANONICAL absolute values (symlinks resolved), so nothing below can
+# depend on spelling or on the working directory.
+for v in OBELUS_TEST_ROOT XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR TMPDIR \
+  OBELUS_UI_TMPBASE; do
+  eval "val=\${$v:-}"
+  [ -n "$val" ] || continue
+  val=$(obelus_xdg_real "$val") || exit 3
+  eval "$v=\$val"
+  export "${v?}"
+done
+for v in XDG_CONFIG_DIRS XDG_DATA_DIRS; do
+  eval "rest=\${$v}"
+  out=
+  while [ -n "$rest" ]; do
+    entry=${rest%%:*}
+    [ "$entry" = "$rest" ] && rest= || rest=${rest#*:}
+    entry=$(obelus_xdg_real "$entry") || exit 3
+    out=${out:+$out:}$entry
+  done
+  eval "$v=\$out"
+  export "${v?}"
+done
+logdir=$(obelus_xdg_real "$(dirname "$NVIM_LOG_FILE")") || exit 3
+NVIM_LOG_FILE=$logdir/$(basename "$NVIM_LOG_FILE")
+export NVIM_LOG_FILE
 "$@"
 exit $?

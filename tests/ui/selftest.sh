@@ -392,6 +392,45 @@ if want xdg-guard; then
     NVIM_LOG_FILE=$rb/state/nvim.log"
   check all "private.sh, log file is a symlink out of the root" "env $unset_env $rb_env sh '$repo/tests/private.sh' true"
   check all "specs.sh, log file is a symlink out of the root" "env $unset_env $rb_env sh '$repo/tests/specs.sh'"
+  # RELATIVE values that resolve inside the root from the current directory,
+  # but follow any later change of directory (R4-B1). From $rb/cwd, "../data"
+  # is $rb/data; from $work/elsewhere/cwd it is $work/elsewhere/data.
+  mkdir -p "$rb/cwd" "$work/elsewhere/cwd" "$work/elsewhere/data" "$work/elsewhere/state" \
+    "$work/elsewhere/config" "$work/elsewhere/cache"
+  rel_env="OBELUS_TEST_ROOT=$rb XDG_DATA_HOME=../data XDG_STATE_HOME=../state XDG_CONFIG_HOME=../config \
+    XDG_CACHE_HOME=../cache XDG_RUNTIME_DIR=$rb/run TMPDIR=$rb/tmp XDG_CONFIG_DIRS=../config XDG_DATA_DIRS=../data \
+    NVIM_LOG_FILE=$rb/state/probe.log"
+  check "$work/elsewhere" "private.sh, relative XDG values" \
+    "cd '$rb/cwd' && env $unset_env $rel_env sh '$repo/tests/private.sh' true"
+  # the review's regression: pass the guard, change directory, write through stdpath()
+  cat >"$work/escape-probe.lua" <<PROBE
+dofile("$repo/tests/xdg_guard.lua")("escape probe")
+vim.fn.chdir("$work/elsewhere/cwd")
+local dir = vim.fn.stdpath("data")
+vim.fn.mkdir(dir, "p")
+vim.fn.writefile({ "escaped" }, dir .. "/relative-escape.txt")
+PROBE
+  check "$work/elsewhere" "guard, then chdir and a write through stdpath()" \
+    "cd '$rb/cwd' && env $unset_env $rel_env nvim --headless -n -u NONE -i NONE -l '$work/escape-probe.lua'"
+  # an inherited TMPDIR inside a fake HOME's .local: the launcher must pick a
+  # safe base BEFORE allocating, never the default (R4-N2)
+  fh2="$work/fake-home-2"
+  mkdir -p "$fh2/.local/tmp" "$work/safe"
+  before=$(listing "$fh2")
+  out=$(env $unset_env HOME="$fh2" TMPDIR="$fh2/.local/tmp" OBELUS_TEST_SAFE_BASE="$work/safe" \
+    sh "$repo/tests/private.sh" sh -c 'printf "root=%s" "$OBELUS_TEST_ROOT"' 2>&1)
+  rc=$?
+  after=$(listing "$fh2")
+  safe=$(cd "$work/safe" && pwd -P)
+  case "$out" in
+  "root=$safe/obelus-test."*) inbase=1 ;;
+  *) inbase=0 ;;
+  esac
+  if [ $rc -eq 0 ] && [ $inbase -eq 1 ] && [ "$after" = "$before" ] && [ -z "$(ls -A "$work/safe")" ]; then
+    ok "xdg-guard: private.sh, inherited TMPDIR in a home's .local: safe base used, fake home untouched"
+  else
+    bad "xdg-guard: private.sh, inherited TMPDIR in a home's .local: exit $rc, $out, fake home $([ "$after" = "$before" ] && echo unchanged || echo CHANGED)"
+  fi
 fi
 
 # 0. the decoy survived every case above, including the group TERM/KILLs
