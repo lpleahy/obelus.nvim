@@ -9,8 +9,8 @@ baseline mismatch with no harness error. A harness error under a mutation counts
 **invalid**. The real tree is never modified.
 
 Last run: 2026-11-09, Neovim v0.12.6, 49 baselines (41 + 8 from `obelus.api`).
-Result: **33 caught (18 visual or setup, 1 harness, 2 containment, 1 real-UI
-behaviour, 11 behaviour specs), 0 missed, 0 invalid** under `nice -n 10`. The per-row
+Result: **38 caught (18 visual or setup, 1 harness, 2 containment, 1 real-UI
+behaviour, 16 behaviour specs), 0 missed, 0 invalid** under `nice -n 10`. The per-row
 counts below for the first 18 rows are from the 41-baseline run; the `api_*`
 baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49).
 
@@ -34,15 +34,20 @@ baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49)
 | keymap-callback-swap-same-desc | `<prefix>?` callback calls `M.toggle_mode()` instead of `M.toggle_hints()`; description unchanged | caught: 1 (registration) |
 | command-callback-swap-same-desc | `:ObelusEdit` callback calls `M.delete()`; description unchanged | caught: 1 (registration) |
 | first-use-overwrites-default-Y | `quick_reply()` maps `Y` to `dd` the first time it runs | caught: 2 (both `compose_quick_reply_hints` sizes) |
-| api-cli-fallthrough (behaviour) | `transport/init.lua`: the `obelus.api` route in `submit()` is skipped | caught: 9 `[api]` specs |
+| api-cli-fallthrough (behaviour) | `transport/init.lua`: the `obelus.api` route in `submit()` is skipped | caught: 16 `[api]` specs |
 | api-cli-guard-removed (behaviour) | `transport/cli.lua`: the CLI transport's own eligibility refusal is removed | caught: 2 `[api]` specs (a spawn is attempted) |
 | api-eligibility-ignores-claims (behaviour) | `store.lua`: `agent_eligible` no longer consults the claimed schemes | caught: 7 `[api]` specs (restart, unloaded, @thread/briefing, claim_schemes, …) |
-| claims-corrupt-fails-open (behaviour) | `claims.lua`: an unreadable/corrupt claims file no longer blocks `scheme://` records | caught: 1 `[api]` spec |
-| claims-not-persisted (behaviour) | `claims.lua`: a claim is never written to disk | caught: 2 `[api]` specs (incl. the real-restart subprocess) |
+| claims-corrupt-fails-open (behaviour) | `claims.lua`: unclassifiable claims no longer block `scheme://` records | caught: 1 `[api]` spec |
+| claims-not-persisted (behaviour) | `claims.lua`: the exclusive per-scheme create never happens | caught: 5 `[api]` specs (incl. the real-restart and two-editor subprocesses) |
+| claims-malformed-fails-open (behaviour) | `claims.lua`: an entry that is not a regular file named after a valid scheme is ignored | caught: 1 `[api]` spec |
+| claims-stat-error-fails-open (behaviour) | `claims.lua`: any stat error is taken as "no claims" | caught: 1 `[api]` spec |
 | approve-headless-falls-through (behaviour) | `approve.lua`: no-UI check removed, so a headless prompt opens instead of denying | caught: 2 `[api]` specs |
 | approve-no-unarmed-phase (behaviour) | `approve.lua`: focusing arms at once | caught: 3 `[api]` specs |
-| approve-no-drain (behaviour) | `approve.lua`: the `getchar(0)` drain is removed | caught: 1 `[api]` spec (queued input with a blocked loop) |
+| approve-no-drain (behaviour) | `approve.lua`: each `getchar(0)` in the drain reports "nothing queued" | caught: 5 `[api]` specs (queued input with a blocked loop, …) |
+| approve-cap-exhaustion-arms (behaviour) | `approve.lua`: running out of the drain cap reports "empty" and the prompt arms | caught: 4 `[api]` specs (between-drains 15001 keys, overflow, sustained input) |
 | approve-no-drain-ui (real-UI snapshot) | the same mutation, judged by the harness | caught: 2 (`api_approve_queued_typeahead`, both sizes) |
+| api-turn-id-not-reused (behaviour) | `api.lua`: every send gets a fresh `turn_id` | caught: 3 `[api]` specs (retry after answer failure, cancel, lost ack) |
+| api-refresh-no-revalidation (behaviour) | `api.lua`: refresh trusts a `list()` result after `list()` replaced the registration | caught: 1 `[api]` spec |
 | api-generation-check-removed (behaviour) | `api.lua`: a send callback no longer checks it owns its record and job | caught: 1 `[api]` spec |
 | api-replace-keeps-old-sends (behaviour) | `api.lua`: unregister/replace no longer cancels the old registration's sends | caught: 2 `[api]` specs |
 | api-thread-saved-to-jsonl (behaviour) | `store.lua`: backend threads are no longer skipped by `save()` | caught: 2 `[api]` specs |

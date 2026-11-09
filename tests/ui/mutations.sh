@@ -250,14 +250,14 @@ spec_mutate "approve-no-unarmed-phase" lua/obelus/approve.lua \
   'a.armed = false' 'a.armed = true'
 # the drain is removed: input queued while unarmed survives into the armed prompt
 spec_mutate "approve-no-drain" lua/obelus/approve.lua \
-  'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'
+  'local ok, key = pcall(vim.fn.getchar, 0)' 'local ok, key = true, 0'
 # the drain cap runs out and the prompt arms anyway with input still queued
 spec_mutate "approve-cap-exhaustion-arms" lua/obelus/approve.lua \
   'finish(false, a) -- cap exhausted: dismissed
   return false' 'return true'
 # the same, judged by the real-UI snapshot (api_approve_queued_typeahead)
 mutate "approve-no-drain-ui" lua/obelus/approve.lua \
-  'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'
+  'local ok, key = pcall(vim.fn.getchar, 0)' 'local ok, key = true, 0'
 # every send gets a fresh turn_id, so a retry of a stored turn becomes a new message
 spec_mutate "api-turn-id-not-reused" lua/obelus/api.lua \
   'if not (draft.turn_id and draft._api_sent_text == draft.text) then' 'if true then'
