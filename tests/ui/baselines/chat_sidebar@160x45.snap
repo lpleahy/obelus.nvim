@@ -1,0 +1,451 @@
+# obelus ui snapshot: chat_sidebar @ 160x45
+## screen
+|  -- sample.lua: a small module the fixtures annotate                                       │ ◆ obelus review                                                   |
+|  local M = {}                                                                              │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  |
+|                                                                                            │▎ agent ↩                                                          |
+|  local function clamp(x, lo, hi)                                                           │▎ It is intended for inputs, but factor itself is never            |
+|    if x < lo then                                                                          │▎ checked.                                                         |
+|      return lo                                                                             │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  |
+|    end                                                                                     │▎ you                                                              |
+|    return math.min(x, hi)                                                                  │▎ so what happens with factor = -2? see @sample.lua                |
+|  end                                                                                       │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  |
+|                                                                                            │▎ agent ↩                                                          |
+|▌ function M.scale(values, factor)                                                          │▎ Good catch. clamp is applied after the multiply, so a            |
+|▌   local out = {}                                                                          │▎ negative factor silently                                         |
+|▌   for i, v in ipairs(values) do                                                           │▎ maps every value to 0 instead of raising. Two options:           |
+|      out[i] = clamp(v * factor, 0, 100)                                                    │▎                                                                  |
+|    end                                                                                     │▎ 1. Validate factor up front and error() on a negative            |
+|    return out                                                                              │▎    value.                                                        |
+|  end                                                                                       │▎ 2. Clamp the input first, then scale — this keeps the            |
+|                                                                                            │▎    contract but changes rounding.                                |
+|  function M.sum(values)                                                                    │▎                                                                  |
+|    local total = 0                                                                         │▎ function M.scale(values, factor)                           lua   |
+|    for _, v in ipairs(values) do                                                           │▎   assert(factor >= 0, "factor must be non-negative")             |
+|      total = total + v                                                                     │▎   local out = {}                                                 |
+|    end                                                                                     │▎   for i, v in ipairs(values) do                                  |
+|    return total                                                                            │▎     out[i] = clamp(v * factor, 0, 100)                           |
+|  end                                                                                       │▎   end                                                            |
+|                                                                                            │▎   return out                                                     |
+|  return M                                                                                  │▎ end                                                              |
+|~                                                                                           │▎                                                                  |
+|~                                                                                           │▎ ╭─────────────┬───────────────────┬──────╮                       |
+|~                                                                                           │▎ │ option      │ breaks callers    │ cost │                       |
+|~                                                                                           │▎ ├─────────────┼───────────────────┼──────┤                       |
+|~                                                                                           │▎ │ validate    │ yes, on bad input │ O(1) │                       |
+|~                                                                                           │▎ │ clamp first │ no                │ O(n) │                       |
+|~                                                                                           │▎ ╰─────────────┴───────────────────┴──────╯                       |
+|~                                                                                           │▎                                                                  |
+|~                                                                                           │▎ │ I'd go with option 1: it fails loudly, which matches           |
+|~                                                                                           │▎ M.sum's behaviour.                                               |
+|~                                                                                           │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  |
+|~                                                                                           │▎ reply ──────────────────────────────────────────────────────────╮|
+|~                                                                                           │▎                                                                 │|
+|~                                                                                           │▎                                                                 │|
+|~                                                                                           │▎                                                                 │|
+|~                                                                                           │▎─────────────────────────────────────────────────────────────────╯|
+|sample.lua                                                                11,1           All [Scratch] [-]                                    39,1           Bot|
+|                                                                                                                                              0,0-1         All |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbceefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcgghhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjkkkkkkjjjjjjjjjjjjjjjjiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbceelllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcmmnnnoooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcmmppppppppppppppppppppppppppppppppppppppqqqqqqqqqqqoooooooooooooooo|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbceefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcgghhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|rroooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooocggjjjjjjjjjjjjkkkkkjjjjjjjjjjjjsssssjjjjjjjjjjjjjjjjjjjiiiiiiiiiiii|
+|rroooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooocggjjjjjjjjjkkkkkkjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|rroooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooocggjjjjjjjjjjjjjjjjjjjjkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggtttjjjjjjjjjkkkkkkjjjjjjjjjjjjjjkkkkkkkjjjjjjjjjjjjjjiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggtttjjjjjjjjjjuuuuujjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggvvvvvvvvkwxyyyyyxzzzzzzxkzzzzzzxkkkkkkkkkkkkkkkkkkkkkkkkkkkAAAiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggkkBBBBBBxzzzzzzkCCkwxkDDDDDDDDDDDDDDDDDDDDDDDDDDDDDxiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggkkvvvvvkzzzkCkBBiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggkkvvvkzxkzkvvkBBBBBBxzzzzzzxkvviiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggkkkkzzzxzxkCkyyyyyxzkCkzzzzzzxkwxkwwwxiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggkkvvviiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggkkvvvvvvkzzziiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcggvvviiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttttttttttttttttttttttttttttttttttttttttttiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttssssssssssstttssssssssssssssssstttssssttiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttttttttttttttttttttttttttttttttttttttttttiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttjjjjjjjjjjjtttjjjjjjjjjjjjjjjjjtttjjjjttiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttjjjjjjjjjjjtttjjjjjjjjjjjjjjjjjtttjjjjttiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttttttttttttttttttttttttttttttttttttttttttiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggttttttttttttttttttttttttttttttttttttttttttttttttttttttiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcggkkkkktttttttttttttiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEceelllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllbb|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcFGGGGGGGHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcFIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIH|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcFJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJH|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcFJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJH|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEcFHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH|
+|KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK|
+|LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#e0e2ea bg=#14161b  [WinSeparator]
+d fg=#9b9ea4 bg=#07080d  [WinBarNC]
+e fg=#4f5258  [LineNr]
+f fg=#8bbe97  [ObelusReplyRuleN]
+g fg=#b3f6c0 bg=#212828  [LineNr+ObelusReplyBar]
+h fg=#b3f6c0 bg=#212828 bold  [ObelusReplyHeader+ObelusReplyBg]
+i bg=#212828  [ObelusReplyBg]
+j fg=#e0e2ea bg=#212828  [ObelusReplyText+ObelusReplyBg]
+k fg=#b3f6c0 bg=#212828  [ObelusReplyCode+ObelusReplyBg]
+l fg=#6ec0c0  [ObelusThreadRuleN]
+m fg=#8cf8f7 bg=#1e282d  [LineNr+ObelusThreadBar]
+n fg=#8cf8f7 bg=#1e282d bold  [ObelusThreadHeader+ObelusThreadBg]
+o bg=#1e282d  [ObelusThreadBg]
+p fg=#e0e2ea bg=#1e282d  [ObelusThreadText+ObelusThreadBg]
+q fg=#fce094 bg=#1e282d bold  [ObelusThreadMention+ObelusThreadBg]
+r fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+s fg=#e0e2ea bg=#212828 bold  [ObelusReplyBold+ObelusReplyBg]
+t fg=#9b9ea4 bg=#212828  [ObelusReplyMeta+ObelusReplyBg]
+u fg=#e0e2ea bg=#212828 italic  [ObelusReplyItalic+ObelusReplyBg]
+v fg=#e0e2ea bg=#212828 bold  [ObelusReplyCode+Statement+ObelusReplyBg]
+w fg=#e0e2ea bg=#212828  [ObelusReplyCode+Constant+ObelusReplyBg]
+x fg=#e0e2ea bg=#212828  [ObelusReplyCode+Delimiter+ObelusReplyBg]
+y fg=#8cf8f7 bg=#212828  [ObelusReplyCode+Function+ObelusReplyBg]
+z fg=#e0e2ea bg=#212828  [ObelusReplyCode+@variable+ObelusReplyBg]
+A fg=#9b9ea4 bg=#212828  [ObelusReplyCodeLabel+ObelusReplyBg]
+B fg=#8cf8f7 bg=#212828  [ObelusReplyCode+Special+ObelusReplyBg]
+C fg=#e0e2ea bg=#212828  [ObelusReplyCode+Operator+ObelusReplyBg]
+D fg=#b3f6c0 bg=#212828  [ObelusReplyCode+String+ObelusReplyBg]
+E fg=#4f5258  [EndOfBuffer]
+F fg=#e0e2ea bg=#3b3d43  [FloatBorder]
+G fg=#e0e2ea bg=#3b3d43 bold  [ObelusInputHeader]
+H fg=#e0e2ea bg=#3b3d43 bold  [FloatBorder]
+I fg=#e0e2ea bg=#3b3d43  [NormalFloat]
+J fg=#e0e2ea bg=#3b3d43  [NormalFloat+EndOfBuffer]
+K fg=#c4c6cd bg=#2c2e33  [StatusLineNC]
+L default  [MsgArea]
+## cursor
+win=W3 mode=n pos=[1,0] screen=2,2
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=92x43 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+W2 split buf=B2([scratch]) screenpos=1,94 size=67x43 topline=7 textoff=2
+  wo {concealcursor="nvic",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=1,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="%!v:lua.require'obelus.panel'.statuscol(2)",winblend=0,winhighlight="NonText:ObelusChrome,Visual:ObelusVisual",wrap=true}
+W3 float buf=B3([scratch]) screenpos=39,94 size=65x3 topline=1 textoff=0
+  cfg {anchor="NW",border=[["▎","ObelusInputBar"],["─","ObelusInputBorder"],["╮","ObelusInputBorder"],["│","ObelusInputBorder"],["╯","ObelusInputBorder"],["─","ObelusInputBorder"],["▎","ObelusInputBar"],["▎","ObelusInputBar"]],col=0,focusable=true,hide=false,mouse=true,relative="win",row=37,style="minimal",title=[[" reply ","ObelusInputHeader"]],title_pos="left",win="W2",zindex=60}
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="eob: ",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=1,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="Normal:ObelusInput,NormalFloat:ObelusInput,FloatBorder:ObelusInputBorder,FloatTitle:ObelusInputHeader,EndOfBuffer:ObelusInput",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+B2 [scratch] lines=44 {bufhidden="wipe",buftype="nofile",filetype="markdown",modifiable=false}
+B3 [scratch] lines=1 {bufhidden="wipe",buftype="nofile",filetype="obelus_reply",modifiable=true}
+## extmarks
+B1 ns=obelus (3)
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  11:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  12:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B2 ns=obelus_panel (194)
+  1:0 {priority=4096,right_gravity=true,virt_lines=[[["───────────────────────────────────────────────────────────────","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  1:0 {end_col=3,end_right_gravity=false,end_row=1,hl_eol=false,hl_group="ObelusThreadHeader",priority=4096,right_gravity=true}
+  1:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  1:3 {end_col=12,end_right_gravity=false,end_row=1,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  2:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  2:0 {end_col=36,end_right_gravity=false,end_row=2,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  3:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  3:0 {end_col=20,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  4:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  4:0 {end_col=35,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  5:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  5:0 {end_col=56,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  6:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  6:0 {end_col=9,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusReplyHeader",priority=4096,right_gravity=true}
+  6:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  7:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  7:0 {end_col=31,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  7:31 {end_col=37,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  7:37 {end_col=53,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  8:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  8:0 {end_col=8,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  9:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  9:0 {end_col=3,end_right_gravity=false,end_row=9,hl_eol=false,hl_group="ObelusThreadHeader",priority=4096,right_gravity=true}
+  9:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  10:0 {end_col=38,end_right_gravity=false,end_row=10,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  10:38 {end_col=49,end_right_gravity=false,end_row=10,hl_eol=false,hl_group="ObelusThreadMention",priority=4096,right_gravity=true}
+  11:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  11:0 {end_col=9,end_right_gravity=false,end_row=11,hl_eol=false,hl_group="ObelusReplyHeader",priority=4096,right_gravity=true}
+  11:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  12:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  12:0 {end_col=12,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  12:12 {end_col=17,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  12:17 {end_col=29,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  12:29 {end_col=34,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  12:34 {end_col=53,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  13:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  13:0 {end_col=9,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  13:9 {end_col=15,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  13:15 {end_col=24,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  14:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  14:0 {end_col=20,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  14:20 {end_col=21,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  14:21 {end_col=54,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  15:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  15:0 {end_col=0,end_right_gravity=false,end_row=15,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  16:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  16:0 {end_col=3,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  16:3 {end_col=12,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  16:12 {end_col=18,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  16:18 {end_col=32,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  16:32 {end_col=39,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  16:39 {end_col=53,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  17:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  17:0 {end_col=9,end_right_gravity=false,end_row=17,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  18:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  18:0 {end_col=3,end_right_gravity=false,end_row=18,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  18:3 {end_col=13,end_right_gravity=false,end_row=18,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  18:13 {end_col=18,end_right_gravity=false,end_row=18,hl_eol=false,hl_group="ObelusReplyItalic",priority=4096,right_gravity=true}
+  18:18 {end_col=55,end_right_gravity=false,end_row=18,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  19:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  19:0 {end_col=33,end_right_gravity=false,end_row=19,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  20:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  20:0 {end_col=0,end_right_gravity=false,end_row=20,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  21:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  21:0 {end_col=8,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@keyword.function",priority=4096,right_gravity=true}
+  21:8 {end_col=9,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  21:9 {end_col=10,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@constant",priority=4096,right_gravity=true}
+  21:10 {end_col=11,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@punctuation.delimiter",priority=4096,right_gravity=true}
+  21:11 {end_col=16,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@function",priority=4096,right_gravity=true}
+  21:16 {end_col=17,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  21:17 {end_col=23,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@variable.parameter",priority=4096,right_gravity=true}
+  21:23 {end_col=24,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@punctuation.delimiter",priority=4096,right_gravity=true}
+  21:24 {end_col=25,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  21:25 {end_col=31,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@variable.parameter",priority=4096,right_gravity=true}
+  21:31 {end_col=32,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  21:32 {end_col=59,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  21:59 {end_col=62,end_right_gravity=false,end_row=21,hl_eol=false,hl_group="ObelusReplyCodeLabel",priority=4096,right_gravity=true}
+  22:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  22:0 {end_col=2,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  22:2 {end_col=8,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@function.builtin",priority=4096,right_gravity=true}
+  22:8 {end_col=9,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  22:9 {end_col=15,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  22:15 {end_col=16,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  22:16 {end_col=18,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@operator",priority=4096,right_gravity=true}
+  22:18 {end_col=19,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  22:19 {end_col=20,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@number",priority=4096,right_gravity=true}
+  22:20 {end_col=21,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@punctuation.delimiter",priority=4096,right_gravity=true}
+  22:21 {end_col=22,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  22:22 {end_col=51,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@string",priority=4096,right_gravity=true}
+  22:51 {end_col=52,end_right_gravity=false,end_row=22,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  23:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  23:0 {end_col=2,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  23:2 {end_col=7,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="@keyword",priority=4096,right_gravity=true}
+  23:7 {end_col=8,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  23:8 {end_col=11,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  23:11 {end_col=12,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  23:12 {end_col=13,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="@operator",priority=4096,right_gravity=true}
+  23:13 {end_col=14,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  23:14 {end_col=16,end_right_gravity=false,end_row=23,hl_eol=false,hl_group="@constructor",priority=4096,right_gravity=true}
+  24:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  24:0 {end_col=2,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  24:2 {end_col=5,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@keyword.repeat",priority=4096,right_gravity=true}
+  24:5 {end_col=6,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  24:6 {end_col=7,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  24:7 {end_col=8,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@punctuation.delimiter",priority=4096,right_gravity=true}
+  24:8 {end_col=9,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  24:9 {end_col=10,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  24:10 {end_col=11,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  24:11 {end_col=13,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@keyword",priority=4096,right_gravity=true}
+  24:13 {end_col=14,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  24:14 {end_col=20,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@function.builtin",priority=4096,right_gravity=true}
+  24:20 {end_col=21,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  24:21 {end_col=27,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  24:27 {end_col=28,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  24:28 {end_col=29,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  24:29 {end_col=31,end_right_gravity=false,end_row=24,hl_eol=false,hl_group="@keyword.repeat",priority=4096,right_gravity=true}
+  25:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  25:0 {end_col=4,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:4 {end_col=7,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  25:7 {end_col=8,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  25:8 {end_col=9,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  25:9 {end_col=10,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  25:10 {end_col=11,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:11 {end_col=12,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@operator",priority=4096,right_gravity=true}
+  25:12 {end_col=13,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:13 {end_col=18,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@function.call",priority=4096,right_gravity=true}
+  25:18 {end_col=19,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  25:19 {end_col=20,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  25:20 {end_col=21,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:21 {end_col=22,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@operator",priority=4096,right_gravity=true}
+  25:22 {end_col=23,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:23 {end_col=29,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  25:29 {end_col=30,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@punctuation.delimiter",priority=4096,right_gravity=true}
+  25:30 {end_col=31,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:31 {end_col=32,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@number",priority=4096,right_gravity=true}
+  25:32 {end_col=33,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@punctuation.delimiter",priority=4096,right_gravity=true}
+  25:33 {end_col=34,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  25:34 {end_col=37,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@number",priority=4096,right_gravity=true}
+  25:37 {end_col=38,end_right_gravity=false,end_row=25,hl_eol=false,hl_group="@punctuation.bracket",priority=4096,right_gravity=true}
+  26:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  26:0 {end_col=2,end_right_gravity=false,end_row=26,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  26:2 {end_col=5,end_right_gravity=false,end_row=26,hl_eol=false,hl_group="@keyword.repeat",priority=4096,right_gravity=true}
+  27:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  27:0 {end_col=2,end_right_gravity=false,end_row=27,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  27:2 {end_col=8,end_right_gravity=false,end_row=27,hl_eol=false,hl_group="@keyword.return",priority=4096,right_gravity=true}
+  27:8 {end_col=9,end_right_gravity=false,end_row=27,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  27:9 {end_col=12,end_right_gravity=false,end_row=27,hl_eol=false,hl_group="@variable",priority=4096,right_gravity=true}
+  28:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  28:0 {end_col=3,end_right_gravity=false,end_row=28,hl_eol=false,hl_group="@keyword.function",priority=4096,right_gravity=true}
+  29:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  29:0 {end_col=0,end_right_gravity=false,end_row=29,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  30:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  30:0 {end_col=126,end_right_gravity=false,end_row=30,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  31:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  31:0 {end_col=4,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  31:4 {end_col=10,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  31:10 {end_col=15,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  31:15 {end_col=20,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  31:20 {end_col=34,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  31:34 {end_col=37,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  31:37 {end_col=42,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  31:42 {end_col=46,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  31:46 {end_col=50,end_right_gravity=false,end_row=31,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  32:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  32:0 {end_col=126,end_right_gravity=false,end_row=32,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  33:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  33:0 {end_col=4,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  33:4 {end_col=12,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  33:12 {end_col=15,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  33:15 {end_col=20,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  33:20 {end_col=37,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  33:37 {end_col=42,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  33:42 {end_col=46,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  33:46 {end_col=50,end_right_gravity=false,end_row=33,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  34:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  34:0 {end_col=4,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  34:4 {end_col=15,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  34:15 {end_col=20,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  34:20 {end_col=22,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  34:22 {end_col=37,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  34:37 {end_col=42,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  34:42 {end_col=46,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  34:46 {end_col=50,end_right_gravity=false,end_row=34,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  35:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  35:0 {end_col=126,end_right_gravity=false,end_row=35,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  36:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  36:0 {end_col=0,end_right_gravity=false,end_row=36,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  37:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  37:0 {end_col=56,end_right_gravity=false,end_row=37,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  38:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  38:0 {end_col=5,end_right_gravity=false,end_row=38,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  38:5 {end_col=18,end_right_gravity=false,end_row=38,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
+  39:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (42)
++ buf([scratch]) i <C-H>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#07d569869a8f>
++ buf([scratch]) i <C-S>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#8202cf568f4a>
++ buf([scratch]) i <C-V>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#a3bcc317e616>
++ buf([scratch]) i <M-CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#74b6fa65c388>
++ buf([scratch]) i <M-d>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#abd350678fc4>
++ buf([scratch]) i <M-s>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2f55e5af6e25>
++ buf([scratch]) i <M-u>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6311a391f64b>
++ buf([scratch]) i <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#361c0665b787>
++ buf([scratch]) i <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#415a13f128a8>
++ buf([scratch]) i @  desc=nil silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua <REPO>/lua/obelus/mention.lua#741f09db3a23>
++ buf([scratch]) n <BS>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#bf73c4d30c4d>
++ buf([scratch]) n <C-H>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#07d569869a8f>
++ buf([scratch]) n <C-L>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#d729b164bd8d>
++ buf([scratch]) n <C-S>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#8202cf568f4a>
++ buf([scratch]) n <C-V>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#a3bcc317e616>
++ buf([scratch]) n <CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2852a94eb5e4>
++ buf([scratch]) n <CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#dc28eb972410>
++ buf([scratch]) n <Esc>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#aaaab2dafeb5>
++ buf([scratch]) n <Esc>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#bf4bdf89a57a>
++ buf([scratch]) n <M-CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#74b6fa65c388>
++ buf([scratch]) n <M-d>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#abd350678fc4>
++ buf([scratch]) n <M-s>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2f55e5af6e25>
++ buf([scratch]) n <M-u>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6311a391f64b>
++ buf([scratch]) n <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#361c0665b787>
++ buf([scratch]) n <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#97f7c5660518>
++ buf([scratch]) n <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#415a13f128a8>
++ buf([scratch]) n <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#68c81923952d>
++ buf([scratch]) n C  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#5e47ca31ab9c>
++ buf([scratch]) n D  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#1db411744461>
++ buf([scratch]) n G  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6eb59115b6e8>
++ buf([scratch]) n R  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#03cfc1751115>
++ buf([scratch]) n W  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#3b82a0b688fa>
++ buf([scratch]) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#37601c40cc19>
++ buf([scratch]) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#be361c2ee7b4>
++ buf([scratch]) n dd  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#e4492c1df2ce>
++ buf([scratch]) n gd  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#4c7d16661d45>
++ buf([scratch]) n o  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2ff8fc0b8e5e>
++ buf([scratch]) n q  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#570f8e141046>
++ buf([scratch]) n q  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#a6acff1ffb1f>
++ buf([scratch]) n r  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#46f868fecf5f>
++ buf([scratch]) n x  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#1ac9f92e51ff>
++ buf([scratch]) n zz  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#d3d70953c5a9>
+## registry changes since setup: autocmds (11)
++ <ungrouped> BufWipeout pattern="<buffer>" buffer=[scratch]  once=true desc=nil run=<lua <REPO>/lua/obelus/mention.lua#b2b407aabe49>
++ <ungrouped> TextChanged pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/mention.lua#4e7501d2c11d>
++ <ungrouped> TextChanged pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#d8588d9c67e0>
++ <ungrouped> TextChangedI pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/mention.lua#4e7501d2c11d>
++ <ungrouped> TextChangedI pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#d8588d9c67e0>
++ nvim.treesitter.query_cache_reset OptionSet pattern="runtimepath" buffer=-  once=false desc=nil run=<lua <VIMRUNTIME>/lua/vim/treesitter/query.lua#e41c300af5c0>
++ obelus_panel CursorMoved pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#e92124b30ac6>
++ obelus_panel VimResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#97d7d30727c3>
++ obelus_panel WinClosed pattern="<win [scratch] split>" buffer=-  once=true desc=nil run=<lua <REPO>/lua/obelus/panel.lua#baf94255e8b9>
++ obelus_panel WinResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#97d7d30727c3>
++ obelus_panel WinScrolled pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#18b33db78be2>
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (1)
++ nvim.treesitter.highlighter  
+## highlights
+@constant: fg=#e0e2ea -> Constant
+@constructor: fg=#8cf8f7 -> Special
+@function: fg=#8cf8f7 -> Function
+@function.builtin: fg=#8cf8f7 -> Special
+@function.call: fg=#8cf8f7
+@keyword: fg=#e0e2ea bold -> Keyword
+@keyword.function: fg=#e0e2ea bold
+@keyword.repeat: fg=#e0e2ea bold
+@keyword.return: fg=#e0e2ea bold
+@number: fg=#e0e2ea -> Number
+@operator: fg=#e0e2ea -> Operator
+@punctuation.bracket: fg=#e0e2ea
+@punctuation.delimiter: fg=#e0e2ea
+@string: fg=#b3f6c0 -> String
+@variable: fg=#e0e2ea
+@variable.parameter: fg=#e0e2ea
+DiagnosticInfo: fg=#8cf8f7
+EndOfBuffer: fg=#e0e2ea bg=#3b3d43 -> NonText
+FloatBorder: fg=#e0e2ea bg=#3b3d43 bold -> NormalFloat
+FloatTitle: fg=#e0e2ea bg=#3b3d43 bold -> Title
+NonText: fg=#4f5258
+Normal: fg=#e0e2ea bg=#3b3d43
+NormalFloat: fg=#e0e2ea bg=#3b3d43
+ObelusChrome: fg=#9b9ea4
+ObelusInput: fg=#e0e2ea bg=#3b3d43
+ObelusInputBorder: fg=#e0e2ea bg=#3b3d43 bold
+ObelusInputHeader: fg=#e0e2ea bg=#3b3d43 bold
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyCodeLabel: fg=#9b9ea4 bg=#293330
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusReplyItalic: fg=#e0e2ea bg=#212828 italic
+ObelusReplyMeta: fg=#9b9ea4 bg=#212828
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadMention: fg=#fce094 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadText: fg=#e0e2ea bg=#1e282d
+ObelusVisual: bg=#909298
+Visual: bg=#4f5258

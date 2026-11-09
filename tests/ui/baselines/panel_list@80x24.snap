@@ -1,0 +1,142 @@
+# obelus ui snapshot: panel_list @ 80x24
+## screen
+|  -- sample.lua: a small module the fixtures a│ ◆ obelus review                 |
+|  nnotate                                     │  3 open  ·  0 needs  ·  1 resolv|
+|  local M = {}                                │                                 |
+|                                              │ sample.lua                      |
+|▌ local function clamp(x, lo, hi)             │   ○  L4-L4      negative factors|
+|    if x < lo then                            │   ○  L11-L13    negative factors|
+|      return lo                               │   ○  L24-L24    is total ever ni|
+|    end                                       │                                 |
+|    return math.min(x, hi)                    │~                                |
+|  end                                         │~                                |
+|                                              │~                                |
+|▌ function M.scale(values, factor)            │~                                |
+|▌   local out = {}                            │~                                |
+|▌   for i, v in ipairs(values) do             │~                                |
+|      out[i] = clamp(v * factor, 0, 100)      │~                                |
+|    end                                       │~                                |
+|    return out                                │~                                |
+|  end                                         │~                                |
+|                                              │~                                |
+|✓ function M.sum(values)                      │~                                |
+|    local total = 0                           │~                                |
+|    for _, v in ipairs(values) do             │~                                |
+|sample.lua                  1,1            Top [Scratch] [-]  1,1            All|
+|                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcfffffffffffbbbbbbbbbbbbbbbbbbbbbb|
+|gghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhcbbbibbjjjjjjjjjjbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbibbjjjjjjjjjjbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbibbjjjjjjjjjjbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|gghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|gghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|gghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|llbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbckkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk|
+|mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn|
+|oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#e0e2ea bg=#14161b  [WinSeparator]
+d fg=#9b9ea4 bg=#07080d bold  [WinBar]
+e fg=#9b9ea4 bg=#2c2e33  [CursorLine+ObelusChrome]
+f fg=#8cf8f7 bold  [ObelusThreadHeaderN]
+g fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+h bg=#1e282d  [ObelusThreadBg]
+i fg=#8cf8f7  [ObelusThreadBarN]
+j fg=#9b9ea4  [ObelusChrome]
+k fg=#9b9ea4  [EndOfBuffer]
+l fg=#b3f6c0 bg=#212828 bold  [SignColumn+ObelusReplyHeader]
+m fg=#c4c6cd bg=#2c2e33  [StatusLineNC]
+n fg=#e0e2ea bg=#4f5258  [StatusLine]
+o default  [MsgArea]
+## cursor
+win=W2 mode=n pos=[1,0] screen=2,48
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=46x22 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+W2 split buf=B2([scratch]) screenpos=1,48 size=33x22 topline=1 textoff=0
+  wo {concealcursor="nvic",conceallevel=0,cursorline=true,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=1,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="NonText:ObelusChrome,Visual:ObelusVisual",wrap=false}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+B2 [scratch] lines=7 {bufhidden="wipe",buftype="nofile",filetype="markdown",modifiable=false}
+## extmarks
+B1 ns=obelus (6)
+  3:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  11:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  12:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  18:0 {priority=4096,right_gravity=true,sign_hl_group="ObelusReplyHeader",sign_text="✓ "}
+  23:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticHint",sign_text="? "}
+B2 ns=obelus_panel (10)
+  0:0 {end_col=37,end_right_gravity=false,end_row=0,hl_eol=false,hl_group="ObelusChrome",priority=4096,right_gravity=true}
+  2:0 {end_col=11,end_right_gravity=false,end_row=2,hl_eol=false,hl_group="ObelusThreadHeaderN",priority=4096,right_gravity=true}
+  3:3 {end_col=6,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusThreadBarN",priority=4096,right_gravity=true}
+  3:8 {end_col=18,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusChrome",priority=4096,right_gravity=true}
+  3:75 {end_col=82,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusTagBadge",priority=4096,right_gravity=true}
+  4:3 {end_col=6,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusThreadBarN",priority=4096,right_gravity=true}
+  4:8 {end_col=18,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusChrome",priority=4096,right_gravity=true}
+  5:3 {end_col=6,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusThreadBarN",priority=4096,right_gravity=true}
+  5:8 {end_col=18,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusChrome",priority=4096,right_gravity=true}
+  5:37 {end_col=43,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusTagBadge",priority=4096,right_gravity=true}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (19)
++ buf([scratch]) n <BS>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#bf73c4d30c4d>
++ buf([scratch]) n <C-L>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#d729b164bd8d>
++ buf([scratch]) n <CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#dc28eb972410>
++ buf([scratch]) n <Esc>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#aaaab2dafeb5>
++ buf([scratch]) n <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#97f7c5660518>
++ buf([scratch]) n <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#68c81923952d>
++ buf([scratch]) n C  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#5e47ca31ab9c>
++ buf([scratch]) n D  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#1db411744461>
++ buf([scratch]) n G  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6eb59115b6e8>
++ buf([scratch]) n R  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#03cfc1751115>
++ buf([scratch]) n W  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#3b82a0b688fa>
++ buf([scratch]) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#37601c40cc19>
++ buf([scratch]) n dd  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#e4492c1df2ce>
++ buf([scratch]) n gd  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#4c7d16661d45>
++ buf([scratch]) n o  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2ff8fc0b8e5e>
++ buf([scratch]) n q  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#570f8e141046>
++ buf([scratch]) n r  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#46f868fecf5f>
++ buf([scratch]) n x  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#1ac9f92e51ff>
++ buf([scratch]) n zz  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#d3d70953c5a9>
+## registry changes since setup: autocmds (6)
++ nvim.treesitter.query_cache_reset OptionSet pattern="runtimepath" buffer=-  once=false desc=nil run=<lua <VIMRUNTIME>/lua/vim/treesitter/query.lua#e41c300af5c0>
++ obelus_panel CursorMoved pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#e92124b30ac6>
++ obelus_panel VimResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#97d7d30727c3>
++ obelus_panel WinClosed pattern="<win [scratch] split>" buffer=-  once=true desc=nil run=<lua <REPO>/lua/obelus/panel.lua#baf94255e8b9>
++ obelus_panel WinResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#97d7d30727c3>
++ obelus_panel WinScrolled pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#18b33db78be2>
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (1)
++ nvim.treesitter.highlighter  
+## highlights
+DiagnosticHint: fg=#a6dbff
+DiagnosticInfo: fg=#8cf8f7
+NonText: fg=#9b9ea4
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusChrome: fg=#9b9ea4
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusTagBadge: fg=#e0e2ea bold
+ObelusThreadBarN: fg=#8cf8f7
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeaderN: fg=#8cf8f7 bold
+ObelusVisual: bg=#909298
+Visual: bg=#909298

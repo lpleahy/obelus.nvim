@@ -1,0 +1,160 @@
+# obelus ui snapshot: band_inline_ask_draft @ 160x45
+## screen
+|  -- sample.lua: a small module the fixtures annotate                                                                                                           |
+|  local M = {}                                                                                                                                                  |
+|                                                                                                                                                                |
+|? local function clamp(x, lo, hi)                                                                                                                               |
+|                                                                                                                                                                |
+|  ▎ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────|
+|  ▎ you  L4-L4  ?ask  · draft                                                                                                                                   |
+|  ▎ why not math.max(lo, math.min(x, hi))?                                                                                                                      |
+|  ▎ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────|
+|    if x < lo then                                                                                                                                              |
+|      return lo                                                                                                                                                 |
+|▌   end                                                                                                                                                         |
+|▌   return math.min(x, hi)                                                                                                                                      |
+|                                                                                                                                                                |
+|  ▎ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────|
+|  ▎ you  L7-L8                                                                                                                                                  |
+|  ▎ negative factors are clamped to 0 silently — intended?                                                                                                      |
+|  ▎ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄|
+|  ▎ agent ↩                                                                                                                                                     |
+|  ▎ Yes — intended. Inputs are percentages; see clamp.                                                                                                          |
+|  ▎ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄|
+|  ▎ you  · draft                                                                                                                                                |
+|  ▎ draft reply mentioning @sample.lua and @missing.lua                                                                                                         |
+|  ▎ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────|
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|  function M.scale(values, factor)                                                                                                                              |
+|    local out = {}                                                                                                                                              |
+|    for i, v in ipairs(values) do                                                                                                                               |
+|      out[i] = clamp(v * factor, 0, 100)                                                                                                                        |
+|    end                                                                                                                                                         |
+|    return out                                                                                                                                                  |
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|  function M.sum(values)                                                                                                                                        |
+|    local total = 0                                                                                                                                             |
+|    for _, v in ipairs(values) do                                                                                                                               |
+|      total = total + v                                                                                                                                         |
+|    end                                                                                                                                                         |
+|    return total                                                                                                                                                |
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|  return M                                                                                                                                                      |
+|sample.lua                                                                                                                                    1,1            All|
+|                                                                                                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ccdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aagghhhiiiiiiiiijjjjiiiiiiiiiddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaggkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|lldddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|lldddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aagghhhiiiiiiidddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaggkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aammnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn|
+|aaoopppppppqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq|
+|aaoorrrrrrssssssssrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrtttttrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq|
+|aaeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aagghhhiiiiiiiiidddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaggkkkkkkkkkkkkkkkkkkkkkkkuuuuuuuuuuukkkkkkkkkkkkkkkkkddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#a6dbff  [SignColumn+DiagnosticHint]
+d bg=#1e282d  [ObelusThreadBg]
+e fg=#8cf8f7  [ObelusThreadBarN]
+f fg=#6ec0c0  [ObelusThreadRuleN]
+g fg=#8cf8f7 bg=#1e282d  [ObelusThreadBar]
+h fg=#8cf8f7 bg=#1e282d bold  [ObelusThreadHeader]
+i fg=#9b9ea4 bg=#1e282d  [ObelusThreadMeta]
+j fg=#e0e2ea bold  [ObelusThreadTag]
+k fg=#e0e2ea bg=#1e282d  [ObelusThreadText]
+l fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+m fg=#b3f6c0  [ObelusReplyBarN]
+n fg=#8bbe97  [ObelusReplyRuleN]
+o fg=#b3f6c0 bg=#212828  [ObelusReplyBar]
+p fg=#b3f6c0 bg=#212828 bold  [ObelusReplyHeader]
+q bg=#212828  [ObelusReplyBg]
+r fg=#e0e2ea bg=#212828  [ObelusReplyText]
+s fg=#e0e2ea bg=#212828 bold  [ObelusReplyBold]
+t fg=#b3f6c0 bg=#293330  [ObelusReplyCode]
+u fg=#fce094 bg=#1e282d bold  [ObelusThreadMention]
+v fg=#e0e2ea bg=#4f5258  [StatusLine]
+w default  [MsgArea]
+## cursor
+win=W1 mode=n pos=[1,0] screen=1,3
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=160x43 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+## extmarks
+B1 ns=obelus (3)
+  3:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticHint",sign_text="? "}
+  6:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  7:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B1 ns=obelus_band (2)
+  3:0 {priority=4096,right_gravity=true,virt_lines=[[["","Normal"]],[["▎ ","ObelusThreadBarN"],["──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]],[["▎ ","ObelusThreadBar"],["you","ObelusThreadHeader"],["  L4-L4","ObelusThreadMeta"],["  ","ObelusThreadMeta"],["?ask","ObelusThreadTag"],["  · draft","ObelusThreadMeta"],["                                                                                                                                     ","ObelusThreadBg"]],[["▎ ","ObelusThreadBar"],["why not math.max(lo, math.min(x, hi))?","ObelusThreadText"],["                                                                                                                        ","ObelusThreadBg"]],[["▎ ","ObelusThreadRuleN"],["──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]]],virt_lines_above=false,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  7:0 {priority=4096,right_gravity=true,virt_lines=[[["","Normal"]],[["▎ ","ObelusThreadBarN"],["──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]],[["▎ ","ObelusThreadBar"],["you","ObelusThreadHeader"],["  L7-L8","ObelusThreadMeta"],["                                                                                                                                                    ","ObelusThreadBg"]],[["▎ ","ObelusThreadBar"],["negative factors are clamped to 0 silently — intended?","ObelusThreadText"],["                                                                                                        ","ObelusThreadBg"]],[["▎ ","ObelusReplyBarN"],["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]],[["▎ ","ObelusReplyBar"],["agent ↩","ObelusReplyHeader"],["                                                                                                                                                       ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["Yes — ","ObelusReplyText"],["intended","ObelusReplyBold"],[". Inputs are percentages; see ","ObelusReplyText"],["clamp","ObelusReplyCode"],[".","ObelusReplyText"],["                                                                                                            ","ObelusReplyBg"]],[["▎ ","ObelusThreadBarN"],["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusThreadRuleN"]],[["▎ ","ObelusThreadBar"],["you","ObelusThreadHeader"],["  · draft","ObelusThreadMeta"],["                                                                                                                                                  ","ObelusThreadBg"]],[["▎ ","ObelusThreadBar"],["draft reply mentioning ","ObelusThreadText"],["@sample.lua","ObelusThreadMention"],[" and @missing.lua","ObelusThreadText"],["                                                                                                           ","ObelusThreadBg"]],[["▎ ","ObelusThreadRuleN"],["──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]]],virt_lines_above=false,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
+## highlights
+DiagnosticHint: fg=#a6dbff
+DiagnosticInfo: fg=#8cf8f7
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusReplyBar: fg=#b3f6c0 bg=#212828
+ObelusReplyBarN: fg=#b3f6c0
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBar: fg=#8cf8f7 bg=#1e282d
+ObelusThreadBarN: fg=#8cf8f7
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadMention: fg=#fce094 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadTag: fg=#e0e2ea bold
+ObelusThreadText: fg=#e0e2ea bg=#1e282d

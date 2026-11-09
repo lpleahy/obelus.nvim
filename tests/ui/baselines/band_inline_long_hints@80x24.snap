@@ -1,0 +1,100 @@
+# obelus ui snapshot: band_inline_long_hints @ 80x24
+## screen
+|  -- sample.lua: a small module the fixtures annotate                           |
+|▌ local M = {}                                                                  |
+|                                                                                |
+|   ⋯ 26 above · <leader>oK up · <leader>oJ down                                 |
+|  ▎ end                                                                         |
+|  ▎                                                                             |
+|  ▎ ╭─────────────┬───────────────────┬──────╮                                  |
+|  ▎ │ option      │ breaks callers    │ cost │                                  |
+|  ▎ ├─────────────┼───────────────────┼──────┤                                  |
+|  ▎ │ validate    │ yes, on bad input │ O(1) │                                  |
+|  ▎ │ clamp first │ no                │ O(n) │                                  |
+|  ▎ ╰─────────────┴───────────────────┴──────╯                                  |
+|  ▎                                                                             |
+|  ▎ │ I'd go with option 1: it fails loudly, which matches M.sum's behaviour.   |
+|  ▎ ────────────────────────────────────────────────────────────────────────────|
+|   ⋯ latest · <leader>oK up · <leader>oo full                                   |
+|                                                                                |
+|  local function clamp(x, lo, hi)                                               |
+|    if x < lo then                                                              |
+|      return lo                                                                 |
+|    end                                                                         |
+|    return math.min(x, hi)                                                      |
+|sample.lua                                                    2,1            Top|
+|                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ccdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaffggghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjkkkkkkkkkkkjjjkkkkkkkkkkkkkkkkkjjjkkkkjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjllllllllllljjjllllllllllllllllljjjlllljjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjllllllllllljjjllllllllllllllllljjjlllljjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhjjjjjjjjjjjjjiii|
+|aammmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm|
+|aaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn|
+|oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+d bg=#1e282d  [ObelusThreadBg]
+e fg=#9b9ea4  [ObelusChrome]
+f fg=#b3f6c0 bg=#212828  [ObelusReplyBar]
+g fg=#e0e2ea bg=#293330 bold  [ObelusReplyCode+Statement]
+h fg=#b3f6c0 bg=#293330  [ObelusReplyCode]
+i bg=#212828  [ObelusReplyBg]
+j fg=#9b9ea4 bg=#212828  [ObelusReplyMeta]
+k fg=#e0e2ea bg=#212828 bold  [ObelusReplyBold]
+l fg=#e0e2ea bg=#212828  [ObelusReplyText]
+m fg=#8bbe97  [ObelusReplyRuleN]
+n fg=#e0e2ea bg=#4f5258  [StatusLine]
+o default  [MsgArea]
+## cursor
+win=W1 mode=n pos=[2,0] screen=2,3
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=80x22 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+## extmarks
+B1 ns=obelus (1)
+  1:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B1 ns=obelus_band (1)
+  1:0 {priority=4096,right_gravity=true,virt_lines=[[["","Normal"]],[[" ⋯ 26 above · <leader>oK up · <leader>oJ down ","ObelusChrome"]],[["▎ ","ObelusReplyBar"],["end",["ObelusReplyCode","@keyword.function"]],["                                                                           ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["","ObelusReplyText"],["                                                                              ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["╭─────────────┬───────────────────┬──────╮","ObelusReplyMeta"],["                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ ","ObelusReplyMeta"],["option","ObelusReplyBold"],["     ","ObelusReplyBold"],[" │ ","ObelusReplyMeta"],["breaks callers","ObelusReplyBold"],["   ","ObelusReplyBold"],[" │ ","ObelusReplyMeta"],["cost","ObelusReplyBold"],[" │","ObelusReplyMeta"],["                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["├─────────────┼───────────────────┼──────┤","ObelusReplyMeta"],["                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ ","ObelusReplyMeta"],["validate","ObelusReplyText"],["   ","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["yes, on bad input","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["O(1)","ObelusReplyText"],[" │","ObelusReplyMeta"],["                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ ","ObelusReplyMeta"],["clamp first","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["no","ObelusReplyText"],["               ","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["O(n)","ObelusReplyText"],[" │","ObelusReplyMeta"],["                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["╰─────────────┴───────────────────┴──────╯","ObelusReplyMeta"],["                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["","ObelusReplyText"],["                                                                              ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ I'd go with option 1: it fails loudly, which matches ","ObelusReplyMeta"],["M.sum","ObelusReplyCode"],["'s behaviour.","ObelusReplyMeta"],["     ","ObelusReplyBg"]],[["▎ ","ObelusReplyRuleN"],["──────────────────────────────────────────────────────────────────────────────","ObelusReplyRuleN"]],[[" ⋯ latest · <leader>oK up · <leader>oo full ","ObelusChrome"]]],virt_lines_above=false,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (1)
++ nvim.treesitter.query_cache_reset OptionSet pattern="runtimepath" buffer=-  once=false desc=nil run=<lua <VIMRUNTIME>/lua/vim/treesitter/query.lua#e41c300af5c0>
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
+## highlights
+@keyword.function: fg=#e0e2ea bold
+DiagnosticInfo: fg=#8cf8f7
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusChrome: fg=#9b9ea4
+ObelusReplyBar: fg=#b3f6c0 bg=#212828
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyMeta: fg=#9b9ea4 bg=#212828
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBg: bg=#1e282d

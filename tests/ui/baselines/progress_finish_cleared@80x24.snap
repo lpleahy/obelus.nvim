@@ -1,0 +1,109 @@
+# obelus ui snapshot: progress_finish_cleared @ 80x24
+## screen
+|      return lo                                                                 |
+|    end                                                                         |
+|    return math.min(x, hi)                                                      |
+|  end                                                                           |
+|                                                                                |
+|▌ function M.scale(values, factor)                                              |
+|                                                                                |
+|  ▎ ────────────────────────────────────────────────────────────────────────────|
+|  ▎ you  L11-L11                                                                |
+|  ▎ negative factors are clamped to 0 silently — intended?                      |
+|  ▎ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄|
+|  ▎ agent ↩                                                                     |
+|  ▎ Yes — intended. Inputs are percentages; see clamp.                          |
+|  ▎ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄|
+|  ▎ you                                                                         |
+|  ▎ and for factor = -2?                                                        |
+|  ▎ ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄|
+|  ▎ agent ↩                                                                     |
+|  ▎ Every value maps to 0.                                                      |
+|  ▎ ────────────────────────────────────────────────────────────────────────────|
+|    local out = {}                                                              |
+|    for i, v in ipairs(values) do                                               |
+|sample.lua                                                    11,1           26%|
+|                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ccdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aagghhhiiiiiiiiidddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjdddddddddddddddddddddd|
+|aakkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll|
+|aammnnnnnnnooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo|
+|aammppppppqqqqqqqqpppppppppppppppppppppppppppppprrrrrpoooooooooooooooooooooooooo|
+|aaeeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff|
+|aagghhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaggjjjjjjjjjjjjjjjjjjjjdddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aakkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll|
+|aammnnnnnnnooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo|
+|aammppppppppppppppppppppqpoooooooooooooooooooooooooooooooooooooooooooooooooooooo|
+|aallllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss|
+|tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+d bg=#1e282d  [ObelusThreadBg]
+e fg=#8cf8f7  [ObelusThreadBarN]
+f fg=#6ec0c0  [ObelusThreadRuleN]
+g fg=#8cf8f7 bg=#1e282d  [ObelusThreadBar]
+h fg=#8cf8f7 bg=#1e282d bold  [ObelusThreadHeader]
+i fg=#9b9ea4 bg=#1e282d  [ObelusThreadMeta]
+j fg=#e0e2ea bg=#1e282d  [ObelusThreadText]
+k fg=#b3f6c0  [ObelusReplyBarN]
+l fg=#8bbe97  [ObelusReplyRuleN]
+m fg=#b3f6c0 bg=#212828  [ObelusReplyBar]
+n fg=#b3f6c0 bg=#212828 bold  [ObelusReplyHeader]
+o bg=#212828  [ObelusReplyBg]
+p fg=#e0e2ea bg=#212828  [ObelusReplyText]
+q fg=#e0e2ea bg=#212828 bold  [ObelusReplyBold]
+r fg=#b3f6c0 bg=#293330  [ObelusReplyCode]
+s fg=#e0e2ea bg=#4f5258  [StatusLine]
+t default  [MsgArea]
+## cursor
+win=W1 mode=n pos=[11,0] screen=6,3
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=80x22 topline=6 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+## extmarks
+B1 ns=obelus (1)
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B1 ns=obelus_band (1)
+  10:0 {priority=4096,right_gravity=true,virt_lines=[[["","Normal"]],[["▎ ","ObelusThreadBarN"],["────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]],[["▎ ","ObelusThreadBar"],["you","ObelusThreadHeader"],["  L11-L11","ObelusThreadMeta"],["                                                                ","ObelusThreadBg"]],[["▎ ","ObelusThreadBar"],["negative factors are clamped to 0 silently — intended?","ObelusThreadText"],["                      ","ObelusThreadBg"]],[["▎ ","ObelusReplyBarN"],["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]],[["▎ ","ObelusReplyBar"],["agent ↩","ObelusReplyHeader"],["                                                                     ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["Yes — ","ObelusReplyText"],["intended","ObelusReplyBold"],[". Inputs are percentages; see ","ObelusReplyText"],["clamp","ObelusReplyCode"],[".","ObelusReplyText"],["                          ","ObelusReplyBg"]],[["▎ ","ObelusThreadBarN"],["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusThreadRuleN"]],[["▎ ","ObelusThreadBar"],["you","ObelusThreadHeader"],["                                                                         ","ObelusThreadBg"]],[["▎ ","ObelusThreadBar"],["and for factor = -2?","ObelusThreadText"],["                                                        ","ObelusThreadBg"]],[["▎ ","ObelusReplyBarN"],["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]],[["▎ ","ObelusReplyBar"],["agent ↩","ObelusReplyHeader"],["                                                                     ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["Every value maps to ","ObelusReplyText"],["0","ObelusReplyBold"],[".","ObelusReplyText"],["                                                      ","ObelusReplyBg"]],[["▎ ","ObelusReplyRuleN"],["────────────────────────────────────────────────────────────────────────────","ObelusReplyRuleN"]]],virt_lines_above=false,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
+## highlights
+DiagnosticInfo: fg=#8cf8f7
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusReplyBar: fg=#b3f6c0 bg=#212828
+ObelusReplyBarN: fg=#b3f6c0
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBar: fg=#8cf8f7 bg=#1e282d
+ObelusThreadBarN: fg=#8cf8f7
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadText: fg=#e0e2ea bg=#1e282d
