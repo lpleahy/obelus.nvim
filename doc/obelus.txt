@@ -1463,9 +1463,14 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
 
     Turn identity ~                                       *obelus-api-turns*
     Each user message obelus submits has a stable `turn_id`; every retry of
-    that message sends the same id, and editing a draft after it was sent
-    makes it a new message with a new id. Backends must be idempotent on
-    `turn_id`:
+    that message, with its text unchanged, sends the same id. Editing a draft
+    gives it a new id at once (it is a new message), so a refresh never
+    takes an edited draft for the version the backend stored: a refresh
+    reconciles only an unchanged, submitted draft with a stored turn of the
+    same id. A new comment's first turn works the same way: if `create()`
+    fails, the reopened composer keeps that attempt's `turn_id` until you
+    edit the text, so an unchanged retry can be joined by the backend.
+    Backends must be idempotent on `turn_id` (for `create()` too):
       not stored yet        store the user turn under it, then answer it;
       stored, unanswered    do not store it again, only answer it;
       stored and answered   store and answer nothing; emit "done" with the

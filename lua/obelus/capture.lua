@@ -134,9 +134,10 @@ function M._capture(bufnr, file, kind, sl, sc, el, ec, opts)
     for k, v in pairs(opts.fields or {}) do
       record[k] = v
     end
+    record._api_turn_id = opts._api_retry_turn_id -- obelus.api: an unchanged retry keeps its turn id
     local c = store.add(record)
     if not c then
-      return opts.on_refused and opts.on_refused(text) -- obelus.api: the backend refused; retry
+      return opts.on_refused and opts.on_refused(text, record._api_turn_id) -- obelus.api: refused; retry
     end
     render.place(bufnr, c)
     render.render_all() -- show it everywhere now (bands + the sidebar list)
@@ -147,14 +148,18 @@ function M._capture(bufnr, file, kind, sl, sc, el, ec, opts)
   if opts.text then
     return create(opts.text, true)
   end
-  local function compose(default)
+  local function compose(default, retry_turn_id)
     render.compose({
       title = opts.title or ("review: " .. vim.fn.fnamemodify(file, ":t")),
       row = (el - sl) + 1,
       default = default,
       -- <C-s> is "save as a draft" everywhere else in obelus: not a submit
       on_submit = function(text, action)
-        opts.on_refused = compose -- obelus.api: a refused save reopens the composer with the text
+        -- obelus.api: a refused save reopens the composer with the text and the
+        -- attempt's turn id; resubmitting it UNCHANGED reuses that id (the backend
+        -- may have stored it already), an edit is a new message
+        opts.on_refused = compose
+        opts._api_retry_turn_id = (retry_turn_id and text == default) and retry_turn_id or nil
         create(text, action ~= "save", action)
       end,
       on_cancel = function(text)

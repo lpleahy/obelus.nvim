@@ -627,6 +627,110 @@ T.it("turn_id: an edited draft or an intentional repeat is a NEW message (never 
   end)
 end)
 
+T.it("turn_id: fail → edit → refresh → dispatch sends the EDITED wording under a new id", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "fail"
+    local msgs, restore = capture_notify()
+    require("obelus").chat_send("api:memo:7", "original failed message", "send")
+    local first = ctx.B.sends[1].req.turn_id
+    require("obelus.review").chat_save("api:memo:7", "new unsent wording")
+    api.refresh(ctx.buf)
+    local c = ctx.store.get("api:memo:7")
+    T.eq(ctx.store.pending_you_text(c), "new unsent wording", "the edit survives the refresh")
+    T.eq(texts(c)[3], "you:original failed message", "the stored version is history")
+    ctx.B.mode = "done"
+    require("obelus").dispatch("api:memo:7")
+    restore()
+    T.eq(ctx.B.sends[2].req.text, "new unsent wording")
+    T.ok(ctx.B.sends[2].req.turn_id ~= first, "a new id for the new wording")
+    T.eq(server_you(ctx.B, "original failed message"), 1)
+    T.eq(server_you(ctx.B, "new unsent wording"), 1)
+  end)
+end)
+
+T.it("turn_id: cancel → edit → refresh keeps the edit as a distinct draft", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "hang"
+    require("obelus").chat_send("api:memo:7", "slow original", "send")
+    require("obelus").cancel("api:memo:7")
+    require("obelus.review").chat_save("api:memo:7", "edited after cancel")
+    api.refresh(ctx.buf)
+    local c = ctx.store.get("api:memo:7")
+    T.eq(ctx.store.pending_you_text(c), "edited after cancel")
+    T.eq(texts(c)[3], "you:slow original", "the stored original stays history")
+  end)
+end)
+
+T.it("turn_id: lost ack → edit → refresh keeps the edit; an UNCHANGED draft is still reconciled", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "throw"
+    local msgs, restore = capture_notify()
+    require("obelus").chat_send("api:memo:7", "maybe stored", "send")
+    require("obelus.review").chat_save("api:memo:7", "maybe stored, edited")
+    api.refresh(ctx.buf)
+    T.eq(ctx.store.pending_you_text(ctx.store.get("api:memo:7")), "maybe stored, edited")
+    -- control: an unchanged draft whose version the server stored IS reconciled
+    require("obelus").chat_send("api:memo:7", "maybe stored, edited", "send")
+    api.refresh(ctx.buf)
+    restore()
+    T.is_nil(ctx.store.pending_you_text(ctx.store.get("api:memo:7")), "stored: no draft left")
+  end)
+end)
+
+T.it("turn_id: create stored → lost ack → an unchanged retry joins it; an edited retry is new", function()
+  with_backend(nil, function(ctx)
+    -- an idempotent create(): one thread per first-turn id; this one loses its
+    -- acknowledgement (stores, then throws) on the first attempt
+    local create = ctx.B.spec.store.create
+    local lose_ack = true
+    ctx.B.spec.store.create = function(bufnr, new)
+      for _, t in ipairs(ctx.B.threads) do
+        if t.turns[1].turn_id == new.turn_id then
+          return vim.deepcopy(t)
+        end
+      end
+      local t = create(bufnr, new)
+      if lose_ack then
+        lose_ack = false
+        error("RAW-LOST-ACK")
+      end
+      return t
+    end
+    api.register_backend(ctx.B.spec)
+    local render = require("obelus.render")
+    local real_compose, composes = render.compose, {}
+    render.compose = function(o)
+      composes[#composes + 1] = o
+    end
+    local msgs, restore = capture_notify()
+    local ok, err = pcall(function()
+      require("obelus.capture")._capture(ctx.buf, ctx.file, "line", 2, nil, 2, nil, {})
+      composes[1].on_submit("a first note", "send")
+      T.eq(#composes, 2, "refused: the composer reopened")
+      T.eq(composes[2].default, "a first note")
+      composes[2].on_submit("a first note", "send") -- unchanged retry
+      T.eq(#ctx.B.threads, 1, "the server has ONE thread")
+      T.eq(#ctx.store.by_file(ctx.file), 1, "and obelus shows it once")
+      -- an edited retry is a new message
+      lose_ack = true
+      require("obelus.capture")._capture(ctx.buf, ctx.file, "line", 3, nil, 3, nil, {})
+      composes[3].on_submit("second", "send")
+      composes[4].on_submit("second, reworded", "send")
+      T.eq(#ctx.B.threads, 3, "the edited retry is its own thread")
+      T.ok(ctx.B.threads[2].turns[1].turn_id ~= ctx.B.threads[3].turns[1].turn_id)
+    end)
+    render.compose = real_compose
+    restore()
+    if not ok then
+      error(err, 0)
+    end
+    T.ok(not vim.inspect(msgs):find("RAW", 1, true))
+  end)
+end)
+
 -- ── generations (B4) and reload (N1) ────────────────────────────────────────────
 
 local function start_send(ctx, id, text)

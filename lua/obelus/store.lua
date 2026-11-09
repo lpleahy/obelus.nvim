@@ -506,6 +506,11 @@ function M.set_pending_you(id, text)
     if text == "" and n > 1 then
       table.remove(c.turns) -- clearing a reply draft drops it; the comment (n == 1) is kept
     else
+      if tail.turn_id and tail.text ~= text and package.loaded["obelus.api"] then
+        -- obelus.api: an edited draft is a NEW message — a new id, now, so a
+        -- refresh can never mistake it for the version that was sent before
+        tail.turn_id, tail._api_sent_text = package.loaded["obelus.api"]._new_turn_id(), nil
+      end
       tail.text = text
       if n == 1 then
         c.comment = text -- the first turn is the comment; keep format/list in sync

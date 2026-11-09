@@ -449,7 +449,10 @@ function M.refresh(bufnr)
     if rec and not live[rec.id] then
       local d = drafts[rec.id]
       local stored = false
-      for _, t in ipairs(d and d.turn_id and rec.turns or {}) do
+      -- only the unchanged, submitted version of a draft can be the stored turn
+      -- (matched by id, never by text); an edited draft stays a draft
+      local submitted = d and d.turn_id and d._api_sent_text == d.text
+      for _, t in ipairs(submitted and rec.turns or {}) do
         stored = stored or (t.author == "you" and t.turn_id == d.turn_id) -- reconciled by id, never by text
       end
       if d and not stored then
@@ -646,7 +649,10 @@ function M._adopt(c)
     return true
   end
   local b = backends[name]
-  local first_turn_id = M._new_turn_id()
+  -- a retry of a refused create with unchanged text carries that attempt's id
+  -- (capture keeps it), so an idempotent backend can join the two attempts
+  local first_turn_id = c._api_turn_id or M._new_turn_id()
+  c._api_turn_id = first_turn_id -- the caller can offer it to the retry
   local ok, t = pcall(b.store.create, bufnr, {
     range = vim.deepcopy(c.range),
     kind = c.kind,
