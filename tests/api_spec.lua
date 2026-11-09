@@ -838,6 +838,16 @@ end)
 
 -- ── approve ────────────────────────────────────────────────────────────────────
 
+-- throw away whatever input is still queued (never EXECUTE leftovers: a flood
+-- of keys run as normal-mode commands would take minutes)
+local function discard_input()
+  for _ = 1, 1000000 do
+    if vim.fn.getchar(0) == 0 then
+      return
+    end
+  end
+end
+
 local function with_ui(fn)
   local orig = vim.api.nvim_list_uis
   vim.api.nvim_list_uis = function()
@@ -848,7 +858,7 @@ local function with_ui(fn)
   pcall(approve._reset)
   approve.arm_ms = saved_arm
   vim.api.nvim_list_uis = orig
-  pcall(vim.fn.getchar, 0) -- never leak a queued key into the next spec
+  pcall(discard_input) -- never leak a queued key into the next spec
   if not ok then
     error(err, 0)
   end
@@ -969,6 +979,79 @@ T.it("approve: input queued while unarmed, with the loop blocked past the window
     T.ok(vim.api.nvim_win_is_valid(a.win))
     keys("a") -- a fresh key after arming
     T.eq(results, { true })
+  end)
+end)
+
+T.it("approve: 15001 keys queued BETWEEN the drains (real timers) deny instead of arming", function()
+  with_ui(function()
+    approve.arm_ms = 60
+    local results, _, a = prompt()
+    local was_unarmed
+    -- the review's producer: due just before the arming timer, it schedules a
+    -- flood that lands between the timer's drain and the final scheduled drain
+    vim.defer_fn(function()
+      vim.schedule(function()
+        was_unarmed = approve._active() == a and not a.armed
+        vim.api.nvim_feedkeys(string.rep("a", 15001), "t", false)
+      end)
+    end, 59)
+    T.ok(api.approve_focus())
+    vim.uv.sleep(120) -- both timers become due while the loop is stalled
+    T.ok(
+      vim.wait(2000, function()
+        return #results > 0
+      end, 5),
+      "decided"
+    )
+    T.ok(was_unarmed, "the flood arrived while unarmed")
+    T.eq(results, { false }, "cap exhausted: dismissed, never armed")
+    discard_input()
+  end)
+end)
+
+T.it("approve: an overflowing queue at focus denies at once", function()
+  with_ui(function()
+    approve.arm_ms = 30
+    local results, _, a = prompt()
+    vim.api.nvim_feedkeys(string.rep("a", approve.drain_cap + 1), "t", false)
+    T.ok(api.approve_focus())
+    T.eq(results, { false })
+    T.ok(not vim.api.nvim_win_is_valid(a.win), "closed")
+    discard_input()
+  end)
+end)
+
+T.it("approve: sustained input while unarmed denies (the queue is never seen empty within the cap)", function()
+  with_ui(function()
+    approve.arm_ms = 50
+    local results, _, a = prompt()
+    local t = vim.uv.new_timer()
+    t:start(0, 1, function() -- a producer that keeps typing
+      vim.schedule(function()
+        vim.api.nvim_feedkeys(string.rep("a", 4000), "t", false)
+      end)
+    end)
+    T.ok(api.approve_focus())
+    local decided = vim.wait(3000, function()
+      return #results > 0 or a.armed == true -- stop the producer either way
+    end, 5)
+    t:stop()
+    t:close()
+    vim.wait(20)
+    discard_input()
+    T.ok(decided, "decided")
+    T.ok(not a.armed, "never armed")
+    T.eq(results, { false })
+  end)
+end)
+
+T.it("approve: a queued Esc during the drain is honoured as a dismissal", function()
+  with_ui(function()
+    approve.arm_ms = 30
+    local results = prompt()
+    vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "t", false)
+    T.ok(api.approve_focus())
+    T.eq(results, { false })
   end)
 end)
 

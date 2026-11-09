@@ -245,6 +245,10 @@ spec_mutate "approve-no-unarmed-phase" lua/obelus/approve.lua \
 # the drain is removed: input queued while unarmed survives into the armed prompt
 spec_mutate "approve-no-drain" lua/obelus/approve.lua \
   'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'
+# the drain cap runs out and the prompt arms anyway with input still queued
+spec_mutate "approve-cap-exhaustion-arms" lua/obelus/approve.lua \
+  'finish(false, a) -- cap exhausted: dismissed
+  return false' 'return true'
 # the same, judged by the real-UI snapshot (api_approve_queued_typeahead)
 mutate "approve-no-drain-ui" lua/obelus/approve.lua \
   'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'

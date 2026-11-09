@@ -1532,7 +1532,9 @@ api.approve({opts})                                   *obelus.api.approve()*
       It starts UNARMED and ignores every key. After 600 ms, all queued
       input is drained (discarded); on the next event-loop turn it is
       drained again and only then armed. Keys typed or queued before that,
-      even while Neovim was busy, can never approve. Once armed, `a`
+      even while Neovim was busy, can never approve. Each drain must find
+      the queue empty: more than 10000 queued keys, sustained input, or a
+      queued Esc, q, CTRL-C or Enter denies instead. Once armed, `a`
       approves.
     - Everything else denies: Enter, Esc, q, CTRL-C, any other key once
       armed, leaving or closing the prompt, the UI detaching, the timeout,

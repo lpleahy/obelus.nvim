@@ -10,7 +10,9 @@
 --     even if the loop was blocked past `arm_ms`, is consumed by a drain before
 --     the armed flag can be set, so it can never approve; once armed, only a
 --     key that arrived after the last drain reaches the prompt, and only `a`
---     approves;
+--     approves. A drain must SEE the queue empty: if more than `drain_cap`
+--     keys are queued (or input keeps arriving), or a queued Esc/q/<C-c>/Enter
+--     is found, the prompt is denied — it never arms with input left over;
 --   * every other exit is Deny: Esc, q, <C-c>, Enter, any other key once armed,
 --     leaving or closing the window, the UI detaching, the timeout, an error
 --     while opening, or no UI at all (headless: denied at once, no float);
@@ -34,15 +36,35 @@ local function armed(a)
   return a.armed == true
 end
 
--- Discard every key already queued (typeahead and pending input), while the
--- prompt is focused and unarmed.
-local function drain(a)
-  if a.win and vim.api.nvim_get_current_win() == a.win then
-    local n = 0
-    while n < 10000 and vim.fn.getchar(0) ~= 0 do
-      n = n + 1
+M.drain_cap = 10000 -- keys one drain may discard; more left over = deny
+
+-- forward-declared: finish is defined below
+local finish
+
+-- Discard every key already queued (typeahead and pending input) while the
+-- prompt is focused and unarmed. Returns true only once the queue was seen
+-- EMPTY. A queued Esc / q / <C-c> / Enter is honoured as a dismissal (deny);
+-- running out of the cap with input still queued denies too ("dismissed"):
+-- the prompt never arms with old input possibly left over.
+local function drain(a, current)
+  if not current() then
+    return false
+  end
+  for _ = 1, M.drain_cap do
+    local ok, key = pcall(vim.fn.getchar, 0)
+    if not current() then
+      return false
+    end
+    if not ok or key == 27 or key == 113 or key == 3 or key == 13 or key == 10 then
+      finish(false, a)
+      return false
+    end
+    if key == 0 then
+      return true
     end
   end
+  finish(false, a) -- cap exhausted: dismissed
+  return false
 end
 
 ---Is there a UI that can show the prompt? Headless = no.
@@ -50,7 +72,7 @@ function M.available()
   return #vim.api.nvim_list_uis() > 0
 end
 
-local function finish(approve, a)
+finish = function(approve, a)
   a = a or active
   if not a or a.done then
     return
@@ -276,17 +298,24 @@ function M.focus()
     vim.api.nvim_set_current_win(a.win)
   end
   local function current()
-    return active == a and not a.done and a.focus_seq == seq and vim.api.nvim_get_current_win() == a.win
+    return active == a
+      and not a.done
+      and not a.dismissed
+      and a.focus_seq == seq
+      and M.available()
+      and vim.api.nvim_win_is_valid(a.win)
+      and vim.api.nvim_get_current_win() == a.win
   end
-  drain(a)
+  if not drain(a, current) then
+    return true
+  end
   vim.defer_fn(function()
-    if not current() then
+    if not drain(a, current) then
       return
     end
-    drain(a)
-    vim.schedule(function() -- a loop boundary after the drain: anything left was typed after it
-      if current() then
-        drain(a)
+    -- a loop boundary after the drain; the final drain must find the queue empty
+    vim.schedule(function()
+      if drain(a, current) then
         a.armed = true
       end
     end)
