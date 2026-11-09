@@ -55,7 +55,7 @@ OBELUS_UI_ONLY=band,chat make ui-snapshots    # only scenarios whose name contai
 
 `make test` runs the specs first, then the snapshots, even under `make -j`. The
 specs report executed and skipped counts separately. With a private XDG setup the
-21 markview and render-markdown specs are skipped (458 passed, 21 skipped). They run
+21 markview and render-markdown specs are skipped (472 passed, 21 skipped). They run
 only when those plugins are on the runtimepath.
 
 The harness reports two kinds of problem. `FAIL` means a rendering differs from its
@@ -97,7 +97,9 @@ diff.
   small mutations to a temp copy, covering visuals, extmarks, float stacking and
   setup. A mutation counts as caught only on a baseline mismatch with no harness
   error. One more mutation removes the supervisor's member teardown and must fail
-  the parent-exit self-tests. See `MUTATIONS.md` for the last results.
+  the parent-exit self-tests. Five more mutate the `obelus.api` guards, which
+  draw nothing, and must fail the `[api]` behaviour specs. See `MUTATIONS.md`
+  for the last results.
 - `make ui-selftest` (`tests/ui/selftest.sh`, about 1 min) checks the harness
   itself:
   - a forced RPC timeout, a scenario error, SIGTERM mid-run, SIGKILL of the
@@ -232,5 +234,7 @@ before changing code on these paths:
   meta-thread views;
 - the sidebar thread list has one representative snapshot per size, not
   exhaustive coverage;
-- future `obelus.api` surfaces (non-file backends, approve/deny). P1 must add
-  their own behaviour tests and scenarios.
+- `obelus.api`: one inline band, one streaming popup thread view and the
+  unfocused approve prompt are pinned; the sidebar list of backend threads and
+  the focused (armed) prompt are not. The api's guards are covered by
+  `tests/api_spec.lua` and the behaviour mutations instead;

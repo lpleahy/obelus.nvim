@@ -57,6 +57,7 @@ for _, spec in ipairs({
   "panel",
   "mention",
   "mention_completion",
+  "api",
   "markview",
   "render_markdown",
 }) do

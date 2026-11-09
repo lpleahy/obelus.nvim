@@ -8,8 +8,11 @@ A mutation counts as **caught** only when the run reaches comparison and reports
 baseline mismatch with no harness error. A harness error under a mutation counts as
 **invalid**. The real tree is never modified.
 
-Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **19 caught (18 visual
-or setup, 1 harness), 0 missed, 0 invalid**, 149 s under `nice -n 10`.
+Last run: 2026-11-09, Neovim v0.12.6, 47 baselines (41 + 6 from `obelus.api`).
+Result: **24 caught (18 visual or setup, 1 harness, 5 behaviour), 0 missed, 0
+invalid**, 160 s under `nice -n 10`. The per-row counts below are from the 41-baseline
+run; the six `api_*` baselines add to some of them (e.g. spinner-frame now 10,
+bubble-tint-colour 47).
 
 | Mutation | Change in the copy | Result |
 | --- | --- | --- |
@@ -31,6 +34,11 @@ or setup, 1 harness), 0 missed, 0 invalid**, 149 s under `nice -n 10`.
 | keymap-callback-swap-same-desc | `<prefix>?` callback calls `M.toggle_mode()` instead of `M.toggle_hints()`; description unchanged | caught: 1 (registration) |
 | command-callback-swap-same-desc | `:ObelusEdit` callback calls `M.delete()`; description unchanged | caught: 1 (registration) |
 | first-use-overwrites-default-Y | `quick_reply()` maps `Y` to `dd` the first time it runs | caught: 2 (both `compose_quick_reply_hints` sizes) |
+| api-cli-fallthrough (behaviour) | `transport/init.lua`: the `obelus.api` route in `submit()` is skipped, so a backend thread reaches obelus's own transports | caught: 3 `[api]` specs |
+| api-cli-guard-removed (behaviour) | `transport/cli.lua`: the CLI transport's own refusal of backend threads is removed | caught: 1 `[api]` spec (a spawn is attempted) |
+| approve-headless-falls-through (behaviour) | `approve.lua`: no-UI check removed, so a headless prompt opens instead of denying | caught: 2 `[api]` specs |
+| approve-typeahead-approves (behaviour) | `approve.lua`: arming window dropped, so `a` right after focusing approves | caught: 1 `[api]` spec |
+| api-thread-saved-to-jsonl (behaviour) | `store.lua`: backend threads are no longer skipped by `save()` | caught: 2 `[api]` specs |
 | supervisor-skips-member-teardown (harness) | `supervise.pl`: the `teardown();` call is removed, so the group is released while members still run (R4-B1) | caught: 4 self-test failures (`parent-exit`, `parent-exit-harness`: exit 42 with log `reaped` only, straggler still alive) |
 
 The setup and zindex mutations come from the first independent review. Before the

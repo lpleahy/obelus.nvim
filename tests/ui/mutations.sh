@@ -171,5 +171,62 @@ teardown();
 ' '
 ' parent-exit,parent-exit-harness
 
+# Behaviour-guard mutations (obelus.api): these guards draw nothing, so the
+# behaviour specs judge them instead of the snapshots. CAUGHT = the unmodified
+# copy's specs pass and the mutated copy's specs fail in the [api] suite.
+run_specs() {
+  (cd "$work/tree" && nvim --headless -u NONE -i NONE -c "luafile tests/run.lua" 2>&1)
+}
+spec_preflight=""
+spec_mutate() { # name file old new
+  name=$1 file=$2 old=$3 new=$4
+  if [ -z "$spec_preflight" ]; then
+    fresh_tree
+    if ! out=$(run_specs); then
+      echo "INVALID ENVIRONMENT: the unmodified specs do not pass; spec mutations cannot be judged."
+      printf '%s\n' "$out" | grep '^FAIL' | head -5
+      exit 2
+    fi
+    spec_preflight=done
+  fi
+  fresh_tree
+  if ! nvim -l "$work/replace.lua" "$work/tree/$file" "$old" "$new"; then
+    echo "INVALID $name  (mutation anchor not found)"
+    invalid=$((invalid + 1))
+    return
+  fi
+  out=$(run_specs)
+  rc=$?
+  nfail=$(printf '%s\n' "$out" | grep -c '^FAIL \[api\]')
+  if [ $rc -eq 0 ]; then
+    missed=$((missed + 1))
+    echo "MISSED  $name"
+  elif [ "$nfail" -eq 0 ]; then
+    invalid=$((invalid + 1))
+    echo "INVALID $name  (failed outside the api specs: $(printf '%s\n' "$out" | grep -E '^(FAIL|ERROR)' | head -1 | cut -c1-110))"
+  else
+    caught=$((caught + 1))
+    echo "CAUGHT  $name  ($nfail api spec(s) fail; first: $(printf '%s\n' "$out" | grep '^FAIL \[api\]' | head -1 | cut -c1-90))"
+  fi
+}
+
+# a backend thread falls through to obelus's own transports (the CLI)
+spec_mutate "api-cli-fallthrough" lua/obelus/transport/init.lua \
+  'if api and api._active() then' 'if false then'
+# the CLI transport's own refusal is removed (defence in depth)
+spec_mutate "api-cli-guard-removed" lua/obelus/transport/cli.lua \
+  'package.loaded["obelus.api"]._guard_cli(payload)' 'local _ = payload'
+# approve with no UI opens a float instead of denying at once
+spec_mutate "approve-headless-falls-through" lua/obelus/approve.lua \
+  'if not M.available() then
+    return finish(false, a)' 'if false then
+    return finish(false, a)'
+# the arming window is dropped: typeahead right after focusing approves
+spec_mutate "approve-typeahead-approves" lua/obelus/approve.lua \
+  'return a.explicit == true and vim.uv.hrtime() >= a.ready_at' 'return a.explicit == true'
+# a backend's threads leak into obelus's JSONL
+spec_mutate "api-thread-saved-to-jsonl" lua/obelus/store.lua \
+  'goto continue -- obelus.api' 'local _ = nil -- obelus.api'
+
 echo "mutations: $caught caught, $missed missed, $invalid invalid"
 [ "$missed" -eq 0 ] && [ "$invalid" -eq 0 ]
