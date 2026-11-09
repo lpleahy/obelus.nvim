@@ -8,8 +8,8 @@ A mutation counts as **caught** only when the run reaches comparison and reports
 baseline mismatch with no harness error. A harness error under a mutation counts as
 **invalid**. The real tree is never modified.
 
-Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **15 caught, 0 missed,
-0 invalid**, 102 s under `nice -n 10`.
+Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **18 caught, 0 missed,
+0 invalid**, 89 s under `nice -n 10`.
 
 | Mutation | Change in the copy | Result |
 | --- | --- | --- |
@@ -28,9 +28,14 @@ Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **15 caught, 0 misse
 | setup-new-namespace | `setup()` creates namespace `obelus_api_review` | caught: 1 (registration) |
 | chat-float-zindex | `config.lua`: `z.CHAT` 50 → 51 | caught: 6 |
 | setup-overwrites-highlight | `setup()` re-links `Search` to `IncSearch` | caught: 1 (registration) |
+| keymap-callback-swap-same-desc | `<prefix>?` callback calls `M.toggle_mode()` instead of `M.toggle_hints()`; description unchanged | caught: 1 (registration) |
+| command-callback-swap-same-desc | `:ObelusEdit` callback calls `M.delete()`; description unchanged | caught: 1 (registration) |
+| first-use-overwrites-default-Y | `quick_reply()` maps `Y` to `dd` the first time it runs | caught: 2 (both `compose_quick_reply_hints` sizes) |
 
-The last five mutations come from the independent review. Before the B3 fix, the
-`Y` overwrite and the ungrouped autocmd passed the whole suite.
+The setup and zindex mutations come from the first independent review. Before the
+B3 fix, the setup-time `Y` overwrite and the ungrouped autocmd passed the whole
+suite. The last three come from the re-review, and all three passed before the
+R2-B2 fix.
 
 ## Harness failure modes (`make ui-selftest`)
 
@@ -38,7 +43,9 @@ The last five mutations come from the independent review. Before the B3 fix, the
 | --- | --- |
 | Forced RPC timeout (`OBELUS_UI_GUARD_MS=1500`, child stuck in `while true do end`) | reported as a transport fault (`ERROR`), exit 1. `rpc.lua` reaps the child without the wrapper's fallback. No live child, no temp dir. |
 | Scenario raises an error | `ERROR … deliberate scenario failure`, exit 1. No live child, no temp dir. |
-| SIGTERM to `run.sh` mid-run, child wedged | exit 143. Parent and child killed by exact pid. No temp dir. |
+| SIGTERM to `run.sh` mid-run, child wedged | exit 143. The parent is stopped, then its own children and the parent are killed. No temp dir. |
+| SIGKILL to `run.sh` mid-run, child wedged (1.5 s guard) | the orphaned parent notices, its RPC guard fires, it reaps the child and removes the run dir. No live child, no temp dir. |
+| An unrelated `nvim --embed` (started by the self-test, not the harness) runs through all of the above | never signalled; still alive at the end |
 | 2.5 s wall-clock stall before each capture (progress, stream and popup scenarios) | 18/18 byte-identical to the baselines |
 
 A full 41-snapshot run with a 2.5 s stall before every capture was byte-identical

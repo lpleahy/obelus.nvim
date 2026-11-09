@@ -21,6 +21,7 @@ decoy= feeder=
 finish() {
   [ -n "$decoy" ] && kill -KILL "$decoy" 2>/dev/null
   [ -n "$feeder" ] && kill -KILL "$feeder" 2>/dev/null
+  wait 2>/dev/null
   rm -rf "$work"
 }
 trap finish EXIT

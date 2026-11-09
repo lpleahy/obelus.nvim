@@ -115,5 +115,22 @@ mutate "setup-overwrites-highlight" lua/obelus/init.lua \
   'function M.setup(opts)' 'function M.setup(opts)
   vim.api.nvim_set_hl(0, "Search", { link = "IncSearch" })'
 
+# from the re-review: same-description callback swaps and a first-use overwrite
+mutate "keymap-callback-swap-same-desc" lua/obelus/init.lua \
+  'suffix = "?",
+    modes = "n",
+    rhs = function()
+      M.toggle_hints()' 'suffix = "?",
+    modes = "n",
+    rhs = function()
+      M.toggle_mode()'
+mutate "command-callback-swap-same-desc" lua/obelus/init.lua \
+  'cmd("ObelusEdit", function()
+    M.edit()' 'cmd("ObelusEdit", function()
+    M.delete()'
+mutate "first-use-overwrites-default-Y" lua/obelus/init.lua \
+  'function M.quick_reply(id)' 'function M.quick_reply(id)
+  vim.keymap.set("n", "Y", "dd", { desc = "review lazy overwrite" })'
+
 echo "mutations: $caught caught, $missed missed, $invalid invalid"
 [ "$missed" -eq 0 ] && [ "$invalid" -eq 0 ]

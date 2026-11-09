@@ -19,9 +19,17 @@ with a committed baseline. A baseline holds:
 before obelus loads and after `setup()` plus opening a file, then diffs the two:
 user commands, keymaps (every mode, global and buffer-local, Neovim's defaults
 included), autocmds (every group and ungrouped), highlight groups and namespaces.
-Lua callbacks are named by source file and compared by identity, so setup adding,
-changing or removing any of these fails the snapshot. The full after-setup tables
-of commands, keymaps and autocmds follow the diff.
+Each Lua callback is labelled by its source file plus a hash of its source text
+and of the functions it closes over. The hash survives line shifts and stays the
+same across processes, but changes when the callback body is swapped under an
+unchanged description. User-command callbacks are recorded when the command is
+created. So setup adding, changing or removing any of these fails the snapshot. The
+full after-setup tables of commands, keymaps and autocmds follow the diff.
+
+Every visual snapshot also diffs the global registry against its state right after
+setup. This catches mappings, commands, autocmds and highlights that obelus
+installs or overwrites on first use, for example when opening a chat or a
+composer.
 
 Scenarios are in `scenarios.lua`. Each runs at 80x24 and 160x45; `registration`
 runs once. They use synthetic fixtures and the fake transport (`tests/fake.lua`)
@@ -74,14 +82,15 @@ diff.
 
 - `make ui-mutations` (`tests/ui/mutations.sh`, about 2 min) first checks that the
   unmodified tree passes. If it doesn't, for example because the Neovim version is
-  wrong, the script stops and reports an invalid environment. It then applies 15
-  one-line mutations to a temp copy, covering visuals, extmarks, float stacking and
+  wrong, the script stops and reports an invalid environment. It then applies 18
+  small mutations to a temp copy, covering visuals, extmarks, float stacking and
   setup. A mutation counts as caught only on a baseline mismatch with no harness
   error. See `MUTATIONS.md` for the last results.
 - `make ui-selftest` (`tests/ui/selftest.sh`, about 1 min) checks the harness
   itself:
-  - a forced RPC timeout, a scenario error and SIGTERM mid-run each leave no live
-    child and no temp dir;
+  - a forced RPC timeout, a scenario error, SIGTERM mid-run and SIGKILL of
+    `run.sh` each leave no live child and no temp dir;
+  - an unrelated `nvim --embed` running alongside is never signalled;
   - a 2.5 s wall-clock stall between arranging and capturing leaves the
     progress, stream and popup snapshots byte-identical.
 
@@ -108,11 +117,33 @@ diff.
   however slow the host is. `progress_finish_cleared` advances the clock 2000 ms to
   pin the cleared state. The only real-time limit is the RPC deadlock guard
   (120 s; `OBELUS_UI_GUARD_MS`).
-- Process hygiene: `rpc.lua` ends each child in three awaited steps: `:qall!`,
-  then SIGTERM, then SIGKILL. It releases the child's handles only after the
-  child has exited. `run.sh` waits for the parent in the background and records
-  every child pid. On any exit it kills survivors by exact pid and removes its
-  temp dir. A child that survives a run that otherwise passed makes the run fail.
+
+  The virtual clock covers only what today's scenarios use. It is not a full
+  event-loop model. Limits:
+  - Only `uv.new_timer()` method calls (`start`, `stop`, `close`, `again`, …),
+    `vim.defer_fn`, `vim.schedule`/`schedule_wrap` and `uv.now()` are virtual. The
+    functional API (`uv.timer_start(t, …)`) errors on a virtual timer. Timers
+    created before the child boots stay real. `os.clock()` and `uv.hrtime()` still
+    advance.
+  - Ordering differs from the real loop in one case. A callback scheduled from a
+    timer runs before the next due timer, whereas the real loop runs that timer
+    first.
+  - Virtual timer callbacks do not run in a fast-event context. A callback that
+    would hit E5560 for a missing `schedule_wrap` succeeds here. The behaviour
+    specs (`make specs`) still run on real timers and cover that.
+- Process hygiene: no process is ever signalled because of a recorded pid.
+  - `rpc.lua` ends each child in three awaited steps: `:qall!`, then SIGTERM,
+    then SIGKILL. It releases the child's handles only after the child has exited,
+    and errors if it can't.
+  - On INT or TERM, `run.sh` first stops the parent with SIGSTOP. The parent is
+    still its own unreaped child, so that pid can't have been reused, and a stopped
+    parent can't reap its children, so their pids stay fixed. `run.sh` then
+    SIGKILLs exactly the parent's children (`pgrep -P`), then the parent, and
+    removes its temp dir.
+  - SIGKILL of `run.sh` runs no trap. Instead the parent notices it has been
+    reparented, stops after the current scenario (its child is still reaped) and
+    removes the run's dir by exact path. Until the current scenario ends,
+    including a pending RPC guard, the parent and child stay alive.
 
 ## How it works
 
