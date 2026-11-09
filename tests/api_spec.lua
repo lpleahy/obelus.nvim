@@ -789,6 +789,42 @@ T.it("unclaimed scheme:// comments behave as before: with no backend and with a 
   clear_backends()
 end)
 
+T.it("a scheme claimed after a batch: its later text never reaches the batch's rounds", function()
+  local ctx = T.fresh()
+  clear_backends()
+  fresh_claims()
+  local batch_mod = require("obelus.batch")
+  local plain = ctx.store.add(T.comment({ file = ctx.root .. "/a.lua", comment = "plain target" }))
+  local late = ctx.store.add(T.comment({ file = "LuOdDa://guide/late", comment = "innocuous at first" }))
+  local log, restore = spy_transports()
+  local b = batch_mod.create({ plain, late }, {})
+  T.ok(b and b.id, "batch created")
+  ctx.store.update_batch(b.id, { session_id = "sess-invented" })
+  -- the plain member got a reply so it stays open; then the URI scheme is claimed
+  ctx.store.add_turn(plain.id, "agent", "noted")
+  ctx.store.add_turn(plain.id, "you", "please continue")
+  ctx.store.clear_dispatching(plain.id)
+  ctx.store.clear_dispatching(late.id)
+  api.claim_schemes({ "luodda" })
+  ctx.store.update(late.id, { comment = "POST_CLAIM_PRIVATE_SENTINEL", status = "resolved" })
+  batch_mod.continue("go on", ctx.store.get_batch(b.id))
+  restore()
+  T.eq(#log, 2, "create + continue dispatched")
+  local round = log[2].payload
+  T.ok(not round.markdown:find("POST_CLAIM_PRIVATE_SENTINEL", 1, true), "sentinel not in the round prompt")
+  T.ok(not round.markdown:find("LuOdDa://", 1, true), "the claimed record is not even named")
+  T.eq(
+    vim.tbl_map(function(c)
+      return c.id
+    end, round.comments),
+    { plain.id },
+    "the plain target survives as the only target"
+  )
+  -- the tag-leave summary never names a claimed member either
+  local brief = require("obelus.format").tag_deltas("t", { joins = {}, leaves = { { id = late.id, c = late } } })
+  T.ok(not brief:find("LuOdDa", 1, true) and brief:find(late.id, 1, true), "a claimed leaver is shown by id only")
+end)
+
 T.it("with no backend registered, ordinary file comments are untouched", function()
   local ctx = T.fresh()
   clear_backends()

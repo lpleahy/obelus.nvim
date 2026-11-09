@@ -181,7 +181,10 @@ function M.tag_deltas(tag, delta, opts)
     lines[#lines + 1] = M.thread_full(c, { include_drafts = opts.include_drafts })
   end
   for _, l in ipairs(delta.leaves or {}) do
-    if l.c then
+    if l.c and not store.agent_eligible(l.c) then
+      -- obelus.api: a member whose scheme was claimed since: say it left, show nothing of it
+      lines[#lines + 1] = "LEFT the conversation (do not act on it): " .. l.id
+    elseif l.c then
       lines[#lines + 1] = "LEFT the conversation (do not act on it): "
         .. M.relpath(l.c.file)
         .. " "

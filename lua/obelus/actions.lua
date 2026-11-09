@@ -98,7 +98,7 @@ function M.apply(key, allowed)
       and (not allowed or allowed[a.comment_id])
     then
       local c = store.get(a.comment_id)
-      if c then
+      if c and store.agent_eligible(c) then -- obelus.api: an agent never writes into a claimed thread
         local applied = true
         if a.action == "resolve" then
           store.resolve(c.id)
