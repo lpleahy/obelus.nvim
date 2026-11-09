@@ -1575,7 +1575,13 @@ api.approve({opts})                                   *obelus.api.approve()*
       details    optional string or list of lines
       on_result  fun(approved: boolean) — called exactly once
       timeout_ms optional, default 120000 (then Deny)
-    Returns { cancel = fun() } (cancel denies).
+      on_open    optional fun(handle) — called when THIS prompt's float
+                 opens (it may first wait behind another prompt)
+    Returns a handle scoped to this prompt: { cancel = fun(), focus = fun() }.
+    `cancel()` denies it (queued or open). `focus()` focuses it like
+    |:ObelusApprove| and returns true, but only while it is the open
+    prompt: on a queued, decided or stale handle it does nothing and
+    returns false.
     - The float opens unfocused and cannot be reached with CTRL-W, so
       typing never lands in it.
     - To decide, focus it with |:ObelusApprove| (or `api.approve_focus()`).
@@ -1586,9 +1592,9 @@ api.approve({opts})                                   *obelus.api.approve()*
       the queue empty: more than 10000 queued keys, sustained input, or a
       queued Esc, q, CTRL-C or Enter denies instead. Once armed, `a`
       approves.
-    - Everything else denies: Enter, Esc, q, CTRL-C, any other key once
-      armed, leaving or closing the prompt, the UI detaching, the timeout,
-      and an error while opening it.
+    - Everything else denies: Enter, Esc, q and CTRL-C at once (also while
+      still unarmed), any other key once armed, leaving or closing the
+      prompt, the UI detaching, the timeout, and an error while opening it.
     - With no UI attached (headless, `#nvim_list_uis() == 0`) it denies at
       once and shows nothing.
     - Prompts queue; one is shown at a time.

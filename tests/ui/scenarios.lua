@@ -492,6 +492,24 @@ scenario("api_approve_queued_typeahead", function()
   C.settle()
 end)
 
+-- Enter typed (processed normally) while the focused prompt is still UNARMED
+-- denies at once, like Esc/q/<C-c> (Luodda parity): the float is gone and the
+-- decision shows as a notification
+scenario("api_approve_enter_unarmed", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    on_result = function(v)
+      vim.notify("approval result: " .. tostring(v))
+    end,
+  })
+  C.settle()
+  assert(require("obelus.api").approve_focus(), "focus failed")
+  assert(not require("obelus.approve")._active().armed, "should still be unarmed")
+  vim.api.nvim_feedkeys(vim.keycode("<CR>"), "x", false)
+  C.settle()
+end)
+
 -- ── setup / keymap registration path ──────────────────────────────────────────
 scenario("registration", function()
   fresh()

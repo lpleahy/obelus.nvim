@@ -25,6 +25,11 @@ local M = {}
 ---@field details? string|string[] optional extra lines (plain text)
 ---@field on_result fun(approved: boolean) called exactly once
 ---@field timeout_ms? integer deny after this long (default 120000)
+---@field on_open? fun(handle: obelus.ApproveHandle) called when THIS prompt's float opens (it may wait in the queue)
+
+---@class obelus.ApproveHandle
+---@field cancel fun() deny this prompt (queued or open); no-op once decided
+---@field focus fun(): boolean focus THIS prompt (as :ObelusApprove does); false — and nothing happens — while it is queued, or once it is closed
 
 M.arm_ms = 600 -- the unarmed (typeahead-discard) window after focusing
 M.timeout_ms = 120000
@@ -220,14 +225,16 @@ local function open(a)
   map("a", function()
     decide(true)
   end)
-  for _, key in ipairs({ "<CR>", "<Up>", "<Down>", "<Left>", "<Right>", "<Tab>", "<BS>" }) do
+  for _, key in ipairs({ "<Up>", "<Down>", "<Left>", "<Right>", "<Tab>", "<BS>" }) do
     map(key, function()
       decide(false)
     end)
   end
-  for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do
+  -- Enter (Deny's own key), q, Esc and <C-c> deny at once, armed or not
+  -- (Luodda parity: a deliberate Enter while unarmed is a deny, not ignored)
+  for _, key in ipairs({ "<CR>", "q", "<Esc>", "<C-c>" }) do
     map(key, function()
-      finish(false, a) -- dismissing denies at once, armed or not
+      finish(false, a)
     end)
   end
   a.group = vim.api.nvim_create_augroup("obelus_approve", { clear = true })
@@ -279,7 +286,10 @@ pump = function()
   ensure_command()
   local ok = pcall(open, a)
   if not ok then
-    finish(false, a)
+    return finish(false, a)
+  end
+  if a.on_open then
+    pcall(a.on_open, a.handle) -- external: it may focus, cancel or queue more
   end
 end
 
@@ -287,8 +297,13 @@ end
 ---`arm_ms`, queued input is drained, and on the following loop turn drained
 ---again before `a` can approve (see the header).
 function M.focus()
-  local a = active
-  if not a or a.done or not a.win or not vim.api.nvim_win_is_valid(a.win) or vim.fn.mode() ~= "n" then
+  return M._focus(active)
+end
+
+-- focus prompt `a` — only while it is THE open prompt; a queued, closed or
+-- stale prompt is left alone (false)
+function M._focus(a)
+  if not a or a ~= active or a.done or not a.win or not vim.api.nvim_win_is_valid(a.win) or vim.fn.mode() ~= "n" then
     return false
   end
   a.armed = false
@@ -336,11 +351,10 @@ function M.approve(opts)
     title = opts.title and clean(opts.title) or nil,
     on_result = opts.on_result,
     timeout_ms = tonumber(opts.timeout_ms) or M.timeout_ms,
+    on_open = type(opts.on_open) == "function" and opts.on_open or nil,
     armed = false,
   }
-  queue[#queue + 1] = a
-  pump()
-  return {
+  a.handle = {
     cancel = function()
       for i = #queue, 1, -1 do
         if queue[i] == a then
@@ -351,7 +365,13 @@ function M.approve(opts)
       end
       finish(false, a)
     end,
+    focus = function()
+      return M._focus(a)
+    end,
   }
+  queue[#queue + 1] = a
+  pump()
+  return a.handle
 end
 
 -- test/teardown hook: deny everything pending

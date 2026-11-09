@@ -1643,6 +1643,73 @@ T.it("approve: a queued Esc during the drain is honoured as a dismissal", functi
   end)
 end)
 
+T.it("approve: Enter while still unarmed denies at once (Luodda parity)", function()
+  with_ui(function()
+    approve.arm_ms = 600
+    local results, _, a = prompt()
+    T.ok(api.approve_focus())
+    T.ok(not a.armed, "unarmed")
+    keys("<CR>")
+    T.eq(results, { false }, "denied at once")
+    T.ok(not vim.api.nvim_win_is_valid(a.win), "closed")
+  end)
+end)
+
+T.it("approve handle: A open, B queued — B's focus is a no-op; B opens after A; stale focus is a no-op", function()
+  with_ui(function()
+    approve.arm_ms = 20
+    local ra, rb, opened = {}, {}, {}
+    local src = vim.api.nvim_get_current_win()
+    local ha = api.approve({
+      summary = "A",
+      on_result = function(v)
+        ra[#ra + 1] = v
+      end,
+      on_open = function(h)
+        opened[#opened + 1] = "A"
+        T.ok(h ~= nil and h.focus ~= nil, "on_open gets this prompt's handle")
+      end,
+    })
+    local hb = api.approve({
+      summary = "B",
+      on_result = function(v)
+        rb[#rb + 1] = v
+      end,
+      on_open = function()
+        opened[#opened + 1] = "B"
+      end,
+    })
+    T.eq(opened, { "A" }, "only A is open")
+    local a = approve._active()
+    T.eq(hb.focus(), false, "B is queued: focus does nothing")
+    T.eq(vim.api.nvim_get_current_win(), src, "and A was NOT focused by it")
+    T.ok(not a.armed)
+    -- A closes (denied); B opens and reports it
+    T.ok(ha.focus(), "A's own handle focuses A")
+    keys("q")
+    T.eq(ra, { false })
+    T.ok(
+      vim.wait(200, function()
+        return #opened == 2
+      end, 5),
+      "B opened"
+    )
+    T.eq(opened, { "A", "B" })
+    local b = approve._active()
+    -- A's handle is stale now: focus and cancel do nothing to B
+    T.eq(ha.focus(), false, "stale focus is a no-op")
+    T.ok(not b.armed and vim.api.nvim_get_current_win() ~= b.win, "B untouched by A's handle")
+    ha.cancel()
+    T.eq(rb, {}, "stale cancel does nothing to B")
+    T.ok(hb.focus(), "B's handle focuses B")
+    wait_armed(b)
+    keys("a")
+    T.eq(rb, { true })
+    T.eq(ra, { false }, "A decided exactly once")
+    T.eq(hb.focus(), false, "closed: no-op")
+  end)
+end)
+
 T.it("approve: a queued prompt waits its turn; validation rejects a missing on_result", function()
   T.ok(not pcall(api.approve, { summary = "x" }))
   with_ui(function()
