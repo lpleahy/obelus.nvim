@@ -149,6 +149,11 @@ local function run_one(sc, w, h)
       { repo = repo, root = root, tmp = tmp }
     )
     child:lua("return require('scenarios').run(...)", sc.name)
+    -- one no-op key through the input queue, then a synchronous round-trip: the
+    -- child's state loop runs once, so a pending `startinsert` (open_thread, the
+    -- composers) takes effect exactly as it would after a real keypress
+    child:request("nvim_input", { "<Ignore>" })
+    child:lua("return _G.__ui.settle()")
     if sc.kind == "registration" then
       local lines = child:lua("return _G.__ui.registration()")
       return string.format("# obelus ui snapshot: %s @ %dx%d\n", sc.name, w, h) .. table.concat(lines, "\n") .. "\n"

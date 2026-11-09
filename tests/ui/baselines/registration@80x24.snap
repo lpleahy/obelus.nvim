@@ -1,0 +1,285 @@
+# obelus ui snapshot: registration @ 80x24
+## user commands
+EditQuery nargs="?" range=nil bang=false complete=<function> desc="Edit treesitter query"
+Inspect nargs="0" range=nil bang=true complete=nil desc="Inspect highlights and extmarks at the cursor"
+InspectTree nargs="?" range="0" bang=false complete=nil desc="Inspect treesitter language tree for buffer"
+ObelusAsk nargs="?" range="." bang=false complete=nil desc="obelus: ask a question about the line/selection (read-only)"
+ObelusAskClear nargs="0" range=nil bang=false complete=nil desc="obelus: clear every ask thread"
+ObelusBandStyle nargs="0" range=nil bang=false complete=nil desc="obelus: toggle thread display style (inline band | hover popup)"
+ObelusBands nargs="0" range=nil bang=false complete=nil desc="obelus: toggle inline comment bands in this buffer"
+ObelusCancel nargs="0" range=nil bang=false complete=nil desc="obelus: cancel the in-flight dispatch at cursor"
+ObelusChat nargs="0" range=nil bang=false complete=nil desc="obelus: open the thread chat sidebar for the comment at cursor"
+ObelusClear nargs="0" range=nil bang=false complete=nil desc="obelus: clear all comments"
+ObelusComment nargs="0" range="." bang=false complete=nil desc="obelus: add a review comment"
+ObelusContinue nargs="?" range=nil bang=false complete=nil desc="obelus: continue the open batch conversation (next round)"
+ObelusDelete nargs="0" range=nil bang=false complete=nil desc="obelus: delete comment at cursor"
+ObelusDispatch nargs="0" range=nil bang=false complete=nil desc="obelus: dispatch comment at cursor to a background agent"
+ObelusDispatchAll nargs="?" range=nil bang=true complete=nil desc="obelus: dispatch every pending thread â€þX” one parallel agent each"
+ObelusEdit nargs="0" range=nil bang=false complete=nil desc="obelus: edit comment at cursor"
+ObelusEdits nargs="?" range=nil bang=false complete=<function> desc="obelus: toggle whether agents may apply edits (global; new agents only)"
+ObelusHints nargs="0" range=nil bang=false complete=nil desc="obelus: toggle keybind hint footers"
+ObelusImgClean nargs="0" range=nil bang=false complete=nil desc="obelus: delete .ai/img files unreferenced by any stored text"
+ObelusJobs nargs="0" range=nil bang=false complete=nil desc="obelus: open the background-job output log"
+ObelusList nargs="?" range=nil bang=false complete=<function> desc="obelus: open the review list"
+ObelusLoad nargs="0" range=nil bang=false complete=nil desc="obelus: reload reviews from disk"
+ObelusLogs nargs="0" range=nil bang=false complete=nil desc="obelus: open the run/error log (alias of :ObelusJobs)"
+ObelusMode nargs="?" range=nil bang=false complete=<function> desc="obelus: toggle/set engagement mode (inline|sidebar)"
+ObelusPanel nargs="0" range=nil bang=false complete=nil desc="obelus: toggle the review threads sidebar"
+ObelusPerms nargs="?" range=nil bang=false complete=<function> desc="obelus: set (or cycle) the agent permission level â€þX” read-only | project-edit | unrestricted"
+ObelusProject nargs="0" range=nil bang=false complete=nil desc="obelus: open the project thread (get-or-create)"
+ObelusPrompt nargs="0" range=nil bang=false complete=nil desc="obelus: show the last prompt sent to the agent (verbatim)"
+ObelusQuickReply nargs="0" range=nil bang=false complete=nil desc="obelus: quick reply to the thread at cursor (inline float)"
+ObelusRenderInfo nargs="0" range=nil bang=false complete=nil desc="obelus: dump the renderer decision inputs for the chat/preview"
+ObelusRenderer nargs="?" range=nil bang=false complete=<function> desc="obelus: set the chat markdown renderer (markview|builtin|treesitter|render-markdown|auto)"
+ObelusReopen nargs="0" range=nil bang=false complete=nil desc="obelus: reopen comment at cursor"
+ObelusResolve nargs="0" range=nil bang=false complete=nil desc="obelus: resolve comment at cursor"
+ObelusRespond nargs="0" range=nil bang=false complete=nil desc="obelus: respond to the thread at cursor"
+ObelusSave nargs="0" range=nil bang=false complete=nil desc="obelus: save reviews to disk"
+ObelusSubmit nargs="?" range=nil bang=false complete=<function> desc="obelus: submit the review batch"
+ObelusTag nargs="?" range=nil bang=false complete=<function> desc="obelus: tag/untag the thread at cursor (curates batch membership)"
+ObelusTagMode nargs="?" range=nil bang=false complete=<function> desc="obelus: toggle sticky tagging mode (new threads inherit the tag)"
+ObelusTagThread nargs="0" range=nil bang=false complete=nil desc="obelus: open the active tag's meta/batch thread (get-or-create)"
+ObelusToggle nargs="?" range=nil bang=false complete=<function> desc="obelus: toggle annotations"
+ObelusToggleResolved nargs="0" range=nil bang=false complete=nil desc="obelus: show/hide resolved comments"
+Open nargs="1" range=nil bang=false complete="file" desc="Open file with system default handler. See :help vim.ui.open()"
+## keymaps (global)
+i <C-S> desc="vim.lsp.buf.signature_help()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+i <C-U> desc=":help i_CTRL-U-default" silent=0 noremap=1 nowait=0 expr=0 rhs="<C-G>u<C-U>"
+i <C-W> desc=":help i_CTRL-W-default" silent=0 noremap=1 nowait=0 expr=0 rhs="<C-G>u<C-W>"
+i <S-Tab> desc="vim.snippet.jump if active, otherwise <S-Tab>" silent=1 noremap=1 nowait=0 expr=1 rhs="<lua>"
+i <Tab> desc="vim.snippet.jump if active, otherwise <Tab>" silent=1 noremap=1 nowait=0 expr=1 rhs="<lua>"
+n & desc=":help &-default" silent=0 noremap=1 nowait=0 expr=0 rhs=":&&<CR>"
+n <C-L> desc=":help CTRL-L-default" silent=0 noremap=1 nowait=0 expr=0 rhs="<Cmd>nohlsearch|diffupdate|normal! <C-L><CR>"
+n <C-W><C-D> desc="Show diagnostics under the cursor" silent=0 noremap=0 nowait=0 expr=0 rhs="<C-W>d"
+n <C-W>d desc="Show diagnostics under the cursor" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n <M-d> desc="obelus: thread down half-page" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n <M-u> desc="obelus: thread up half-page" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n Y desc=":help Y-default" silent=0 noremap=1 nowait=0 expr=0 rhs="y$"
+n [  desc="Add empty line above cursor" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+n [<C-L> desc=":lpfile" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [<C-Q> desc=":cpfile" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [<C-T> desc=":ptprevious" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [A desc=":rewind" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [B desc=":brewind" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [D desc="Jump to the first diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [L desc=":lrewind" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [Q desc=":crewind" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [T desc=":trewind" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [a desc=":previous" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [b desc=":bprevious" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [d desc="Jump to the previous diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [l desc=":lprevious" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [q desc=":cprevious" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n [t desc=":tprevious" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \o? desc="obelus: toggle keybind hints" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oA desc="obelus: active tag's meta/batch thread" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oB desc="obelus: toggle band/popup style" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oC desc="obelus: cancel dispatch at cursor" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oD desc="obelus: dispatch all in parallel (one agent each)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oE desc="obelus: cycle the agent permission level (global)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oG desc="obelus: toggle sticky tagging mode" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oI desc="obelus: clear every ask thread" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oJ desc="obelus: scroll thread down" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oK desc="obelus: scroll thread up" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oR desc="obelus: toggle resolved at cursor" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oS desc="obelus: force a new batch (even if one is open)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oT desc="obelus: toggle (global)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oX desc="obelus: clear all" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oa desc="obelus: project thread" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \ob desc="obelus: toggle inline bands" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oc desc="obelus: comment line" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \od desc="obelus: dispatch one (background)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oe desc="obelus: toggle agent edits (global)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \of desc="obelus: quick reply (inline float)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \og desc="obelus: tag/untag thread (batch group)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oh desc="obelus: show/hide resolved" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oi desc="obelus: ask about this line (read-only)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oj desc="obelus: job output log" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \ol desc="obelus: list" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \om desc="obelus: toggle inline/sidebar mode" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oo desc="obelus: open full thread (scrollable)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \op desc="obelus: toggle threads sidebar" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oq desc="obelus: quickfix" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \or desc="obelus: reply to thread at cursor" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \os desc="obelus: submit / continue batch (auto)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \ot desc="obelus: toggle (buffer)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \ox desc="obelus: delete at cursor" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n \oz desc="obelus: pin/collapse band" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]  desc="Add empty line below cursor" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+n ]<C-L> desc=":lnfile" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]<C-Q> desc=":cnfile" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]<C-T> desc=":ptnext" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]A desc=":last" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]B desc=":blast" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]D desc="Jump to the last diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]L desc=":llast" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]Q desc=":clast" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]T desc=":tlast" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]a desc=":next" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]b desc=":bnext" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]d desc="Jump to the next diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]l desc=":lnext" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]q desc=":cnext" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n ]t desc=":tnext" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n gO desc="vim.lsp.buf.document_symbol()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n gc desc="Toggle comment" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+n gcc desc="Toggle comment line" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+n gra desc="vim.lsp.buf.code_action()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n gri desc="vim.lsp.buf.implementation()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n grn desc="vim.lsp.buf.rename()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n grr desc="vim.lsp.buf.references()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n grt desc="vim.lsp.buf.type_definition()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n grx desc="vim.lsp.codelens.run()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+n gx desc="Opens filepath or URI under cursor with the system handler (file explorer, web browser, â€¦)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+o an desc="Select parent (outer) node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+o gc desc="Comment textobject" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+o in desc="Select child (inner) node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+s <C-S> desc="vim.lsp.buf.signature_help()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+s <S-Tab> desc="vim.snippet.jump if active, otherwise <S-Tab>" silent=1 noremap=1 nowait=0 expr=1 rhs="<lua>"
+s <Tab> desc="vim.snippet.jump if active, otherwise <Tab>" silent=1 noremap=1 nowait=0 expr=1 rhs="<lua>"
+x # desc=":help v_#-default" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+x * desc=":help v_star-default" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+x @ desc=":help v_@-default" silent=1 noremap=1 nowait=0 expr=1 rhs="mode() ==# 'V' ? ':normal! @'.getcharstr().'<CR>' : '@'"
+x Q desc=":help v_Q-default" silent=1 noremap=1 nowait=0 expr=1 rhs="mode() ==# 'V' ? ':normal! @<C-R>=reg_recorded()<CR><CR>' : 'Q'"
+x [N desc="Select previous sibling node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x [n desc="Select previous node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x \oc desc="obelus: comment selection" silent=1 noremap=1 nowait=0 expr=0 rhs=":<C-U>lua require('obelus').comment_visual()<CR>"
+x \oi desc="obelus: ask about the selection (read-only)" silent=1 noremap=1 nowait=0 expr=0 rhs=":<C-U>lua require('obelus').ask_visual()<CR>"
+x ]N desc="Select next sibling node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x ]n desc="Select next node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x an desc="Select parent (outer) node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x gc desc="Toggle comment" silent=0 noremap=1 nowait=0 expr=1 rhs="<lua>"
+x gra desc="vim.lsp.buf.code_action()" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x gx desc="Opens filepath or URI under cursor with the system handler (file explorer, web browser, â€¦)" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+x in desc="Select child (inner) node" silent=0 noremap=1 nowait=0 expr=0 rhs="<lua>"
+## autocmds
+obelus BufEnter pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+obelus BufReadPost pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+obelus BufWritePost pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+obelus ColorScheme pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+obelus CursorMoved pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+obelus DirChanged pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+obelus WinEnter pattern="*" buffer=false once=false desc=nil cmd="<lua>"
+## highlight groups (Obelus*)
+ObelusBorder: fg=#e0e2ea
+ObelusChrome: fg=#9b9ea4
+ObelusInput: fg=#e0e2ea bg=#3b3d43
+ObelusInputBar: fg=#e0e2ea bg=#3b3d43
+ObelusInputBorder: fg=#e0e2ea bg=#3b3d43 bold
+ObelusInputHeader: fg=#e0e2ea bg=#3b3d43 bold
+ObelusMention: fg=#fce094 bold
+ObelusMetaThread: fg=#e0e2ea bold
+ObelusRangeText: fg=#eef1f8 bg=#007373 -> DiffText
+ObelusReplyBar: fg=#b3f6c0 bg=#212828
+ObelusReplyBarN: fg=#b3f6c0
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyCodeLabel: fg=#9b9ea4 bg=#293330
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusReplyHeaderN: fg=#b3f6c0 bold
+ObelusReplyItalic: fg=#e0e2ea bg=#212828 italic
+ObelusReplyLink: fg=#e0e2ea underline
+ObelusReplyMention: fg=#fce094 bg=#212828 bold
+ObelusReplyMeta: fg=#9b9ea4 bg=#212828
+ObelusReplyRule: fg=#b3f6c0 bg=#212828
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyStrike: fg=#9b9ea4 strikethrough
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusSign: fg=#eef1f8 bg=#007373 -> DiffText
+ObelusTagBadge: fg=#e0e2ea bold
+ObelusThreadBar: fg=#8cf8f7 bg=#1e282d
+ObelusThreadBarN: fg=#8cf8f7
+ObelusThreadBg: bg=#1e282d
+ObelusThreadBold: fg=#e0e2ea bg=#1e282d bold
+ObelusThreadCode: fg=#8cf8f7 bg=#243338
+ObelusThreadCodeLabel: fg=#9b9ea4 bg=#243338
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadHeaderN: fg=#8cf8f7 bold
+ObelusThreadItalic: fg=#e0e2ea bg=#1e282d italic
+ObelusThreadLink: fg=#e0e2ea underline
+ObelusThreadMention: fg=#fce094 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRule: fg=#8cf8f7 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadStrike: fg=#9b9ea4 strikethrough
+ObelusThreadTag: fg=#e0e2ea bold
+ObelusThreadText: fg=#e0e2ea bg=#1e282d
+ObelusVisual: bg=#909298
+Obelus_MarkviewBlockQuoteDefault: fg=#9b9ea4
+Obelus_MarkviewCode: bg=#212828
+Obelus_MarkviewCodeFg: fg=#212828
+Obelus_MarkviewCodeInfo: fg=#9b9ea4 bg=#212828
+Obelus_MarkviewCodeLabel: fg=#9b9ea4 bg=#212828
+Obelus_MarkviewHeading1: bg=#212828
+Obelus_MarkviewHeading2: bg=#212828
+Obelus_MarkviewHeading3: bg=#212828
+Obelus_MarkviewHeading4: bg=#212828
+Obelus_MarkviewHeading5: bg=#212828
+Obelus_MarkviewHeading6: bg=#212828
+Obelus_MarkviewHyperlink: fg=#9b9ea4
+Obelus_MarkviewIcon0: bg=#212828
+Obelus_MarkviewIcon1: bg=#212828
+Obelus_MarkviewIcon2: bg=#212828
+Obelus_MarkviewIcon3: bg=#212828
+Obelus_MarkviewIcon3Fg: fg=#9b9ea4
+Obelus_MarkviewIcon4: bg=#212828
+Obelus_MarkviewIcon5: bg=#212828
+Obelus_MarkviewIcon6: bg=#212828
+Obelus_MarkviewInlineCode: fg=#8cf8f7
+Obelus_MarkviewPalette0: bg=#212828
+Obelus_MarkviewPalette0Bg: bg=#212828
+Obelus_MarkviewPalette1: bg=#212828
+Obelus_MarkviewPalette1Bg: bg=#212828
+Obelus_MarkviewPalette2: bg=#212828
+Obelus_MarkviewPalette2Bg: bg=#212828
+Obelus_MarkviewPalette3: bg=#212828
+Obelus_MarkviewPalette3Bg: bg=#212828
+Obelus_MarkviewPalette4: bg=#212828
+Obelus_MarkviewPalette4Bg: bg=#212828
+Obelus_MarkviewPalette5: bg=#212828
+Obelus_MarkviewPalette5Bg: bg=#212828
+Obelus_MarkviewPalette6: bg=#212828
+Obelus_MarkviewPalette6Bg: bg=#212828
+Obelus_MarkviewPalette7: fg=#e0e2ea bold
+Obelus_MarkviewPalette7Bg: bg=#212828
+Obelus_MarkviewPunctuationSpecial: fg=#8cf8f7
+Obelus_RenderMdBullet: fg=#e0e2ea bg=#212828
+Obelus_RenderMdChecked: fg=#8cf8f7
+Obelus_RenderMdCode: bg=#212828
+Obelus_RenderMdCodeBorder: bg=#212828
+Obelus_RenderMdCodeBorderFg: fg=#212828
+Obelus_RenderMdCodeFallback: fg=#e0e2ea
+Obelus_RenderMdCodeInfo: fg=#9b9ea4 bg=#212828
+Obelus_RenderMdCodeInline: fg=#8cf8f7
+Obelus_RenderMdCodeInlineFg: <cleared>
+Obelus_RenderMdDash: fg=#4f5258
+Obelus_RenderMdH1: fg=#e0e2ea bg=#212828
+Obelus_RenderMdH1Bg: bg=#212828
+Obelus_RenderMdH2: fg=#e0e2ea bg=#212828
+Obelus_RenderMdH2Bg: bg=#212828
+Obelus_RenderMdH3: fg=#e0e2ea bg=#212828
+Obelus_RenderMdH3Bg: bg=#212828
+Obelus_RenderMdH4: fg=#e0e2ea bg=#212828
+Obelus_RenderMdH4Bg: bg=#212828
+Obelus_RenderMdH5: fg=#e0e2ea bg=#212828
+Obelus_RenderMdH5Bg: bg=#212828
+Obelus_RenderMdH6: fg=#e0e2ea bg=#212828
+Obelus_RenderMdH6Bg: bg=#212828
+Obelus_RenderMdHeadBorderFg: fg=#212828
+Obelus_RenderMdLink: fg=#9b9ea4
+Obelus_RenderMdLinkTitle: fg=#9b9ea4
+Obelus_RenderMdQuote: fg=#9b9ea4
+Obelus_RenderMdTableHead: fg=#e0e2ea
+Obelus_RenderMdTableRow: fg=#e0e2ea
+Obelus_RenderMdUnchecked: fg=#8cf8f7
+## namespaces (obelus*)
+obelus
+obelus_band
+obelus_mention
+obelus_mention_hl
+obelus_panel
+obelus_panel_conn
+obelus_preview_conn
+obelus_progress
+## notifications

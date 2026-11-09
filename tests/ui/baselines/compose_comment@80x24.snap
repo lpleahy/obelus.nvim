@@ -1,0 +1,85 @@
+# obelus ui snapshot: compose_comment @ 80x24
+## screen
+|-- sample.lua: a small module the fixtures annotate                             |
+|local M = {}                                                                    |
+|                                                                                |
+|local function clamp(x, lo, hi)                                                 |
+|  if x < lo then                                                                |
+|    return lo                                                                   |
+|  end                                                                           |
+|  return math.min(x, hi)                                                        |
+|end                                                                             |
+|                                                                                |
+|function M.scale(values, factor)                                                |
+|  local out = {}                                                                |
+|  for i, v in ipairs(values) do                                                 |
+|    out[i] = clamp(v * factor, 0, 100)                                          |
+|╭ ▎ review: sample.lua ──────────────────────────────────────────────────╮      |
+|│                                                                        │      |
+|│                                                                        │      |
+|│                                                                        │      |
+|╰────────────────────────────────────────────────────────────────────────╯      |
+|  local total = 0                                                               |
+|  for _, v in ipairs(values) do                                                 |
+|    total = total + v                                                           |
+|sample.lua                                                    14,1           Top|
+|-- INSERT --                                                  0,1           All |
+## attrs
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|bccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaa|
+|bddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaa|
+|bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaa|
+|bffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaa|
+|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+|gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg|
+|hhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+## legend
+a default
+b fg=#e0e2ea bg=#3b3d43 bold  [FloatBorder]
+c fg=#e0e2ea bg=#3b3d43 bold  [ObelusInputHeader]
+d fg=#e0e2ea bg=#3b3d43  [NormalFloat+SignColumn]
+e fg=#e0e2ea bg=#3b3d43  [NormalFloat]
+f fg=#e0e2ea bg=#3b3d43  [NormalFloat+EndOfBuffer]
+g fg=#c4c6cd bg=#2c2e33  [StatusLineNC]
+h fg=#b3f6c0  [MsgArea+ModeMsg]
+i default  [MsgArea]
+## cursor
+win=W2 mode=i pos=[1,0] screen=1,13
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=80x22 topline=1 textoff=0
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+W2 float buf=B2([scratch]) screenpos=15,1 size=72x3 topline=1 textoff=2
+  cfg {anchor="NW",border=["╭","─","╮","│","╯","─","╰","│"],col=0,focusable=true,hide=false,mouse=true,relative="win",row=14,style="minimal",title=[[" ▎ review: sample.lua ","ObelusInputHeader"]],title_pos="left",win="W1",zindex=70}
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="eob: ",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="yes:1",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="Normal:ObelusInput,NormalFloat:ObelusInput,SignColumn:ObelusInput,FloatBorder:ObelusInputBorder,FloatTitle:ObelusThreadHeader,EndOfBuffer:ObelusInput",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+B2 [scratch] lines=1 {bufhidden="wipe",buftype="nofile",filetype="obelus_reply",modifiable=true}
+## extmarks
+## notifications
+## highlights
+EndOfBuffer: fg=#e0e2ea bg=#3b3d43 -> NonText
+FloatBorder: fg=#e0e2ea bg=#3b3d43 bold -> NormalFloat
+FloatTitle: fg=#8cf8f7 bg=#1e282d bold -> Title
+Normal: fg=#e0e2ea bg=#3b3d43
+NormalFloat: fg=#e0e2ea bg=#3b3d43
+ObelusInput: fg=#e0e2ea bg=#3b3d43
+ObelusInputBorder: fg=#e0e2ea bg=#3b3d43 bold
+ObelusInputHeader: fg=#e0e2ea bg=#3b3d43 bold
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+SignColumn: fg=#e0e2ea bg=#3b3d43

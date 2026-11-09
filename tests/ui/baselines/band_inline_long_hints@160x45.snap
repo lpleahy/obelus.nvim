@@ -1,0 +1,162 @@
+# obelus ui snapshot: band_inline_long_hints @ 160x45
+## screen
+|  -- sample.lua: a small module the fixtures annotate                                                                                                           |
+|▌ local M = {}                                                                                                                                                  |
+|                                                                                                                                                                |
+|   ⋯ 12 above · <leader>oK up · <leader>oJ down                                                                                                                 |
+|  ▎ maps every value to 0 instead of raising. Two options:                                                                                                      |
+|  ▎                                                                                                                                                             |
+|  ▎ 1. Validate factor up front and error() on a negative value.                                                                                                |
+|  ▎ 2. Clamp the input first, then scale — this keeps the contract but changes rounding.                                                                        |
+|  ▎                                                                                                                                                             |
+|  ▎ function M.scale(values, factor)                                                                                                                         lua|
+|  ▎   assert(factor >= 0, "factor must be non-negative")                                                                                                        |
+|  ▎   local out = {}                                                                                                                                            |
+|  ▎   for i, v in ipairs(values) do                                                                                                                             |
+|  ▎     out[i] = clamp(v * factor, 0, 100)                                                                                                                      |
+|  ▎   end                                                                                                                                                       |
+|  ▎   return out                                                                                                                                                |
+|  ▎ end                                                                                                                                                         |
+|  ▎                                                                                                                                                             |
+|  ▎ ╭─────────────┬───────────────────┬──────╮                                                                                                                  |
+|  ▎ │ option      │ breaks callers    │ cost │                                                                                                                  |
+|  ▎ ├─────────────┼───────────────────┼──────┤                                                                                                                  |
+|  ▎ │ validate    │ yes, on bad input │ O(1) │                                                                                                                  |
+|  ▎ │ clamp first │ no                │ O(n) │                                                                                                                  |
+|  ▎ ╰─────────────┴───────────────────┴──────╯                                                                                                                  |
+|  ▎                                                                                                                                                             |
+|  ▎ │ I'd go with option 1: it fails loudly, which matches M.sum's behaviour.                                                                                   |
+|  ▎ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────|
+|   ⋯ latest · <leader>oK up · <leader>oo full                                                                                                                   |
+|                                                                                                                                                                |
+|  local function clamp(x, lo, hi)                                                                                                                               |
+|    if x < lo then                                                                                                                                              |
+|      return lo                                                                                                                                                 |
+|    end                                                                                                                                                         |
+|    return math.min(x, hi)                                                                                                                                      |
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|  function M.scale(values, factor)                                                                                                                              |
+|    local out = {}                                                                                                                                              |
+|    for i, v in ipairs(values) do                                                                                                                               |
+|      out[i] = clamp(v * factor, 0, 100)                                                                                                                        |
+|    end                                                                                                                                                         |
+|    return out                                                                                                                                                  |
+|  end                                                                                                                                                           |
+|sample.lua                                                                                                                                    2,1            Top|
+|                                                                                                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ccdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaffgggggggggggggggggggghgggggggggggggggggggggggggggggggggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjggggggggghhhhhhgggggggggggggghhhhhhhgggggggggggggggggggggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjggggggggggkkkkkggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffllllllllhmnooooonppppppnhppppppnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhqqq|
+|aaffhhrrrrrrnpppppphsshmnhtttttttttttttttttttttttttttttnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffhhlllllhppphshrrhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffhhlllhpnhphllhrrrrrrnppppppnhllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffhhhhpppnpnhshooooonphshppppppnhmnhmmmnhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffhhlllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffhhllllllhppphhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aafflllhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh|
+|aaffiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjuuuuuuuuuuujjjuuuuuuuuuuuuuuuuujjjuuuujjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjgggggggggggjjjgggggggggggggggggjjjggggjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjgggggggggggjjjgggggggggggggggggjjjggggjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aaffjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii|
+|aavvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|aaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww|
+|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+d bg=#1e282d  [ObelusThreadBg]
+e fg=#9b9ea4  [ObelusChrome]
+f fg=#b3f6c0 bg=#212828  [ObelusReplyBar]
+g fg=#e0e2ea bg=#212828  [ObelusReplyText]
+h fg=#b3f6c0 bg=#293330  [ObelusReplyCode]
+i bg=#212828  [ObelusReplyBg]
+j fg=#9b9ea4 bg=#212828  [ObelusReplyMeta]
+k fg=#e0e2ea bg=#212828 italic  [ObelusReplyItalic]
+l fg=#e0e2ea bg=#293330 bold  [ObelusReplyCode+Statement]
+m fg=#e0e2ea bg=#293330  [ObelusReplyCode+Constant]
+n fg=#e0e2ea bg=#293330  [ObelusReplyCode+Delimiter]
+o fg=#8cf8f7 bg=#293330  [ObelusReplyCode+Function]
+p fg=#e0e2ea bg=#293330  [ObelusReplyCode+@variable]
+q fg=#9b9ea4 bg=#293330  [ObelusReplyCodeLabel]
+r fg=#8cf8f7 bg=#293330  [ObelusReplyCode+Special]
+s fg=#e0e2ea bg=#293330  [ObelusReplyCode+Operator]
+t fg=#b3f6c0 bg=#293330  [ObelusReplyCode+String]
+u fg=#e0e2ea bg=#212828 bold  [ObelusReplyBold]
+v fg=#8bbe97  [ObelusReplyRuleN]
+w fg=#e0e2ea bg=#4f5258  [StatusLine]
+x default  [MsgArea]
+## cursor
+win=W1 mode=n pos=[2,0] screen=2,3
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=160x43 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+## extmarks
+B1 ns=obelus (1)
+  1:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B1 ns=obelus_band (1)
+  1:0 {priority=4096,right_gravity=true,virt_lines=[[["","Normal"]],[[" ⋯ 12 above · <leader>oK up · <leader>oJ down ","ObelusChrome"]],[["▎ ","ObelusReplyBar"],["maps every value to ","ObelusReplyText"],["0","ObelusReplyCode"],[" instead of raising. Two options:","ObelusReplyText"],["                                                                                                        ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["","ObelusReplyText"],["                                                                                                                                                              ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["1. ","ObelusReplyMeta"],["Validate ","ObelusReplyText"],["factor","ObelusReplyCode"],[" up front and ","ObelusReplyText"],["error()","ObelusReplyCode"],[" on a negative value.","ObelusReplyText"],["                                                                                                  ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["2. ","ObelusReplyMeta"],["Clamp the ","ObelusReplyText"],["input","ObelusReplyItalic"],[" first, then scale — this keeps the contract but changes rounding.","ObelusReplyText"],["                                                                          ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["","ObelusReplyText"],["                                                                                                                                                              ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["function",["ObelusReplyCode","@keyword.function"]],[" ","ObelusReplyCode"],["M",["ObelusReplyCode","@constant"]],[".",["ObelusReplyCode","@punctuation.delimiter"]],["scale",["ObelusReplyCode","@function"]],["(",["ObelusReplyCode","@punctuation.bracket"]],["values",["ObelusReplyCode","@variable.parameter"]],[",",["ObelusReplyCode","@punctuation.delimiter"]],[" ","ObelusReplyCode"],["factor",["ObelusReplyCode","@variable.parameter"]],[")",["ObelusReplyCode","@punctuation.bracket"]],["                                                                                                                         ","ObelusReplyCode"],["lua","ObelusReplyCodeLabel"],["  ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["  ","ObelusReplyCode"],["assert",["ObelusReplyCode","@function.builtin"]],["(",["ObelusReplyCode","@punctuation.bracket"]],["factor",["ObelusReplyCode","@variable"]],[" ","ObelusReplyCode"],[">=",["ObelusReplyCode","@operator"]],[" ","ObelusReplyCode"],["0",["ObelusReplyCode","@number"]],[",",["ObelusReplyCode","@punctuation.delimiter"]],[" ","ObelusReplyCode"],["\"factor must be non-negative\"",["ObelusReplyCode","@string"]],[")",["ObelusReplyCode","@punctuation.bracket"]],["                                                                                                          ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["  ","ObelusReplyCode"],["local",["ObelusReplyCode","@keyword"]],[" ","ObelusReplyCode"],["out",["ObelusReplyCode","@variable"]],[" ","ObelusReplyCode"],["=",["ObelusReplyCode","@operator"]],[" ","ObelusReplyCode"],["{}",["ObelusReplyCode","@constructor"]],["                                                                                                                                              ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["  ","ObelusReplyCode"],["for",["ObelusReplyCode","@keyword.repeat"]],[" ","ObelusReplyCode"],["i",["ObelusReplyCode","@variable"]],[",",["ObelusReplyCode","@punctuation.delimiter"]],[" ","ObelusReplyCode"],["v",["ObelusReplyCode","@variable"]],[" ","ObelusReplyCode"],["in",["ObelusReplyCode","@keyword"]],[" ","ObelusReplyCode"],["ipairs",["ObelusReplyCode","@function.builtin"]],["(",["ObelusReplyCode","@punctuation.bracket"]],["values",["ObelusReplyCode","@variable"]],[")",["ObelusReplyCode","@punctuation.bracket"]],[" ","ObelusReplyCode"],["do",["ObelusReplyCode","@keyword.repeat"]],["                                                                                                                               ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["    ","ObelusReplyCode"],["out",["ObelusReplyCode","@variable"]],["[",["ObelusReplyCode","@punctuation.bracket"]],["i",["ObelusReplyCode","@variable"]],["]",["ObelusReplyCode","@punctuation.bracket"]],[" ","ObelusReplyCode"],["=",["ObelusReplyCode","@operator"]],[" ","ObelusReplyCode"],["clamp",["ObelusReplyCode","@function.call"]],["(",["ObelusReplyCode","@punctuation.bracket"]],["v",["ObelusReplyCode","@variable"]],[" ","ObelusReplyCode"],["*",["ObelusReplyCode","@operator"]],[" ","ObelusReplyCode"],["factor",["ObelusReplyCode","@variable"]],[",",["ObelusReplyCode","@punctuation.delimiter"]],[" ","ObelusReplyCode"],["0",["ObelusReplyCode","@number"]],[",",["ObelusReplyCode","@punctuation.delimiter"]],[" ","ObelusReplyCode"],["100",["ObelusReplyCode","@number"]],[")",["ObelusReplyCode","@punctuation.bracket"]],["                                                                                                                        ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["  ","ObelusReplyCode"],["end",["ObelusReplyCode","@keyword.repeat"]],["                                                                                                                                                         ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["  ","ObelusReplyCode"],["return",["ObelusReplyCode","@keyword.return"]],[" ","ObelusReplyCode"],["out",["ObelusReplyCode","@variable"]],["                                                                                                                                                  ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["end",["ObelusReplyCode","@keyword.function"]],["                                                                                                                                                           ","ObelusReplyCode"]],[["▎ ","ObelusReplyBar"],["","ObelusReplyText"],["                                                                                                                                                              ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["╭─────────────┬───────────────────┬──────╮","ObelusReplyMeta"],["                                                                                                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ ","ObelusReplyMeta"],["option","ObelusReplyBold"],["     ","ObelusReplyBold"],[" │ ","ObelusReplyMeta"],["breaks callers","ObelusReplyBold"],["   ","ObelusReplyBold"],[" │ ","ObelusReplyMeta"],["cost","ObelusReplyBold"],[" │","ObelusReplyMeta"],["                                                                                                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["├─────────────┼───────────────────┼──────┤","ObelusReplyMeta"],["                                                                                                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ ","ObelusReplyMeta"],["validate","ObelusReplyText"],["   ","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["yes, on bad input","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["O(1)","ObelusReplyText"],[" │","ObelusReplyMeta"],["                                                                                                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ ","ObelusReplyMeta"],["clamp first","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["no","ObelusReplyText"],["               ","ObelusReplyText"],[" │ ","ObelusReplyMeta"],["O(n)","ObelusReplyText"],[" │","ObelusReplyMeta"],["                                                                                                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["╰─────────────┴───────────────────┴──────╯","ObelusReplyMeta"],["                                                                                                                    ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["","ObelusReplyText"],["                                                                                                                                                              ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["│ I'd go with option 1: it fails loudly, which matches ","ObelusReplyMeta"],["M.sum","ObelusReplyCode"],["'s behaviour.","ObelusReplyMeta"],["                                                                                     ","ObelusReplyBg"]],[["▎ ","ObelusReplyRuleN"],["──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────","ObelusReplyRuleN"]],[[" ⋯ latest · <leader>oK up · <leader>oo full ","ObelusChrome"]]],virt_lines_above=false,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+## notifications
+## highlights
+@constant: fg=#e0e2ea -> Constant
+@constructor: fg=#8cf8f7 -> Special
+@function: fg=#8cf8f7 -> Function
+@function.builtin: fg=#8cf8f7 -> Special
+@function.call: fg=#8cf8f7
+@keyword: fg=#e0e2ea bold -> Keyword
+@keyword.function: fg=#e0e2ea bold
+@keyword.repeat: fg=#e0e2ea bold
+@keyword.return: fg=#e0e2ea bold
+@number: fg=#e0e2ea -> Number
+@operator: fg=#e0e2ea -> Operator
+@punctuation.bracket: fg=#e0e2ea
+@punctuation.delimiter: fg=#e0e2ea
+@string: fg=#b3f6c0 -> String
+@variable: fg=#e0e2ea
+@variable.parameter: fg=#e0e2ea
+DiagnosticInfo: fg=#8cf8f7
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusChrome: fg=#9b9ea4
+ObelusReplyBar: fg=#b3f6c0 bg=#212828
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyCodeLabel: fg=#9b9ea4 bg=#293330
+ObelusReplyItalic: fg=#e0e2ea bg=#212828 italic
+ObelusReplyMeta: fg=#9b9ea4 bg=#212828
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBg: bg=#1e282d

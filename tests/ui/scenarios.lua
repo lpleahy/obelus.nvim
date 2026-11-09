@@ -149,6 +149,223 @@ scenario("annotations_linewise_charwise", function()
   C.settle()
 end)
 
+-- a settled conversation: you -> agent -> you -> agent (markdown-heavy last turn)
+local function conversation(ctx, over)
+  local c = add(ctx, over or {})
+  ctx.store.add_turn(c.id, "agent", "It is intended for inputs, but `factor` itself is never checked.")
+  ctx.store.add_turn(c.id, "you", "so what happens with factor = -2? see @sample.lua")
+  ctx.store.add_turn(c.id, "agent", LONG_AGENT)
+  return c
+end
+
+-- a short settled thread: one exchange
+local function short_thread(ctx, over)
+  local c = add(ctx, over or {})
+  ctx.store.add_turn(c.id, "agent", "Yes — **intended**. Inputs are percentages; see `clamp`.")
+  return c
+end
+
+-- ── resolved / hidden states ──────────────────────────────────────────────────
+scenario("resolved_hidden", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  local c = short_thread(ctx, { sl = 11 })
+  ctx.store.resolve(c.id)
+  add(ctx, { sl = 19, comment = "open thread next to a resolved one" })
+  require("obelus.render").render_all()
+  cursor(11) -- on the resolved comment: hidden => no band, only the ✓ sign
+  C.settle()
+end)
+
+scenario("resolved_shown_band", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  local c = short_thread(ctx, { sl = 11 })
+  ctx.store.resolve(c.id)
+  require("obelus.render").toggle_resolved()
+  cursor(11)
+  C.settle()
+end)
+
+-- ── inline bands (style = "inline": virt_lines) ───────────────────────────────
+scenario("band_inline_short", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  short_thread(ctx, { sl = 4, el = 9, tag = "math", comment = "clamp could be a one-liner" })
+  add(ctx, { sl = 13, status = "needs_response", comment = "needs a reply" })
+  require("obelus.render").render_all()
+  cursor(5)
+  C.settle()
+end)
+
+scenario("band_inline_long", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  conversation(ctx, { sl = 2 })
+  require("obelus.render").render_all()
+  cursor(2)
+  C.settle()
+end)
+
+scenario("band_inline_long_hints", function()
+  local ctx = fresh({ render = { bands = { style = "inline" }, hints = true } })
+  conversation(ctx, { sl = 2 })
+  require("obelus.render").render_all()
+  cursor(2)
+  C.settle()
+end)
+
+scenario("band_inline_ask_draft", function()
+  local ctx = fresh({ render = { bands = { style = "inline", mode = "all" } } })
+  add(ctx, { sl = 4, ask = true, comment = "why not math.max(lo, math.min(x, hi))?" })
+  local c = short_thread(ctx, { sl = 7, el = 8 })
+  ctx.store.add_turn(c.id, "you", "draft reply mentioning @sample.lua and @missing.lua")
+  require("obelus.render").render_all()
+  cursor(1)
+  C.settle()
+end)
+
+-- ── popup band style (the default): the rooted hover preview ──────────────────
+scenario("band_popup_preview", function()
+  local ctx = fresh()
+  conversation(ctx, { sl = 11, el = 13 })
+  require("obelus.render").render_all()
+  cursor(12)
+  C.settle()
+end)
+
+-- ── thread chat view ──────────────────────────────────────────────────────────
+scenario("chat_popup", function()
+  local ctx = fresh()
+  local c = conversation(ctx, { sl = 11, el = 13 })
+  require("obelus.render").render_all()
+  cursor(11)
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, true)
+  wait_chat(panel)
+  C.settle()
+end)
+
+scenario("chat_popup_hints", function()
+  local ctx = fresh({ render = { hints = true } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, true)
+  wait_chat(panel)
+  C.settle()
+end)
+
+scenario("chat_sidebar", function()
+  local ctx = fresh({ mode = "sidebar" })
+  local c = conversation(ctx, { sl = 11, el = 13 })
+  require("obelus.render").render_all()
+  cursor(11)
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, false)
+  wait_chat(panel)
+  C.settle()
+end)
+
+-- ── threads sidebar panel (one representative list) ───────────────────────────
+scenario("panel_list", function()
+  local ctx = fresh({ mode = "sidebar" })
+  short_thread(ctx, { sl = 4, tag = "math" })
+  conversation(ctx, { sl = 11, el = 13 })
+  local r = short_thread(ctx, { sl = 19 })
+  ctx.store.resolve(r.id)
+  add(ctx, { sl = 24, ask = true, comment = "is total ever nil?" })
+  require("obelus.render").render_all()
+  cursor(1)
+  require("obelus.panel").open()
+  C.settle()
+end)
+
+-- ── progress / spinner (frames frozen: see fresh()) ───────────────────────────
+-- streaming into an inline band: eol spinner + the live (grey) agent turn
+scenario("stream_inline_band", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  ctx.F.delta("Let me check `clamp`… ")
+  ctx.F.block_start()
+  ctx.F.delta("With `factor = -2` every value maps to **0**.")
+  C.settle() -- the first (and only) progress tick renders frame 2 everywhere
+end)
+
+-- streaming with no text yet: the in-band "thinking" spinner
+scenario("stream_inline_band_waiting", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  C.settle()
+end)
+
+-- streaming into the popup chat (in-box spinner, live turn)
+scenario("stream_chat_popup", function()
+  local ctx = fresh()
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  local panel = require("obelus.panel")
+  panel.open_thread(c.id, true)
+  wait_chat(panel)
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  ctx.F.delta("With `factor = -2` every value maps to **0**.")
+  C.settle()
+end)
+
+-- a job for a thread whose file has no open buffer: the corner float
+scenario("progress_corner", function()
+  local ctx = fresh({ progress = { display = "corner" } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(1)
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  C.settle()
+end)
+
+-- finish: the brief ✓ on the worked line (captured before its 2 s clear —
+-- no settle after finish, so the deferred clear cannot have run)
+scenario("progress_finish_ok", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  ctx.F.delta("Every value maps to **0**.")
+  C.settle()
+  ctx.F.finish(true, "sess-1")
+end)
+
+-- ── composers ─────────────────────────────────────────────────────────────────
+-- the quick-reply float (title "reply", footer hints on), with an @mention typed
+scenario("compose_quick_reply_hints", function()
+  local ctx = fresh({ render = { bands = { style = "inline" }, hints = true } })
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  require("obelus").quick_reply(c.id)
+  local buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "look at @sample.lua and @nope.lua please" })
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = buf })
+  C.settle()
+end)
+
+-- the new-comment composer (hints off), via the user-facing entry point
+scenario("compose_comment", function()
+  fresh()
+  cursor(14)
+  require("obelus").comment() -- the real entry point: capture.comment_normal
+  C.settle()
+end)
+
+-- ── setup / keymap registration path ──────────────────────────────────────────
+scenario("registration", function()
+  fresh()
+end, { kind = "registration", sizes = { { 80, 24 } } })
+
 function S.run(name)
   for _, sc in ipairs(S.list) do
     if sc.name == name then

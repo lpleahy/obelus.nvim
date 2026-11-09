@@ -1,0 +1,186 @@
+# obelus ui snapshot: chat_popup_hints @ 160x45
+## screen
+|  -- sample.lua: a small module the fixtures annotate                                                                                                           |
+|  local M = {}                                                                                                                                                  |
+|                                                                                                                                                                |
+|  local function clamp(x, lo, hi)                                                                                                                               |
+|    if x < lo then                                                                                                                                              |
+|      return lo                                                                                                                                                 |
+|    end                                                                                                                                                         |
+|    return math.min(x, hi)                                                                                                                                      |
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|▌ function M.scale(values, factor)                                                                                                                              |
+|  ╭ ◆ sample.lua  L11-L11 ─────────────────────────────────────╮                                                                                                |
+|  │   q close · r reply · x resolve · <CR> jump                │                                                                                                |
+|  │                                                            │                                                                                                |
+|  │  ────────────────────────────────────────────────────────  │                                                                                                |
+|  │▎ you  L11-L11                                              │                                                                                                |
+|  │▎ negative factors are clamped to 0 silently — intended?    │                                                                                                |
+|  │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  │                                                                                                |
+|  │▎ agent ↩                                                   │                                                                                                |
+|  │▎ Yes — intended. Inputs are percentages; see clamp.        │                                                                                                |
+|  │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  │                                                                                                |
+|  │▎ reply ───────────────────────────────────────────────────╮│                                                                                                |
+|  │▎                                                          ││                                                                                                |
+|  │▎                                                          ││                                                                                                |
+|  │▎                                                          ││                                                                                                |
+|  │▎────────────────── ⏎ send · ^s save · ⇥ history · q close ╯│                                                                                                |
+|  ╰────────────────────────────────────────────────────────────╯                                                                                                |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|sample.lua                                                                                                                                    11,1           All|
+|                                                                                                                                              0,0-1         All |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ccdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaefffffffffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaegghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaegghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaejjkkklllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaejjnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnmmmmebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeggoooooooooooooooooooooooooooooooooooooooooooooooooooooooohhebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeppqqqqqqqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeppssssssttttttttssssssssssssssssssssssssssssssuuuuusrrrrrrrrebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeggiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiihhebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaevwwwwwwwxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaevyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyxebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaevzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzxebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaevzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzxebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaevxxxxxxxxxxxxxxxxxxAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAxebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+d bg=#1e282d  [ObelusThreadBg]
+e fg=#e0e2ea  [FloatBorder]
+f fg=#e0e2ea bold  [FloatTitle]
+g fg=#4f5258 bg=#07080d  [NormalFloat+LineNr]
+h bg=#07080d  [NormalFloat]
+i fg=#6ec0c0 bg=#07080d  [NormalFloat+ObelusThreadRuleN]
+j fg=#8cf8f7 bg=#1e282d  [NormalFloat+LineNr+ObelusThreadBar]
+k fg=#8cf8f7 bg=#1e282d bold  [NormalFloat+ObelusThreadHeader+ObelusThreadBg]
+l fg=#9b9ea4 bg=#1e282d  [NormalFloat+ObelusThreadMeta+ObelusThreadBg]
+m bg=#1e282d  [NormalFloat+ObelusThreadBg]
+n fg=#e0e2ea bg=#1e282d  [NormalFloat+ObelusThreadText+ObelusThreadBg]
+o fg=#8bbe97 bg=#07080d  [NormalFloat+ObelusReplyRuleN]
+p fg=#b3f6c0 bg=#212828  [NormalFloat+LineNr+ObelusReplyBar]
+q fg=#b3f6c0 bg=#212828 bold  [NormalFloat+ObelusReplyHeader+ObelusReplyBg]
+r bg=#212828  [NormalFloat+ObelusReplyBg]
+s fg=#e0e2ea bg=#212828  [NormalFloat+ObelusReplyText+ObelusReplyBg]
+t fg=#e0e2ea bg=#212828 bold  [NormalFloat+ObelusReplyBold+ObelusReplyBg]
+u fg=#b3f6c0 bg=#212828  [NormalFloat+ObelusReplyCode+ObelusReplyBg]
+v fg=#e0e2ea bg=#3b3d43  [FloatBorder]
+w fg=#e0e2ea bg=#3b3d43 bold  [ObelusInputHeader]
+x fg=#e0e2ea bg=#3b3d43 bold  [FloatBorder]
+y fg=#e0e2ea bg=#3b3d43  [NormalFloat]
+z fg=#e0e2ea bg=#3b3d43  [NormalFloat+EndOfBuffer]
+A fg=#9b9ea4 bg=#1e282d  [ObelusThreadMeta]
+B fg=#4f5258  [EndOfBuffer]
+C fg=#c4c6cd bg=#2c2e33  [StatusLineNC]
+D default  [MsgArea]
+## cursor
+win=W3 mode=n pos=[1,0] screen=2,2
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=160x43 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+W2 float buf=B2([scratch]) screenpos=12,3 size=60x14 topline=1 textoff=2
+  cfg {anchor="NW",border=["╭","─","╮","│","╯","─","╰","│"],col=0,focusable=true,hide=false,mouse=true,relative="win",row=1,style="minimal",title=[[" ◆ sample.lua  L11-L11 "]],title_pos="left",win="W1",zindex=50}
+  wo {concealcursor="nvic",conceallevel=0,cursorline=false,fillchars="eob: ",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=1,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="%!v:lua.require'obelus.panel'.statuscol(3)",winblend=0,winhighlight="FloatBorder:ObelusBorder,EndOfBuffer:NormalFloat,NonText:ObelusChrome,Visual:ObelusVisual",wrap=true}
+W3 float buf=B3([scratch]) screenpos=22,4 size=58x3 topline=1 textoff=0
+  cfg {anchor="NW",border=[["▎","ObelusInputBar"],["─","ObelusInputBorder"],["╮","ObelusInputBorder"],["│","ObelusInputBorder"],["╯","ObelusInputBorder"],["─","ObelusInputBorder"],["▎","ObelusInputBar"],["▎","ObelusInputBar"]],col=0,focusable=true,footer=[[" ⏎ send · ^s save · ⇥ history · q close ","ObelusThreadMeta"]],footer_pos="right",hide=false,mouse=true,relative="win",row=9,style="minimal",title=[[" reply ","ObelusInputHeader"]],title_pos="left",win="W2",zindex=60}
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="eob: ",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=1,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="Normal:ObelusInput,NormalFloat:ObelusInput,FloatBorder:ObelusInputBorder,FloatTitle:ObelusInputHeader,EndOfBuffer:ObelusInput",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+B2 [scratch] lines=11 {bufhidden="wipe",buftype="nofile",filetype="markdown",modifiable=false}
+B3 [scratch] lines=1 {bufhidden="wipe",buftype="nofile",filetype="obelus_reply",modifiable=true}
+## extmarks
+B1 ns=obelus (1)
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B2 ns=obelus_panel (16)
+  2:0 {priority=4096,right_gravity=true,virt_lines=[[["────────────────────────────────────────────────────────","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  2:0 {end_col=3,end_right_gravity=false,end_row=2,hl_eol=false,hl_group="ObelusThreadHeader",priority=4096,right_gravity=true}
+  2:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  2:3 {end_col=12,end_right_gravity=false,end_row=2,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  3:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  3:0 {end_col=56,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  4:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  4:0 {end_col=9,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusReplyHeader",priority=4096,right_gravity=true}
+  4:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  5:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  5:0 {end_col=8,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  5:8 {end_col=16,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  5:16 {end_col=46,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  5:46 {end_col=51,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  5:51 {end_col=52,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  6:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+## notifications
+## highlights
+DiagnosticInfo: fg=#8cf8f7
+EndOfBuffer: fg=#e0e2ea bg=#3b3d43 -> NonText
+FloatBorder: fg=#e0e2ea bg=#3b3d43 bold -> NormalFloat
+FloatTitle: fg=#e0e2ea bg=#3b3d43 bold -> Title
+NonText: fg=#4f5258
+Normal: fg=#e0e2ea bg=#3b3d43
+NormalFloat: fg=#e0e2ea bg=#3b3d43
+ObelusBorder: fg=#e0e2ea
+ObelusChrome: fg=#9b9ea4
+ObelusInput: fg=#e0e2ea bg=#3b3d43
+ObelusInputBorder: fg=#e0e2ea bg=#3b3d43 bold
+ObelusInputHeader: fg=#e0e2ea bg=#3b3d43 bold
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadText: fg=#e0e2ea bg=#1e282d
+ObelusVisual: bg=#909298
+Visual: bg=#4f5258
