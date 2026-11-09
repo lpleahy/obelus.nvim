@@ -96,6 +96,24 @@ B1 ns=obelus_band (1)
 B2 ns=obelus_mention_hl (1)
   0:8 {end_col=19,end_right_gravity=false,end_row=0,hl_eol=false,hl_group="ObelusMention",priority=4096,right_gravity=true}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (10)
++ buf([scratch]) i <C-S>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#ad24b5bbe158>
++ buf([scratch]) i <C-V>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#a3bcc317e616>
++ buf([scratch]) i <M-CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#51513d7f3476>
++ buf([scratch]) i @  desc=nil silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua <REPO>/lua/obelus/mention.lua#741f09db3a23>
++ buf([scratch]) n <C-S>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#ad24b5bbe158>
++ buf([scratch]) n <C-V>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#a3bcc317e616>
++ buf([scratch]) n <CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#d28084ba031f>
++ buf([scratch]) n <Esc>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#fe819e426be1>
++ buf([scratch]) n <M-CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#51513d7f3476>
++ buf([scratch]) n q  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/render.lua#175088913f43>
+## registry changes since setup: autocmds (3)
++ <ungrouped> BufWipeout pattern="<buffer>" buffer=[scratch]  once=true desc=nil run=<lua <REPO>/lua/obelus/mention.lua#b2b407aabe49>
++ <ungrouped> TextChanged pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/mention.lua#4e7501d2c11d>
++ <ungrouped> TextChangedI pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/mention.lua#4e7501d2c11d>
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
 ## highlights
 DiagnosticInfo: fg=#8cf8f7
 EndOfBuffer: fg=#e0e2ea bg=#3b3d43 -> NonText

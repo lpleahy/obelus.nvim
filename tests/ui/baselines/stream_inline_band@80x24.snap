@@ -87,6 +87,11 @@ B1 ns=obelus_band (1)
 B1 ns=obelus_progress (1)
   10:0 {priority=4500,right_gravity=true,virt_text=[[" ⠙ fake","DiagnosticInfo"]],virt_text_hide=false,virt_text_pos="right_align",virt_text_repeat_linebreak=false}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
 ## highlights
 DiagnosticInfo: fg=#8cf8f7
 Normal: fg=#e0e2ea bg=#14161b

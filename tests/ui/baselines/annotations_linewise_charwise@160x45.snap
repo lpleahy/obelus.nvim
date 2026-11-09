@@ -117,6 +117,11 @@ B1 ns=obelus (5)
   12:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
   19:8 {end_col=13,end_right_gravity=false,end_row=19,hl_eol=false,hl_group="ObelusRangeText",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ ",virt_text=[["  ▌ name this `sum`?","Comment"]],virt_text_hide=false,virt_text_pos="eol",virt_text_repeat_linebreak=false}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
 ## highlights
 Comment: fg=#9b9ea4
 DiagnosticHint: fg=#a6dbff

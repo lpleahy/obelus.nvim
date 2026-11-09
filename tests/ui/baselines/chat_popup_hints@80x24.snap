@@ -115,6 +115,65 @@ B2 ns=obelus_panel (16)
   5:51 {end_col=52,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
   6:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (42)
++ buf([scratch]) i <C-H>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#07d569869a8f>
++ buf([scratch]) i <C-S>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#8202cf568f4a>
++ buf([scratch]) i <C-V>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#a3bcc317e616>
++ buf([scratch]) i <M-CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#74b6fa65c388>
++ buf([scratch]) i <M-d>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#abd350678fc4>
++ buf([scratch]) i <M-s>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2f55e5af6e25>
++ buf([scratch]) i <M-u>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6311a391f64b>
++ buf([scratch]) i <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#361c0665b787>
++ buf([scratch]) i <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#415a13f128a8>
++ buf([scratch]) i @  desc=nil silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua <REPO>/lua/obelus/mention.lua#741f09db3a23>
++ buf([scratch]) n <BS>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#bf73c4d30c4d>
++ buf([scratch]) n <C-H>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#07d569869a8f>
++ buf([scratch]) n <C-L>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#d729b164bd8d>
++ buf([scratch]) n <C-S>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#8202cf568f4a>
++ buf([scratch]) n <C-V>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#a3bcc317e616>
++ buf([scratch]) n <CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2852a94eb5e4>
++ buf([scratch]) n <CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#dc28eb972410>
++ buf([scratch]) n <Esc>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#aaaab2dafeb5>
++ buf([scratch]) n <Esc>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#bf4bdf89a57a>
++ buf([scratch]) n <M-CR>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#74b6fa65c388>
++ buf([scratch]) n <M-d>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#abd350678fc4>
++ buf([scratch]) n <M-s>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2f55e5af6e25>
++ buf([scratch]) n <M-u>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6311a391f64b>
++ buf([scratch]) n <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#361c0665b787>
++ buf([scratch]) n <S-Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#97f7c5660518>
++ buf([scratch]) n <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#415a13f128a8>
++ buf([scratch]) n <Tab>  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#68c81923952d>
++ buf([scratch]) n C  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#5e47ca31ab9c>
++ buf([scratch]) n D  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#1db411744461>
++ buf([scratch]) n G  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#6eb59115b6e8>
++ buf([scratch]) n R  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#03cfc1751115>
++ buf([scratch]) n W  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#3b82a0b688fa>
++ buf([scratch]) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#37601c40cc19>
++ buf([scratch]) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#be361c2ee7b4>
++ buf([scratch]) n dd  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#e4492c1df2ce>
++ buf([scratch]) n gd  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#4c7d16661d45>
++ buf([scratch]) n o  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#2ff8fc0b8e5e>
++ buf([scratch]) n q  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#570f8e141046>
++ buf([scratch]) n q  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#a6acff1ffb1f>
++ buf([scratch]) n r  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#46f868fecf5f>
++ buf([scratch]) n x  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#1ac9f92e51ff>
++ buf([scratch]) n zz  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#d3d70953c5a9>
+## registry changes since setup: autocmds (11)
++ <ungrouped> BufWipeout pattern="<buffer>" buffer=[scratch]  once=true desc=nil run=<lua <REPO>/lua/obelus/mention.lua#b2b407aabe49>
++ <ungrouped> TextChanged pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/mention.lua#4e7501d2c11d>
++ <ungrouped> TextChanged pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#d8588d9c67e0>
++ <ungrouped> TextChangedI pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/mention.lua#4e7501d2c11d>
++ <ungrouped> TextChangedI pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#d8588d9c67e0>
++ nvim.treesitter.query_cache_reset OptionSet pattern="runtimepath" buffer=-  once=false desc=nil run=<lua <VIMRUNTIME>/lua/vim/treesitter/query.lua#e41c300af5c0>
++ obelus_panel CursorMoved pattern="<buffer>" buffer=[scratch]  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#e92124b30ac6>
++ obelus_panel VimResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#97d7d30727c3>
++ obelus_panel WinClosed pattern="<winid>" buffer=-  once=true desc=nil run=<lua <REPO>/lua/obelus/panel.lua#baf94255e8b9>
++ obelus_panel WinResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#97d7d30727c3>
++ obelus_panel WinScrolled pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/panel.lua#18b33db78be2>
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (1)
++ nvim.treesitter.highlighter  
 ## highlights
 DiagnosticInfo: fg=#8cf8f7
 EndOfBuffer: fg=#e0e2ea bg=#3b3d43 -> NonText

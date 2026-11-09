@@ -101,6 +101,10 @@ local function fresh(opts)
   vim.cmd("edit sample.lua")
   ctx.buf = vim.api.nvim_get_current_buf()
   ctx.file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+  -- the registry as setup() + opening the file left it; captures diff against it
+  -- to pin first-use registrations (see child.lua's capture)
+  C.settle()
+  C.post_setup = C.registry_state()
   return ctx
 end
 

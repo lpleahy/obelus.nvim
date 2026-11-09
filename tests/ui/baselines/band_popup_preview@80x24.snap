@@ -264,6 +264,13 @@ B2 ns=obelus_panel (183)
   32:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
   32:0 {end_col=10,end_right_gravity=false,end_row=32,hl_eol=false,hl_group="ObelusReplyMeta",priority=4096,right_gravity=true}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (1)
++ buf(sample.lua) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#ff995aff2415>
+## registry changes since setup: autocmds (1)
++ nvim.treesitter.query_cache_reset OptionSet pattern="runtimepath" buffer=-  once=false desc=nil run=<lua <VIMRUNTIME>/lua/vim/treesitter/query.lua#e41c300af5c0>
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
 ## highlights
 @constant: fg=#e0e2ea -> Constant
 @constructor: fg=#8cf8f7 -> Special

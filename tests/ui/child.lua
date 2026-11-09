@@ -77,6 +77,16 @@ function C.boot(opts)
 
   C.install_virtual_clock()
 
+  -- user-command callbacks are not exposed by nvim_get_commands(): record them at
+  -- creation (a process-global test double, like vim.notify above) so a command
+  -- whose callback is swapped under an unchanged description still diffs
+  C.cmd_cb = {}
+  local create_cmd = vim.api.nvim_create_user_command
+  vim.api.nvim_create_user_command = function(name, cmd, o)
+    C.cmd_cb[name] = cmd
+    return create_cmd(name, cmd, o)
+  end
+
   vim.o.shortmess = vim.o.shortmess .. "I"
   vim.o.swapfile = false
   vim.o.termguicolors = true
@@ -391,6 +401,8 @@ local function extmark_line(nsmap, m)
   return nsname, string.format("%d:%d %s", m[2], m[3], ser(d))
 end
 
+local diff_entries -- defined with the registration helpers below
+
 ---@return table raw capture; the parent resolves attr ids and writes the file
 function C.capture()
   C.settle()
@@ -525,6 +537,25 @@ function C.capture()
     push(n)
   end
 
+  -- first-use registrations: everything the scenario's actions (opening a chat, a
+  -- composer, a stream…) added, changed or removed in the global registry since
+  -- setup() — baselined, so a lazily installed or overwritten mapping/command/
+  -- autocmd/highlight fails like any visual change
+  if C.post_setup then
+    local now = C.registry_state()
+    for _, sec in ipairs({
+      { "cmds", "user commands" },
+      { "maps", "keymaps" },
+      { "aus", "autocmds" },
+      { "hls", "highlight groups" },
+      { "ns", "namespaces" },
+    }) do
+      local d = diff_entries(C.post_setup[sec[1]], now[sec[1]])
+      push(string.format("## registry changes since setup: %s (%d)", sec[2], #d))
+      vim.list_extend(out, d)
+    end
+  end
+
   return {
     rows = rows,
     cols = cols,
@@ -545,12 +576,50 @@ end
 -- another with an identical description still reads as "changed".
 local MAP_MODES = { "n", "v", "x", "s", "o", "i", "c", "t", "l" }
 
+-- A callback's BEHAVIOUR identity, stable across processes and independent of
+-- where in its file it sits: a hash of its SOURCE TEXT (the lines from
+-- linedefined to lastlinedefined) plus, recursively, of every function it closes
+-- over. Swapping `M.toggle_hints()` for `M.toggle_mode()` in a callback changes
+-- its text and so its hash; moving the function down the file does not.
+-- (Not string.dump: LuaJIT's seeded string hashing makes template-table
+-- constants dump in a different order in every process.)
+local src_lines = {}
+local function fn_hash(f, depth)
+  local info = debug.getinfo(f, "S")
+  local path = info.source and info.source:match("^@(.+)$")
+  if not path or info.linedefined <= 0 then
+    return "C"
+  end
+  if src_lines[path] == nil then
+    src_lines[path] = vim.fn.filereadable(path) == 1 and vim.fn.readfile(path) or false
+  end
+  local lines = src_lines[path]
+  if not lines then
+    return "nosrc"
+  end
+  local parts = { table.concat(vim.list_slice(lines, info.linedefined, info.lastlinedefined), "\n") }
+  if depth > 0 then
+    local i = 1
+    while true do
+      local name, v = debug.getupvalue(f, i)
+      if not name then
+        break
+      end
+      if type(v) == "function" then
+        parts[#parts + 1] = name .. "=" .. fn_hash(v, depth - 1)
+      end
+      i = i + 1
+    end
+  end
+  return vim.fn.sha256(table.concat(parts, "\0")):sub(1, 12)
+end
+
 local function fn_src(f)
   if type(f) ~= "function" then
     return tostring(f)
   end
   local info = debug.getinfo(f, "S")
-  return "<lua " .. scrub((info.source or "?"):gsub("^@", "")) .. ">"
+  return "<lua " .. scrub((info.source or "?"):gsub("^@", "")) .. "#" .. fn_hash(f, 3) .. ">"
 end
 
 local function map_sig(m)
@@ -580,7 +649,8 @@ function C.registry_state()
         ser(c.bar),
         ser(c.complete and (type(c.complete) == "string" and c.complete or "<fn>") or nil),
         ser(c.definition)
-      ),
+      ) .. (C.cmd_cb[name] and (" run=" .. fn_src(C.cmd_cb[name])) or ""),
+      fn = C.cmd_cb[name],
     }
   end
   for _, mode in ipairs(MAP_MODES) do
@@ -600,11 +670,19 @@ function C.registry_state()
     end
   end
   for _, a in ipairs(vim.api.nvim_get_autocmds({})) do
+    -- buffer-local patterns ("<buffer=5>") and window-id patterns (WinClosed
+    -- "1003") carry allocation numbers: normalize them away
+    local pat = a.pattern
+    if a.buffer and a.buffer > 0 then
+      pat = "<buffer>"
+    elseif type(pat) == "string" and pat:match("^%d+$") and a.event:match("^Win") then
+      pat = "<winid>"
+    end
     local key = string.format(
       "%s %s pattern=%s buffer=%s",
       a.group_name or "<ungrouped>",
       a.event,
-      ser(a.pattern),
+      ser(pat),
       a.buffer and a.buffer > 0 and buf_label(a.buffer) or "-"
     )
     st.aus[#st.aus + 1] = {
@@ -618,9 +696,18 @@ function C.registry_state()
       fn = a.callback,
     }
   end
-  for name in pairs(vim.api.nvim_get_hl(0, {})) do
+  -- highlight DEFINITIONS as set (attributes + link), not resolutions: a
+  -- link=false lookup is coloured by the current window's 'winhighlight', which
+  -- is a capture-context artefact, not a registry change
+  for name, def in pairs(vim.api.nvim_get_hl(0, {})) do
     if type(name) == "string" then
-      st.hls[#st.hls + 1] = { key = name, sig = describe_hl(name) }
+      local d = vim.deepcopy(def)
+      for _, k in ipairs({ "fg", "bg", "sp" }) do
+        if type(d[k]) == "number" then
+          d[k] = hex(d[k])
+        end
+      end
+      st.hls[#st.hls + 1] = { key = name, sig = ser(d) }
     end
   end
   for name in pairs(vim.api.nvim_get_namespaces()) do
@@ -640,7 +727,7 @@ end
 -- multiset diff of two entry lists: an entry is unchanged when an unused `pre`
 -- entry has the same key, sig AND callback identity; "changed" when only the key
 -- matches; else added. Leftover pre entries were removed.
-local function diff_entries(pre, post)
+diff_entries = function(pre, post)
   local used, out = {}, {}
   local function take(pred)
     for i, e in ipairs(pre) do

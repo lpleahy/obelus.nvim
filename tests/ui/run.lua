@@ -208,6 +208,14 @@ local function run_one(sc, w, h)
   return ok, res
 end
 
+-- Our wrapper (run.sh) is our parent. If it is SIGKILLed it cannot run its trap,
+-- so we notice the reparenting, stop starting scenarios, and remove the run's
+-- private dir ourselves (the exact path run.sh created, passed as OBELUS_UI_DIR).
+local wrapper_ppid = vim.uv.os_getppid()
+local function orphaned()
+  return vim.uv.os_getppid() ~= wrapper_ppid
+end
+
 local t0 = vim.uv.hrtime()
 vim.fn.mkdir(BASE, "p")
 -- failed = baseline MISMATCHES (a rendering differs); errors = the harness could
@@ -232,6 +240,10 @@ local function main()
     return
   end
   for _, sc in ipairs(scenarios.list) do
+    if orphaned() then
+      errors[#errors + 1] = "wrapper (run.sh) died: stopping"
+      return
+    end
     if selected(sc) then
       for _, size in ipairs(sc.sizes or SIZES) do
         local w, h = size[1], size[2]
@@ -306,4 +318,7 @@ io.write(
     (vim.uv.hrtime() - t0) / 1e9
   )
 )
+if orphaned() and vim.env.OBELUS_UI_DIR and vim.env.OBELUS_UI_DIR ~= "" then
+  vim.fn.delete(vim.env.OBELUS_UI_DIR, "rf") -- exact path; every child is already reaped
+end
 vim.cmd((#failed == 0 and #errors == 0) and "qall!" or "cquit 1")

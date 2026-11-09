@@ -52,10 +52,10 @@ function M.spawn(opts)
   end
   self.handle, self.stdin = handle, stdin
   self.pid = handle:get_pid()
-  -- recorded for tests/ui/run.sh: if THIS process dies abruptly (signal), the
-  -- wrapper reaps any child still alive by exact pid
-  if vim.env.OBELUS_UI_PIDFILE then
-    local f = io.open(vim.env.OBELUS_UI_PIDFILE, "a")
+  -- self-test only (tests/ui/selftest.sh): log spawned pids so the test can
+  -- verify afterwards that none survived. Nothing ever SIGNALS from this log.
+  if vim.env.OBELUS_UI_PIDLOG then
+    local f = io.open(vim.env.OBELUS_UI_PIDLOG, "a")
     if f then
       f:write(self.pid .. "\n")
       f:close()

@@ -73,6 +73,11 @@ B2 [scratch] lines=1 {bufhidden="hide",buftype="nofile",filetype="",modifiable=t
 B1 ns=obelus (1)
   10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
 ## highlights
 DiagnosticInfo: fg=#8cf8f7
 FloatBorder: bg=#07080d -> NormalFloat

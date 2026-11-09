@@ -7,12 +7,23 @@
 #               removes the temp dir
 #   4. delay:   a 2.5 s wall-clock stall between arranging and capturing every
 #               progress/stream/popup scenario leaves the snapshots byte-identical
+#   5. sigkill: SIGKILL to the wrapper (no trap can run): the orphaned parent stops,
+#               its child is reaped and the run's temp dir is still removed
+#   6. foreign: an unrelated `nvim --embed` (started here, NOT by the harness) is
+#               alive through all of the above, including the signal paths, and
+#               must never be signalled
 # Everything runs under a private mktemp dir, removed by exact path at the end.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 base=${OBELUS_UI_TMPBASE:-${TMPDIR:-/tmp}}
 work=$(mktemp -d "${base%/}/obelus-selftest.XXXXXX") || exit 2
-trap 'rm -rf "$work"' EXIT
+decoy= feeder=
+finish() {
+  [ -n "$decoy" ] && kill -KILL "$decoy" 2>/dev/null
+  [ -n "$feeder" ] && kill -KILL "$feeder" 2>/dev/null
+  rm -rf "$work"
+}
+trap finish EXIT
 trap 'exit 130' INT TERM
 fails=0
 
@@ -42,6 +53,18 @@ assert_clean() {
   fi
   ok "$label: child reaped, temp dir removed"
 }
+
+# 6 (setup). a foreign embedded nvim: a sibling of the harness, kept alive by a
+# feeder that holds its stdin open; both pids are ours (this script's) to clean up
+sh -c 'echo $$ >"$1"; exec sleep 900' sh "$work/feeder.pid" | \
+  nvim --embed --headless -n -i NONE -u NONE --noplugin >/dev/null 2>&1 &
+decoy=$!
+n=0
+while [ ! -s "$work/feeder.pid" ] && [ $n -lt 100 ]; do
+  sleep 0.1
+  n=$((n + 1))
+done
+feeder=$(cat "$work/feeder.pid")
 
 # 1. forced RPC timeout
 mkdir "$work/t1"
@@ -74,9 +97,7 @@ OBELUS_UI_TMPBASE="$work/t3" OBELUS_UI_GUARD_MS=600000 OBELUS_UI_ONLY=_selftest_
 wrapper=$!
 # wait (bounded) for the child to be spawned: its pid lands in the run's pid file
 n=0
-while [ $n -lt 600 ]; do
-  f=$(ls "$work"/t3/obelus-ui.*/pids 2>/dev/null | head -1)
-  [ -n "$f" ] && [ -s "$f" ] && break
+while [ ! -s "$work/t3.pids" ] && [ $n -lt 600 ]; do
   sleep 0.1
   n=$((n + 1))
 done
@@ -100,6 +121,34 @@ if [ $rc -eq 0 ]; then
   ok "delay: $(printf '%s\n' "$out" | tail -1)"
 else
   bad "delay: snapshots changed under a 2.5 s stall: $out"
+fi
+
+# 5. SIGKILL to the wrapper while the child is wedged (short guard)
+mkdir "$work/t5"
+OBELUS_UI_TMPBASE="$work/t5" OBELUS_UI_GUARD_MS=1500 OBELUS_UI_ONLY=_selftest_hang \
+  OBELUS_UI_PIDLOG="$work/t5.pids" sh "$here/run.sh" >"$work/t5.out" 2>&1 &
+wrapper=$!
+n=0
+while [ ! -s "$work/t5.pids" ] && [ $n -lt 600 ]; do
+  sleep 0.1
+  n=$((n + 1))
+done
+sleep 0.5
+kill -KILL "$wrapper"
+wait "$wrapper" 2>/dev/null
+# bounded wait for the orphaned parent to finish its guard + reap + remove the dir
+n=0
+while [ -n "$(ls -A "$work/t5")" ] && [ $n -lt 600 ]; do
+  sleep 0.1
+  n=$((n + 1))
+done
+assert_clean "sigkill" "$work/t5.pids" "$work/t5"
+
+# 6. the foreign embedded nvim survived every run and signal path above
+if kill -0 "$decoy" 2>/dev/null; then
+  ok "foreign: unrelated nvim --embed (pid $decoy) was never signalled"
+else
+  bad "foreign: unrelated nvim --embed (pid $decoy) was killed"
 fi
 
 echo "selftest: $fails failure(s)"

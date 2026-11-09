@@ -90,6 +90,11 @@ B1 ns=obelus (7)
 B1 ns=obelus_band (1)
   8:0 {priority=4096,right_gravity=true,virt_lines=[[["","Normal"]],[["▎ ","ObelusThreadBarN"],["──────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]],[["▎ ","ObelusThreadBar"],["you","ObelusThreadHeader"],["  L4-L9","ObelusThreadMeta"],["  ","ObelusThreadMeta"],["#math","ObelusThreadTag"],["                                                             ","ObelusThreadBg"]],[["▎ ","ObelusThreadBar"],["clamp could be a one-liner","ObelusThreadText"],["                                                    ","ObelusThreadBg"]],[["▎ ","ObelusReplyBarN"],["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]],[["▎ ","ObelusReplyBar"],["agent ↩","ObelusReplyHeader"],["                                                                       ","ObelusReplyBg"]],[["▎ ","ObelusReplyBar"],["Yes — ","ObelusReplyText"],["intended","ObelusReplyBold"],[". Inputs are percentages; see ","ObelusReplyText"],["clamp","ObelusReplyCode"],[".","ObelusReplyText"],["                            ","ObelusReplyBg"]],[["▎ ","ObelusReplyRuleN"],["──────────────────────────────────────────────────────────────────────────────","ObelusReplyRuleN"]]],virt_lines_above=false,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
 ## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (0)
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (0)
+## registry changes since setup: namespaces (0)
 ## highlights
 DiagnosticInfo: fg=#8cf8f7
 Normal: fg=#e0e2ea bg=#14161b
