@@ -397,6 +397,12 @@ harness_mutate "xdg-guard-sh-defaults-by-spelling" tests/xdg_guard.sh \
   'case "$1/" in "$_d"/*)' 'case "$1/" in "$_d"/NEVER*)' xdg-guard "xdg-guard: private.sh, alias root"
 harness_mutate "xdg-guard-lua-defaults-by-spelling" tests/xdg_guard.lua \
   'if path == real or inside(path, real) then' 'if false then' xdg-guard "xdg-guard: direct nvim run.lua, alias root"
+harness_mutate "xdg-guard-sh-relative-allowed" tests/xdg_guard.sh \
+  'obelus_xdg_refuse "$1" "$2=$3 is relative (it would follow the working directory)"
+    return 3' ':' xdg-guard "xdg-guard: private.sh, relative XDG values"
+harness_mutate "launcher-unsafe-tmpdir-base" tests/private.sh \
+  'if ! base=$(safe_base "${TMPDIR:-/tmp}"); then' 'base=${TMPDIR:-/tmp}; if false; then' xdg-guard \
+  "xdg-guard: private.sh, inherited TMPDIR in a home's .local"
 harness_mutate "xdg-guard-log-symlink-allowed" tests/xdg_guard.sh \
   'if [ -L "$NVIM_LOG_FILE" ]; then' 'if false; then' xdg-guard "xdg-guard: private.sh, log file is a symlink"
 
