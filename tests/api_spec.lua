@@ -1974,6 +1974,33 @@ T.it("api.capabilities: read-only flags that match the behaviour", function()
   end)
 end)
 
+T.it("approve: focus_hint rejects bidi, format and C1 controls, and is bounded in bytes", function()
+  local rejected = {
+    ["bidi sentinel: RIGHT-TO-LEFT OVERRIDE"] = "A\226\128\174B", -- U+202E
+    ["LEFT-TO-RIGHT ISOLATE"] = "A\226\129\166B", -- U+2066
+    ["RIGHT-TO-LEFT MARK"] = "A\226\128\143B", -- U+200F
+    ["ARABIC LETTER MARK"] = "A\216\156B", -- U+061C
+    ["ZERO WIDTH SPACE"] = "A\226\128\139B", -- U+200B
+    ["BYTE ORDER MARK"] = "\239\187\191AB", -- U+FEFF
+    ["SOFT HYPHEN"] = "A\194\173B", -- U+00AD
+    ["C1 NEXT LINE"] = "A\194\133B", -- U+0085
+    ["LINE SEPARATOR"] = "A\226\128\168B", -- U+2028
+    ["TAG LATIN SMALL A"] = "A\243\160\129\161B", -- U+E0061
+    ["DEL"] = "A\127B",
+    ["invalid UTF-8"] = "A\255B",
+    ["over 128 bytes, few cells"] = "e" .. string.rep("\204\129", 70), -- 141 bytes, 1 cell
+    ["over 32 cells"] = string.rep("x", 33),
+  }
+  for label, hint in pairs(rejected) do
+    T.ok(not pcall(api.approve, { summary = "x", focus_hint = hint, on_result = function() end }), label .. " rejected")
+    T.eq(approve._hint_ok(hint), false, label)
+  end
+  for _, good in ipairs({ ",A / :Luodda approve", "Ärger · ok", string.rep("x", 32) }) do
+    T.eq(approve._hint_ok(good), true, vim.inspect(good) .. " accepted")
+  end
+  T.is_nil(approve._active(), "nothing was queued")
+end)
+
 T.it("approve: focus_hint is validated; absent, the default instruction is unchanged", function()
   for _, bad in ipairs({ 42, "two\nlines", "", "   ", string.rep("x", 33), "tab\there" }) do
     T.ok(

@@ -338,6 +338,10 @@ spec_mutate "approve-enter-unarmed-ignored" lua/obelus/approve.lua \
 # the same, judged by the real-UI snapshot (api_approve_enter_unarmed)
 mutate "approve-enter-unarmed-ignored-ui" lua/obelus/approve.lua \
   'for _, key in ipairs({ "<CR>", "q", "<Esc>", "<C-c>" }) do' 'for _, key in ipairs({ "q", "<Esc>", "<C-c>" }) do'
+# focus_hint accepts Unicode format controls (bidi overrides, isolates, …)
+spec_mutate "approve-hint-allows-format-controls" lua/obelus/approve.lua \
+  'or (cp >= 0x2028 and cp <= 0x202E)' 'or false' \
+  'approve: focus_hint rejects bidi, format and C1 controls'
 # a handle's focus acts on whichever prompt is open (not prompt-scoped)
 spec_mutate "approve-handle-focus-not-scoped" lua/obelus/approve.lua \
   'return M._focus(a)' 'return M._focus(active)' \

@@ -26,7 +26,7 @@ local M = {}
 ---@field on_result fun(approved: boolean) called exactly once
 ---@field timeout_ms? integer deny after this long (default 120000)
 ---@field on_open? fun(handle: obelus.ApproveHandle) called when THIS prompt's float opens (it may wait in the queue)
----@field focus_hint? string replaces ":ObelusApprove" in the float's focus line (one line, 1..32 cells)
+---@field focus_hint? string replaces ":ObelusApprove" in the float's focus line (plain one-line text: 1..32 cells, <= 128 bytes)
 
 ---@class obelus.ApproveHandle
 ---@field cancel fun() deny this prompt (queued or open); no-op once decided
@@ -339,6 +339,55 @@ function M._focus(a)
   return true
 end
 
+-- Is `cp` a code point a focus hint may not contain? C0 controls, DEL, C1
+-- controls, line/paragraph separators and every Unicode format control (Cf):
+-- bidi embeddings, overrides, isolates and marks, zero-width characters,
+-- the BOM, interlinear annotation, invisible operators and tag characters.
+local function forbidden(cp)
+  return cp < 0x20
+    or (cp >= 0x7F and cp <= 0x9F)
+    or cp == 0xAD
+    or (cp >= 0x0600 and cp <= 0x0605)
+    or cp == 0x061C
+    or cp == 0x06DD
+    or cp == 0x070F
+    or cp == 0x0890
+    or cp == 0x0891
+    or cp == 0x08E2
+    or cp == 0x180E
+    or (cp >= 0x200B and cp <= 0x200F)
+    or (cp >= 0x2028 and cp <= 0x202E)
+    or (cp >= 0x2060 and cp <= 0x2064)
+    or (cp >= 0x2066 and cp <= 0x206F)
+    or cp == 0xFEFF
+    or (cp >= 0xFFF9 and cp <= 0xFFFB)
+    or cp == 0x110BD
+    or cp == 0x110CD
+    or (cp >= 0x13430 and cp <= 0x1343F)
+    or (cp >= 0x1BCA0 and cp <= 0x1BCA3)
+    or (cp >= 0x1D173 and cp <= 0x1D17A)
+    or cp == 0xE0001
+    or (cp >= 0xE0020 and cp <= 0xE007F)
+end
+
+---Is `hint` an acceptable focus_hint: valid UTF-8, 1..128 bytes, 1..32
+---display cells, not blank, and free of every forbidden code point above?
+function M._hint_ok(hint)
+  if type(hint) ~= "string" or #hint == 0 or #hint > 128 then
+    return false
+  end
+  local cps = vim.fn.str2list(hint, true)
+  if vim.fn.list2str(cps, true) ~= hint then
+    return false -- not valid UTF-8
+  end
+  for _, cp in ipairs(cps) do
+    if forbidden(cp) then
+      return false
+    end
+  end
+  return vim.trim(hint) ~= "" and vim.fn.strdisplaywidth(hint) <= 32
+end
+
 ---Queue an approval prompt. Returns a handle whose `cancel()` denies it.
 ---@param opts obelus.ApproveOpts
 ---@return { cancel: fun() }
@@ -347,13 +396,8 @@ function M.approve(opts)
     error("obelus.api.approve: opts.on_result must be a function", 2)
   end
   local hint = opts.focus_hint
-  if hint ~= nil then
-    -- short and single-line: no control characters (newlines included), and
-    -- 1..32 display cells so the focus line fits the float
-    local w = type(hint) == "string" and vim.fn.strdisplaywidth(hint) or 0
-    if type(hint) ~= "string" or hint:find("[%z\1-\31\127]") or vim.trim(hint) == "" or w > 32 then
-      error("obelus.api.approve: focus_hint must be a single-line string of 1..32 cells", 2)
-    end
+  if hint ~= nil and not M._hint_ok(hint) then
+    error("obelus.api.approve: focus_hint must be plain single-line text of 1..32 cells and at most 128 bytes", 2)
   end
   local a = {
     summary = clean(opts.summary or ""),

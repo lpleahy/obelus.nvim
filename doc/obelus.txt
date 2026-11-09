@@ -1610,8 +1610,12 @@ api.approve({opts})                                   *obelus.api.approve()*
       on_open    optional fun(handle) — called when THIS prompt's float
                  opens (it may first wait behind another prompt)
       focus_hint optional string shown instead of ":ObelusApprove" in the
-                 float's focus line, e.g. ",A / :Luodda approve". One
-                 line, 1..32 display cells, no control characters;
+                 float's focus line, e.g. ",A / :Luodda approve". Plain
+                 one-line text: valid UTF-8, 1..32 display cells and at
+                 most 128 bytes, with no C0/C1 control, DEL, line or
+                 paragraph separator, and no Unicode format control
+                 (bidi embeddings, overrides, isolates and marks,
+                 zero-width characters, the BOM, tag characters, …);
                  anything else raises an error. Absent, the float is
                  exactly as without it.
     Returns a handle scoped to this prompt: { cancel = fun(), focus = fun() }.
