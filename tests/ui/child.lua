@@ -10,6 +10,9 @@
 --                 attributes of every highlight group those reference.
 -- Nothing here touches lua/obelus: the clock stub and the vim.notify recorder are
 -- process-global test doubles installed before obelus loads.
+-- containment first (tests/xdg_guard.lua): this child inherits the run's env
+dofile(vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h") .. "/xdg_guard.lua")("tests/ui/child.lua")
+
 local C = {}
 
 -- 2026-01-01T00:00:00Z. Obelus stamps ids/turns with os.time(); none of it is

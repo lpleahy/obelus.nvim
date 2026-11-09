@@ -5,6 +5,8 @@
 # FAIL. The real tree is never modified. Exit 0 = every mutation was caught.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
+. "$here/../xdg_guard.sh"
+obelus_xdg_guard tests/ui/mutations.sh || exit 3 # containment first (tests/private.sh)
 repo=$(cd "$here/../.." && pwd)
 base=${OBELUS_UI_TMPBASE:-${TMPDIR:-/tmp}}
 work=$(mktemp -d "${base%/}/obelus-mut.XXXXXX") || exit 2
@@ -135,8 +137,8 @@ mutate "first-use-overwrites-default-Y" lua/obelus/init.lua \
 # Harness mutations: patch the copy's supervisor and run the self-test cases that
 # guard it (tests/ui/selftest.sh, OBELUS_UI_SELFTEST_ONLY). CAUGHT = the unmodified
 # copy passes those cases and the mutated copy fails one of them by name.
-harness_mutate() { # name file old new cases
-  name=$1 file=$2 old=$3 new=$4 cases=$5
+harness_mutate() { # name file old new cases [failure-prefix]
+  name=$1 file=$2 old=$3 new=$4 cases=$5 fpat=${6:-parent-exit}
   fresh_tree
   out=$(OBELUS_UI_TMPBASE="$work" OBELUS_UI_SELFTEST_ONLY="$cases" sh "$work/tree/tests/ui/selftest.sh" 2>&1)
   if [ $? -ne 0 ]; then
@@ -151,7 +153,7 @@ harness_mutate() { # name file old new cases
   fi
   out=$(OBELUS_UI_TMPBASE="$work" OBELUS_UI_SELFTEST_ONLY="$cases" sh "$work/tree/tests/ui/selftest.sh" 2>&1)
   rc=$?
-  nfail=$(printf '%s\n' "$out" | grep -c '^FAIL  parent-exit')
+  nfail=$(printf '%s\n' "$out" | grep -c "^FAIL  $fpat")
   if [ $rc -eq 0 ]; then
     missed=$((missed + 1))
     echo "MISSED  $name"
@@ -171,11 +173,18 @@ teardown();
 ' '
 ' parent-exit,parent-exit-harness
 
+# Containment: the nvim-side guard is removed, so the spec runner runs against
+# the decoy home and writes into it; the shell guard is removed from run.sh
+harness_mutate "xdg-guard-lua-removed" tests/xdg_guard.lua \
+  'who = who or "obelus tests"' 'do return true end' xdg-guard xdg-guard
+harness_mutate "xdg-guard-specs-sh-removed" tests/specs.sh \
+  'obelus_xdg_guard tests/specs.sh || exit 3' ':' xdg-guard xdg-guard
+
 # Behaviour-guard mutations (obelus.api): these guards draw nothing, so the
 # behaviour specs judge them instead of the snapshots. CAUGHT = the unmodified
 # copy's specs pass and the mutated copy's specs fail in the [api] suite.
 run_specs() {
-  (cd "$work/tree" && nvim --headless -u NONE -i NONE -c "luafile tests/run.lua" 2>&1)
+  (cd "$work/tree" && sh tests/specs.sh 2>&1)
 }
 spec_preflight=""
 spec_mutate() { # name file old new

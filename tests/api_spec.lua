@@ -675,7 +675,8 @@ end)
 local function in_new_nvim(state_home, lua_src)
   local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
   local script = vim.fn.tempname() .. ".lua"
-  vim.fn.writefile(vim.split("vim.opt.rtp:prepend(" .. vim.inspect(root) .. ")\n" .. lua_src, "\n"), script)
+  local guard = "dofile(" .. vim.inspect(root .. "/tests/xdg_guard.lua") .. ")('api_spec restart child')\n"
+  vim.fn.writefile(vim.split(guard .. "vim.opt.rtp:prepend(" .. vim.inspect(root) .. ")\n" .. lua_src, "\n"), script)
   local env = vim.fn.environ()
   env.XDG_STATE_HOME = state_home
   local res = vim

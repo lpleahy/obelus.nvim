@@ -25,14 +25,19 @@
 #      exits 42 during the scenario RPC of a child busy in Lua
 #  10. parent-exit-race: TERM reaches the supervisor around the parent's exit
 #  11. no-perl: run.sh on a PATH without perl fails clearly, allocates nothing
+#  12. xdg-guard: the spec runner, run.sh and private.sh refuse to run against a
+#      decoy home (outside the private root / no root / root = home), exit
+#      non-zero, and leave the decoy byte-identical
 # After each case: no recorded child (other than the decoy) is alive, the run's
 # temp base is empty.
 #
 # OBELUS_UI_SELFTEST_ONLY=name,...  run only these cases (tests/ui/mutations.sh):
 # timeout error sigterm delay sigkill exited-parent early-sigkill parent-exit
-# parent-exit-harness parent-exit-race no-perl. The decoy check always runs.
+# parent-exit-harness parent-exit-race no-perl xdg-guard. The decoy check always runs.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
+. "$here/../xdg_guard.sh"
+obelus_xdg_guard tests/ui/selftest.sh || exit 3 # containment first (tests/private.sh)
 if ! command -v perl >/dev/null 2>&1 || ! perl -MPOSIX -MTime::HiRes -e 1 >/dev/null 2>&1; then
   echo "tests/ui/selftest.sh: perl with the core POSIX and Time::HiRes modules is required" >&2
   exit 2
@@ -311,6 +316,57 @@ if want no-perl; then
   else
     bad "no-perl: exit $rc: $out; left: $(ls -A "$work/t11")"
   fi
+fi
+
+# 12. containment: every entry point refuses to run against a "real-looking"
+# decoy home (XDG dirs and a pre-existing obelus store inside $work), exits
+# non-zero with a clear message, and leaves the decoy byte-identical (paths,
+# sizes, mtimes). A DIRECT `nvim -c "luafile tests/run.lua"` is checked too:
+# Neovim's own startup files (log, server socket) precede any Lua, so there only
+# the obelus-owned paths (store, claims) must be unchanged; without the nvim-side
+# guard the specs would write into them.
+if want xdg-guard; then
+  repo=$(cd "$here/../.." && pwd)
+  dh="$work/decoy-home"
+  mkdir -p "$dh/.local/share/nvim/obelus" "$dh/.local/state/nvim/obelus" "$dh/.config/nvim" "$dh/.cache/nvim"
+  echo '{"id":"1-1","file":"/real/project/a.lua","comment":"real user data"}' >"$dh/.local/share/nvim/obelus/existing.jsonl"
+  listing() { # listing <dir>...: path, size, mtime of everything below
+    perl -MFile::Find -MTime::HiRes=stat -e 'find({ no_chdir => 1, wanted => sub {
+      my @s = stat($_); printf "%s %d %.9f\n", $_, $s[7], $s[9] } }, @ARGV)' "$@" | sort
+  }
+  owned="$dh/.local/share/nvim/obelus $dh/.local/state/nvim/obelus"
+  # a VALID private root of its own that does NOT contain the decoy (the decoy
+  # sits in $work, which is inside this run's root, so that root can't be used)
+  rb="$work/root-b"
+  mkdir -p "$rb/config" "$rb/data" "$rb/state" "$rb/cache" "$rb/run" "$rb/tmp"
+  # what a user's shell looks like: XDG homes at the decoy, no private log,
+  # runtime or dirs variables
+  decoy_env="-u NVIM_LOG_FILE -u XDG_RUNTIME_DIR -u XDG_CONFIG_DIRS -u XDG_DATA_DIRS \
+    XDG_DATA_HOME=$dh/.local/share XDG_STATE_HOME=$dh/.local/state XDG_CONFIG_HOME=$dh/.config XDG_CACHE_HOME=$dh/.cache \
+    TMPDIR=$rb/tmp"
+  rootb_env="OBELUS_TEST_ROOT=$rb"
+  unset_env="-u OBELUS_TEST_ROOT -u XDG_DATA_HOME -u XDG_STATE_HOME -u XDG_CONFIG_HOME -u XDG_CACHE_HOME \
+    -u NVIM_LOG_FILE -u XDG_RUNTIME_DIR -u XDG_CONFIG_DIRS -u XDG_DATA_DIRS -u OBELUS_UI_TMPBASE"
+  check() { # scope (all|owned), label, command (eval'd)
+    if [ "$1" = all ]; then set -- "$dh" "$2" "$3"; else set -- "$owned" "$2" "$3"; fi
+    before=$(listing $1)
+    out=$(eval "$3" 2>&1)
+    rc=$?
+    after=$(listing $1)
+    if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'refusing to run' && [ "$after" = "$before" ]; then
+      ok "xdg-guard: $2: exit $rc, refused, decoy unchanged"
+    else
+      bad "xdg-guard: $2: exit $rc, decoy $([ "$after" = "$before" ] && echo unchanged || echo CHANGED): $(printf '%s' "$out" | tail -3)"
+    fi
+  }
+  check all "specs.sh, XDG at the decoy, no root" "env $unset_env $decoy_env sh '$repo/tests/specs.sh'"
+  check all "specs.sh, XDG at the decoy, outside the root" "env $unset_env $decoy_env $rootb_env sh '$repo/tests/specs.sh'"
+  check all "run.sh, XDG at the decoy, outside the root" "env $unset_env $decoy_env $rootb_env sh '$here/run.sh'"
+  check all "private.sh, XDG at the decoy, no root" "env $unset_env $decoy_env sh '$repo/tests/private.sh' true"
+  check owned "direct nvim run.lua, no root, HOME=decoy" \
+    "env $unset_env HOME='$dh' TMPDIR='$rb/tmp' nvim --headless -n -u NONE -i NONE -c 'luafile $repo/tests/run.lua'"
+  check owned "direct nvim run.lua, XDG at the decoy, outside the root" \
+    "env $unset_env $decoy_env $rootb_env nvim --headless -n -u NONE -i NONE -c 'luafile $repo/tests/run.lua'"
 fi
 
 # 0. the decoy survived every case above, including the group TERM/KILLs

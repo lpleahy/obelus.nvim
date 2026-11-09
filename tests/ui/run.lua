@@ -14,6 +14,7 @@
 local src = debug.getinfo(1, "S").source:sub(2)
 local uidir = vim.fn.fnamemodify(src, ":p:h")
 local repo = vim.fn.fnamemodify(uidir, ":h:h")
+dofile(repo .. "/tests/xdg_guard.lua")("tests/ui/run.lua") -- containment first
 package.path = uidir .. "/?.lua;" .. package.path
 
 local rpc = require("rpc")

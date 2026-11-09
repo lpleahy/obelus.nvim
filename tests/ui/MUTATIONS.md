@@ -9,8 +9,8 @@ baseline mismatch with no harness error. A harness error under a mutation counts
 **invalid**. The real tree is never modified.
 
 Last run: 2026-11-09, Neovim v0.12.6, 49 baselines (41 + 8 from `obelus.api`).
-Result: **31 caught (18 visual or setup, 1 harness, 1 real-UI behaviour, 11
-behaviour specs), 0 missed, 0 invalid** under `nice -n 10`. The per-row
+Result: **33 caught (18 visual or setup, 1 harness, 2 containment, 1 real-UI
+behaviour, 11 behaviour specs), 0 missed, 0 invalid** under `nice -n 10`. The per-row
 counts below for the first 18 rows are from the 41-baseline run; the `api_*`
 baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49).
 
@@ -46,6 +46,8 @@ baselines add to some of them (e.g. spinner-frame now 10, bubble-tint-colour 49)
 | api-generation-check-removed (behaviour) | `api.lua`: a send callback no longer checks it owns its record and job | caught: 1 `[api]` spec |
 | api-replace-keeps-old-sends (behaviour) | `api.lua`: unregister/replace no longer cancels the old registration's sends | caught: 2 `[api]` specs |
 | api-thread-saved-to-jsonl (behaviour) | `store.lua`: backend threads are no longer skipped by `save()` | caught: 2 `[api]` specs |
+| xdg-guard-lua-removed (containment) | `tests/xdg_guard.lua` returns at once | caught: 2 `xdg-guard` self-test failures (a direct `nvim … run.lua` with HOME at the decoy writes into its store) |
+| xdg-guard-specs-sh-removed (containment) | `tests/specs.sh` no longer checks before starting nvim | caught: 1 `xdg-guard` self-test failure (nvim's startup log lands in the decoy) |
 | supervisor-skips-member-teardown (harness) | `supervise.pl`: the `teardown();` call is removed, so the group is released while members still run (R4-B1) | caught: 4 self-test failures (`parent-exit`, `parent-exit-harness`: exit 42 with log `reaped` only, straggler still alive) |
 
 The setup and zindex mutations come from the first independent review. Before the

@@ -55,7 +55,7 @@ OBELUS_UI_ONLY=band,chat make ui-snapshots    # only scenarios whose name contai
 
 `make test` runs the specs first, then the snapshots, even under `make -j`. The
 specs report executed and skipped counts separately. With a private XDG setup the
-21 markview and render-markdown specs are skipped (488 passed, 21 skipped). They run
+21 markview and render-markdown specs are skipped (488 passed, 21 skipped) inside the private root. They run
 only when those plugins are on the runtimepath.
 
 The harness reports two kinds of problem. `FAIL` means a rendering differs from its
@@ -123,6 +123,26 @@ diff.
 
 ## Hermeticity and determinism
 
+- Containment: every test entry point runs only inside one private root.
+  - `make` routes every test target through `tests/private.sh`, the one launcher:
+    it clears inherited Neovim/Lua env (`NVIM*`, `VIMINIT`, `MYVIMRC`,
+    `VIMRUNTIME`, `LUA_*`), creates a root with `mktemp`, points every XDG home
+    and dirs variable, `XDG_RUNTIME_DIR`, `TMPDIR` and `NVIM_LOG_FILE` into it,
+    and removes that exact root afterwards. It refuses a caller-set XDG home
+    without `OBELUS_TEST_ROOT`.
+  - `tests/specs.sh`, `tests/ui/run.sh`, `selftest.sh` and `mutations.sh` refuse
+    (exit 3) unless `tests/xdg_guard.sh` validates the environment: a root that is
+    not `/`, `HOME` or an ancestor of `HOME`, and every path above inside it and
+    not a real default under `HOME`. A merely non-empty value is not enough.
+  - The nvim side (`tests/xdg_guard.lua`, first thing in `tests/run.lua`,
+    `tests/ui/run.lua` and `tests/ui/child.lua`) re-checks the same rules plus
+    `stdpath()` for data, state, cache, config, run and log, before anything is
+    required or written. Launching `nvim -c "luafile tests/run.lua"` directly is
+    refused there, but Neovim's own startup files (an empty log, its server
+    socket) are created before any Lua runs; use `tests/specs.sh`.
+  - `make ui-selftest` case `xdg-guard` points each entry point at a decoy home
+    and checks the refusal and that the decoy is byte-identical (paths, sizes,
+    mtimes); two mutations remove the guards and must fail it.
 - `run.sh` creates one private temp dir for the XDG config, data, state, cache and
   runtime dirs and for `TMPDIR`. It removes the dir afterwards. It also fixes `TZ`
   and the locale.
