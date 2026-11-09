@@ -1435,7 +1435,9 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
       store      { list, create, update, delete, resolve }:
         list(bufnr)           -> Thread[]
         create(bufnr, new)    -> Thread (must carry the new `id`);
-                              `new` = { range, kind, text, selected_text, ask? }
+                              `new` = { range, kind, text, turn_id,
+                              selected_text, ask? }; store `turn_id` with
+                              the comment (it is the first user turn)
         update(id, { text })  edit the comment text (the first turn)
         delete(id)
         resolve(id, resolved) resolved = true resolves, false reopens
@@ -1443,20 +1445,43 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
         the backend has it and shows a fixed message.
       transport  { send }:
         send(req, emit)       -> optional cancel function
-                              `req` = { id, text }: the thread's backend id
-                              and the new user message. `text` is "" when
-                              obelus asks for an answer to the thread's last
-                              (already stored) user turn. History is never
-                              sent: the backend owns it and its replay.
+                              `req` = { id, turn_id, text }: the thread's
+                              backend id, the user turn's stable id and its
+                              text. History is never sent: the backend owns
+                              it and its replay. See |obelus-api-turns|.
                               `emit(ev)` with ev.type "start", "delta"
                               (ev.text appended), "done" (optional ev.text:
                               the full reply) or "error". The first "done"
                               or "error" ends the send; later events, and a
                               throw after it, are ignored.
     A Thread is { id, range = { sl, el, sc?, ec? }, kind? ("line"|"char"),
-    turns = { { author = "you"|"agent", text }, ... } (or `text`),
+    turns = { { author = "you"|"agent", text, turn_id? }, ... } (or `text`),
     status? ("open"|"resolved"), ask? }. Lines and columns are 1-based.
     The turns are the COMMITTED history: obelus never edits or drops them.
+    Every user turn should carry the `turn_id` it was stored under; an
+    unanswered user turn without one cannot be retried.
+
+    Turn identity ~                                       *obelus-api-turns*
+    Each user message obelus submits has a stable `turn_id`; every retry of
+    that message sends the same id, and editing a draft after it was sent
+    makes it a new message with a new id. Backends must be idempotent on
+    `turn_id`:
+      not stored yet        store the user turn under it, then answer it;
+      stored, unanswered    do not store it again, only answer it;
+      stored and answered   store and answer nothing; emit "done" with the
+                            stored answer.
+    So every retry is safe:
+      accepted, then done   the turn and its reply become history;
+      accepted, then the answer failed ("error")
+                            the message stays a draft with the SAME
+                            `turn_id`; retrying only asks for the answer.
+                            After a refresh the stored turn replaces the
+                            draft (matched by `turn_id`, never by text) and
+                            a dispatch asks for its answer;
+      cancel                the draft keeps its `turn_id`; retrying is safe
+                            whether or not the backend had stored the turn;
+      lost acknowledgement  (send threw, no events, the editor went away)
+                            retrying with the same `turn_id` is safe.
 
     What changes on a matched buffer:
     - its threads are read with `list()` when the buffer is first shown,
@@ -1467,8 +1492,9 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
       resolve/reopen and delete go to `update()`, `resolve()` and
       `delete()` and change obelus's copy only when the backend succeeded;
     - a reply is a local DRAFT after the committed turns (it survives a
-      refresh) until it is sent with `transport.send()`; it streams into
-      the thread with the usual spinner and, once answered, becomes history;
+      refresh unless the backend reports a turn with its `turn_id`) until it
+      is sent with `transport.send()`; it streams into the thread with the
+      usual spinner and, once answered, becomes history;
     - these threads are kept in memory only: never written to obelus's
       JSONL, never in a batch, a tag, the project thread's briefing or an
       `@thread` mention;

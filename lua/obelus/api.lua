@@ -37,6 +37,7 @@ M.version = "0.1.0"
 ---@class obelus.api.Turn
 ---@field author "you"|"agent"
 ---@field text string
+---@field turn_id? string a user turn's id (from obelus's request or create); needed to answer it later
 
 ---@class obelus.api.Thread
 ---@field id string|integer the backend's own stable id
@@ -51,6 +52,7 @@ M.version = "0.1.0"
 ---@field range obelus.api.Range
 ---@field kind "line"|"char"
 ---@field text string the comment text
+---@field turn_id string the comment's (first user turn's) id; store it with the turn
 ---@field selected_text string[] the buffer text the range covers
 ---@field ask? boolean
 
@@ -63,7 +65,25 @@ M.version = "0.1.0"
 
 ---@class obelus.api.TurnRequest
 ---@field id string the thread's backend id; the backend owns the history and replays it
----@field text string the new user message; "" = answer the thread's last (sent) user turn
+---@field turn_id string the user turn's stable id: the SAME for every retry of that turn
+---@field text string the user turn's text
+--
+-- Backends must be idempotent on turn_id. For a request:
+--   * turn_id not stored yet: store the user turn under it, then answer it;
+--   * turn_id stored, not answered: do not store it again — only answer it;
+--   * turn_id stored and answered: do not store or answer again — emit "done"
+--     with the stored answer.
+-- So every retry is safe:
+--   accepted then done      the reply is committed with the turn (normal case);
+--   accepted, answer failed "error": the message stays a draft with the SAME
+--                           turn_id; a retry only asks for the answer. After a
+--                           refresh the stored turn replaces the draft (matched
+--                           by turn_id, never by text) and a dispatch answers it;
+--   cancel                  the draft keeps its turn_id; a retry is safe whether
+--                           or not the backend had stored the turn;
+--   lost acknowledgement    (send threw, no events, editor gone): a retry with
+--                           the same turn_id is safe.
+-- Editing a draft after it was sent gives it a NEW turn_id (a new message).
 
 ---@alias obelus.api.Event
 ---| { type: "start" }
@@ -88,6 +108,13 @@ local synced = {} ---@type table<integer, integer> bufnr -> generation it was li
 local inflight = {} ---@type table<string, table> record id -> its send state
 local gen_seq = 0
 local augroup
+
+local turn_seq = 0
+---A fresh, unique client turn id.
+function M._new_turn_id()
+  turn_seq = turn_seq + 1
+  return string.format("t-%d-%x-%x-%d", vim.uv.os_getpid(), vim.uv.hrtime(), math.random(0, 0x7fffffff), turn_seq)
+end
 
 local function next_gen()
   gen_seq = gen_seq + 1
@@ -163,7 +190,12 @@ local function to_record(b, bufnr, file, t)
   local turns = {}
   for _, turn in ipairs(type(t.turns) == "table" and t.turns or {}) do
     if type(turn) == "table" and (turn.author == "you" or turn.author == "agent") and type(turn.text) == "string" then
-      turns[#turns + 1] = { author = turn.author, text = turn.text, committed = true }
+      turns[#turns + 1] = {
+        author = turn.author,
+        text = turn.text,
+        committed = true,
+        turn_id = type(turn.turn_id) == "string" and turn.turn_id ~= "" and turn.turn_id or nil,
+      }
     end
   end
   if #turns == 0 and type(t.text) == "string" then
@@ -287,11 +319,23 @@ local function run_turn(c, b)
   local store, jobs = require("obelus.store"), require("obelus.jobs")
   local draft = draft_of(c)
   local tail = c.turns and c.turns[#c.turns]
-  local text
+  local turn_id, text
   if draft then
-    text = draft.text
+    -- one stable id per submitted text: a retry of the same draft reuses it,
+    -- an edited draft is a new message with a new id
+    if not (draft.turn_id and draft._api_sent_text == draft.text) then
+      draft.turn_id = M._new_turn_id()
+    end
+    draft._api_sent_text = draft.text
+    turn_id, text = draft.turn_id, draft.text
+  elseif tail and tail.author == "you" and tail.turn_id then
+    turn_id, text = tail.turn_id, tail.text -- stored, unanswered: the backend only answers it
   elseif tail and tail.author == "you" then
-    text = "" -- the backend has this turn already: ask it to answer
+    vim.notify(
+      "obelus: the " .. b.name .. " backend gave this message no turn id — it cannot be retried safely",
+      vim.log.levels.WARN
+    )
+    return false
   else
     vim.notify("obelus: nothing to send on this thread — reply first", vim.log.levels.WARN)
     return false
@@ -336,7 +380,7 @@ local function run_turn(c, b)
       handle(ev)
     end
   end
-  local ok, cancel = pcall(b.transport.send, { id = c.backend_id, text = text }, emit)
+  local ok, cancel = pcall(b.transport.send, { id = c.backend_id, turn_id = turn_id, text = text }, emit)
   if type(cancel) == "function" then
     st.cancel = cancel
     if st.done then
@@ -381,7 +425,7 @@ function M.refresh(bufnr)
       live[c.id] = true
     elseif mine then
       local d = owner(c) and draft_of(c)
-      drafts[c.id] = d and d.text or nil
+      drafts[c.id] = d or nil
     else
       keep[#keep + 1] = c
     end
@@ -389,8 +433,14 @@ function M.refresh(bufnr)
   for _, t in ipairs(list) do
     local rec = to_record(b, bufnr, file, t)
     if rec and not live[rec.id] then
-      if drafts[rec.id] then
-        rec.turns[#rec.turns + 1] = { author = "you", text = drafts[rec.id] }
+      local d = drafts[rec.id]
+      local stored = false
+      for _, t in ipairs(d and d.turn_id and rec.turns or {}) do
+        stored = stored or (t.author == "you" and t.turn_id == d.turn_id) -- reconciled by id, never by text
+      end
+      if d and not stored then
+        rec.turns[#rec.turns + 1] =
+          { author = "you", text = d.text, turn_id = d.turn_id, _api_sent_text = d._api_sent_text }
       end
       keep[#keep + 1] = rec
       live[rec.id] = true
@@ -564,10 +614,12 @@ function M._adopt(c)
     return true
   end
   local b = backends[name]
+  local first_turn_id = M._new_turn_id()
   local ok, t = pcall(b.store.create, bufnr, {
     range = vim.deepcopy(c.range),
     kind = c.kind,
     text = c.comment,
+    turn_id = first_turn_id,
     selected_text = vim.deepcopy(c.selected_text or {}),
     ask = c.ask,
   })
@@ -580,7 +632,7 @@ function M._adopt(c)
   c.id = mirror_id(name, c.backend_id)
   c.tag = nil -- backend threads never join a tag or a batch
   c.scratch = nil -- their lifetime is the backend's, not ask-mode scratch
-  c.turns = { { author = "you", text = c.comment, committed = true } }
+  c.turns = { { author = "you", text = c.comment, committed = true, turn_id = first_turn_id } }
   c._api_status = c.status
   c._api_gen = b.gen
   return true

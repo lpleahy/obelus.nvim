@@ -51,7 +51,7 @@ local function memo_backend()
           id = "n" .. B.seq,
           range = new.range,
           kind = new.kind,
-          turns = { { author = "you", text = new.text } },
+          turns = { { author = "you", text = new.text, turn_id = new.turn_id } },
           status = "open",
         }
         B.threads[#B.threads + 1] = t
@@ -350,17 +350,31 @@ T.it("a sent user tail is history: a new reply is a separate draft, sent as id +
     })
     T.eq(ctx.B.threads[1].turns[3].text, "already sent server turn", "backend untouched")
     require("obelus").chat_send(id, "new draft", "send")
-    T.eq(ctx.B.sends[1].req, { id = "7", text = "new draft" }, "only the id and the new text")
+    local req = ctx.B.sends[1].req
+    T.eq({ req.id, req.text }, { "7", "new draft" }, "the id and the new text")
+    T.ok(type(req.turn_id) == "string" and req.turn_id ~= "", "and a turn id")
+    T.eq(vim.tbl_count(req), 3, "nothing else (no client history)")
     ctx.B.sends[1].emit({ type = "done", text = "answer" })
     T.eq(texts(ctx.store.get(id))[4], "you:new draft", "sent and answered: now committed")
     -- dispatching a thread whose tail is a sent, unanswered turn asks for an answer
     local t = vim.deepcopy(seed[1])
     t.id = 8
-    t.turns = { { author = "you", text = "unanswered" } }
+    t.turns = { { author = "you", text = "unanswered", turn_id = "srv-8-1" } }
     table.insert(ctx.B.threads, t)
     api.refresh(ctx.buf)
     require("obelus").dispatch("api:memo:8")
-    T.eq(ctx.B.sends[2].req, { id = "8", text = "" })
+    T.eq(ctx.B.sends[2].req, { id = "8", turn_id = "srv-8-1", text = "unanswered" }, "answer the stored turn by its id")
+    -- a stored turn without an id cannot be retried safely: refused
+    local u = vim.deepcopy(seed[1])
+    u.id = 9
+    u.turns = { { author = "you", text = "no id" } }
+    table.insert(ctx.B.threads, u)
+    api.refresh(ctx.buf)
+    local msgs, restore = capture_notify()
+    require("obelus").dispatch("api:memo:9")
+    restore()
+    T.eq(#ctx.B.sends, 2, "not sent")
+    T.contains(vim.inspect(msgs), "no turn id")
   end)
 end)
 
@@ -396,7 +410,7 @@ T.it("a turn streams through the backend transport (start/delta/done); the CLI n
       require("obelus").chat_send(c.id, "and why first?", "send")
       T.eq(#ctx.B.sends, 1)
       local s = ctx.B.sends[1]
-      T.eq(s.req, { id = "n1", text = "and why first?" })
+      T.eq({ s.req.id, s.req.text }, { "n1", "and why first?" })
       T.ok(require("obelus.jobs").live(ctx.store.get(c.id)), "live while streaming")
       s.emit({ type = "start" })
       s.emit({ type = "delta", text = "It stops " })
@@ -466,6 +480,150 @@ T.it("one terminal transition: done then a throw keeps the reply; repeated termi
     T.eq(texts(cc), { "you:q", "you:ask", "agent:committed answer" })
     T.eq(cc.last_result, "committed answer")
     T.ok(not vim.inspect(msgs):find("back in the draft", 1, true), "no failure after success")
+  end)
+end)
+
+-- ── turn identity (R2-B4) ─────────────────────────────────────────────────────
+
+-- the memo backend, made idempotent on turn_id as the contract requires;
+-- B.mode decides what happens after the turn is stored: "done" | "fail" (an
+-- answer failure) | "throw" (a lost acknowledgement) | "hang" (until cancel)
+local function idempotent(ctx)
+  local B = ctx.B
+  B.mode = "done"
+  B.spec.transport.send = function(req, emit)
+    B.sends[#B.sends + 1] = { req = req, emit = emit }
+    local t
+    for _, x in ipairs(B.threads) do
+      if tostring(x.id) == req.id then
+        t = x
+      end
+    end
+    local at
+    for i, turn in ipairs(t.turns) do
+      if turn.author == "you" and turn.turn_id == req.turn_id then
+        at = i
+      end
+    end
+    if not at then
+      t.turns[#t.turns + 1] = { author = "you", text = req.text, turn_id = req.turn_id }
+      at = #t.turns
+    end
+    local answer = t.turns[at + 1]
+    if answer and answer.author == "agent" then
+      return emit({ type = "done", text = answer.text }) -- already answered: replay, never redo
+    end
+    if B.mode == "fail" then
+      return emit({ type = "error" })
+    elseif B.mode == "throw" then
+      error("RAW-LOST-ACK")
+    elseif B.mode == "hang" then
+      return function()
+        B.cancels = B.cancels + 1
+      end
+    end
+    table.insert(t.turns, at + 1, { author = "agent", text = "A: " .. req.text })
+    emit({ type = "done", text = "A: " .. req.text })
+  end
+  api.register_backend(B.spec)
+end
+
+local function server_you(B, text)
+  local n = 0
+  for _, turn in ipairs(B.threads[1].turns) do
+    if turn.author == "you" and turn.text == text then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+T.it("turn_id: accepted then done — the reply is committed with the turn's id", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    require("obelus").chat_send("api:memo:7", "next?", "send")
+    local req = ctx.B.sends[1].req
+    local c = ctx.store.get("api:memo:7")
+    T.eq(texts(c), { "you:why recursion?", "agent:It shrinks the problem.", "you:next?", "agent:A: next?" })
+    T.eq(ctx.store.turns(c)[3].turn_id, req.turn_id)
+    T.eq(server_you(ctx.B, "next?"), 1)
+  end)
+end)
+
+T.it("turn_id: stored then the answer failed — a retry (with or without refresh) only asks for the answer", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "fail"
+    local msgs, restore = capture_notify()
+    require("obelus").chat_send("api:memo:7", "stored before failure", "send")
+    restore()
+    local first = ctx.B.sends[1].req.turn_id
+    T.eq(server_you(ctx.B, "stored before failure"), 1, "the server stored it")
+    T.eq(texts(ctx.store.get("api:memo:7"))[3], "you:stored before failure*", "a draft locally, same id")
+    -- retry straight away: same id, no duplicate
+    require("obelus").dispatch("api:memo:7")
+    T.eq(ctx.B.sends[2].req.turn_id, first)
+    T.eq(server_you(ctx.B, "stored before failure"), 1)
+    -- the review's flow: refresh, then retry
+    api.refresh(ctx.buf)
+    local c = ctx.store.get("api:memo:7")
+    T.eq(texts(c), {
+      "you:why recursion?",
+      "agent:It shrinks the problem.",
+      "you:stored before failure",
+    }, "the stored turn replaced the draft (matched by id)")
+    ctx.B.mode = "done"
+    require("obelus").dispatch("api:memo:7")
+    T.eq(ctx.B.sends[3].req, { id = "7", turn_id = first, text = "stored before failure" })
+    T.eq(server_you(ctx.B, "stored before failure"), 1, "never stored twice")
+    T.eq(texts(ctx.store.get("api:memo:7"))[4], "agent:A: stored before failure")
+    T.ok(not vim.inspect(msgs):find("RAW", 1, true))
+  end)
+end)
+
+T.it("turn_id: cancel, then a retry with the same id", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "hang"
+    require("obelus").chat_send("api:memo:7", "slow one", "send")
+    require("obelus").cancel("api:memo:7")
+    T.eq(ctx.B.cancels, 1)
+    ctx.B.mode = "done"
+    require("obelus").dispatch("api:memo:7")
+    T.eq(ctx.B.sends[2].req.turn_id, ctx.B.sends[1].req.turn_id)
+    T.eq(server_you(ctx.B, "slow one"), 1)
+    T.eq(texts(ctx.store.get("api:memo:7"))[4], "agent:A: slow one")
+  end)
+end)
+
+T.it("turn_id: a lost acknowledgement (send threw after storing) — the retry is safe", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "throw"
+    local msgs, restore = capture_notify()
+    require("obelus").chat_send("api:memo:7", "did it arrive?", "send")
+    restore()
+    T.ok(not vim.inspect(msgs):find("RAW", 1, true))
+    ctx.B.mode = "done"
+    require("obelus").dispatch("api:memo:7")
+    T.eq(ctx.B.sends[2].req.turn_id, ctx.B.sends[1].req.turn_id)
+    T.eq(server_you(ctx.B, "did it arrive?"), 1)
+    T.eq(texts(ctx.store.get("api:memo:7"))[4], "agent:A: did it arrive?")
+  end)
+end)
+
+T.it("turn_id: an edited draft or an intentional repeat is a NEW message (never matched by text)", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    idempotent(ctx)
+    ctx.B.mode = "fail"
+    require("obelus").chat_send("api:memo:7", "first wording", "send")
+    require("obelus").chat_send("api:memo:7", "better wording", "send")
+    T.ok(ctx.B.sends[2].req.turn_id ~= ctx.B.sends[1].req.turn_id, "edited: new id")
+    ctx.B.mode = "done"
+    require("obelus").chat_send("api:memo:7", "again", "send")
+    require("obelus").chat_send("api:memo:7", "again", "send")
+    T.ok(ctx.B.sends[4].req.turn_id ~= ctx.B.sends[3].req.turn_id, "a repeat after an answer: new id")
+    T.eq(server_you(ctx.B, "again"), 2, "both kept, as the user meant")
   end)
 end)
 

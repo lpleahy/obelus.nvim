@@ -684,7 +684,7 @@ M.ask_send = with_comment(function(c, mode)
   -- only a WAITING you-turn is sendable: a fresh ask (its question is turn 1)
   -- or a saved follow-up draft. An answered thread with no draft has nothing
   -- to send — re-sending the original question would just ask it again.
-  local text = store.pending_you_text(c) or (c.backend and "" or nil) -- obelus.api: "" = answer its sent question
+  local text = store.pending_you_text(c) or (c.backend and "" or nil) -- obelus.api: no draft = its stored question (by turn_id)
   if not text or (text == "" and not c.backend) then
     return vim.notify("obelus: nothing waiting on this ask thread — reply first (<prefix>r)", vim.log.levels.WARN)
   end

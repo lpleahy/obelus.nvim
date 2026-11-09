@@ -41,6 +41,7 @@ obelus	obelus.txt	/*obelus*
 obelus-api	obelus.txt	/*obelus-api*
 obelus-api-approve	obelus.txt	/*obelus-api-approve*
 obelus-api-extension	obelus.txt	/*obelus-api-extension*
+obelus-api-turns	obelus.txt	/*obelus-api-turns*
 obelus-ask	obelus.txt	/*obelus-ask*
 obelus-commands	obelus.txt	/*obelus-commands*
 obelus-config	obelus.txt	/*obelus-config*

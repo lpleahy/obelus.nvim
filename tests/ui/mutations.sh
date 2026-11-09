@@ -258,6 +258,9 @@ spec_mutate "approve-cap-exhaustion-arms" lua/obelus/approve.lua \
 # the same, judged by the real-UI snapshot (api_approve_queued_typeahead)
 mutate "approve-no-drain-ui" lua/obelus/approve.lua \
   'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'
+# every send gets a fresh turn_id, so a retry of a stored turn becomes a new message
+spec_mutate "api-turn-id-not-reused" lua/obelus/api.lua \
+  'if not (draft.turn_id and draft._api_sent_text == draft.text) then' 'if true then'
 # a send's callback no longer checks that it owns its record and job
 spec_mutate "api-generation-check-removed" lua/obelus/api.lua \
   'and require("obelus.store").get(st.id) == st.c
