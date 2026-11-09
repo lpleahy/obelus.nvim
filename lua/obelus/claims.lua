@@ -24,9 +24,6 @@ M._dir = nil -- test override
 
 local uv = vim.uv or vim.loop
 local session = {} ---@type table<string, true> claims made in this process
--- directories this process created ABOVE the fixed chain (see claim()) whose
--- parent has not been synced successfully yet; retried by every claim
-local pending_parents = {} ---@type table<string, true>
 local cache = { key = nil, set = {}, corrupt = false }
 local warned = false
 
@@ -109,18 +106,15 @@ end
 -- the same path at the same time: an EEXIST (or any error) is followed by a
 -- fresh look, and creation counts as done only if a directory is there now.
 -- Real permission or type errors still refuse (the path is not a directory).
--- `fresh` (a list) collects every level that did not exist when we looked:
--- its new entry lives in its parent, which must be synced for durability.
-local function ensure_dir(dir, fresh)
+local function ensure_dir(dir)
   local st = uv.fs_stat(dir)
   if st then
     return st.type == "directory"
   end
   local parent = vim.fn.fnamemodify(dir, ":h")
-  if parent ~= dir and not ensure_dir(parent, fresh) then
+  if parent ~= dir and not ensure_dir(parent) then
     return false
   end
-  fresh[#fresh + 1] = dir
   if uv.fs_mkdir(dir, 493) then
     return true
   end
@@ -157,9 +151,10 @@ local function persist(dir, scheme)
   return false
 end
 
--- Sync the claims directory itself so the new entries are durable. Where the
--- platform refuses to fsync a directory (EINVAL/ENOTSUP), that part is best
--- effort; any other failure means "not durable".
+-- Sync one directory so its entries are durable. Where the platform cannot
+-- fsync a directory — opening or syncing it fails with EINVAL or ENOTSUP —
+-- that directory is best effort and counts as synced; any other failure
+-- (EIO, EACCES, …) means "not durable".
 local function sync_dir(dir)
   local dfd, _, ocode = uv.fs_open(dir, "r", 0)
   if not dfd then
@@ -179,10 +174,9 @@ end
 
 ---Claim schemes (lowercase names, e.g. { "luodda" }) and persist the claim.
 ---The claim holds for this session even if it cannot be saved. Returns true
----only when every scheme's marker file exists, a sync of each marker
----succeeded, the claims directory was synced, and so was the parent of every
----directory this claim had to create (where the platform supports syncing a
----directory; otherwise that part is best effort). On false, any
+---only when every scheme's marker file exists and, in this call, a sync of
+---each marker and of claims/ and every ancestor directory up to / succeeded
+---(a directory the platform cannot sync — EINVAL/ENOTSUP — is best effort). On false, any
 ---marker already created stays: it blocks the scheme for every reader.
 ---@param schemes string[]
 ---@return boolean saved
@@ -199,43 +193,24 @@ function M.claim(schemes)
     session[s] = true
   end
   local dir = M.dir()
-  local fresh = {}
-  local saved = ensure_dir(dir, fresh)
+  local saved = ensure_dir(dir)
   if saved then
     for _, s in ipairs(schemes) do
       saved = persist(dir, s) and saved
     end
-    -- EVERY claim re-syncs the directory entries the claims path depends on —
-    -- claims/, obelus/, the state base and the base's parent — whether or not
-    -- this call created them: an earlier attempt (here or in another editor)
-    -- may have created them and failed their sync. True means all of these
-    -- syncs succeeded in this call; an existing marker is never enough.
-    local chain = {}
-    local level = dir
-    for _ = 1, 4 do
-      chain[#chain + 1] = level
-      level = vim.fn.fnamemodify(level, ":h")
-    end
-    local synced = {} ---@type table<string, boolean> path -> did its sync succeed
-    for _, d in ipairs(chain) do
-      synced[d] = sync_dir(d)
-      saved = synced[d] and saved
-    end
-    -- a directory created above that chain (a missing state root's ancestors):
-    -- its parent must be synced too; kept pending in this process until it is
-    for _, d in ipairs(fresh) do
-      pending_parents[d] = true
-    end
-    for d in pairs(pending_parents) do
+    -- Stateless durability: EVERY claim syncs claims/ and every ancestor up to
+    -- and including /, whoever created them and whatever failed before (here,
+    -- in another editor, or before a restart). True means every sync in THIS
+    -- call succeeded; an existing marker is never enough. Claims are rare, so
+    -- the extra syncs cost little.
+    local d = dir
+    while true do
+      saved = sync_dir(d) and saved
       local parent = vim.fn.fnamemodify(d, ":h")
-      if synced[parent] == nil then
-        synced[parent] = sync_dir(parent)
+      if parent == d then
+        break -- reached /
       end
-      if synced[parent] then
-        pending_parents[d] = nil
-      else
-        saved = false
-      end
+      d = parent
     end
   end
   local _, corrupt, why = read()
@@ -273,7 +248,6 @@ end
 -- test hook: forget this process's claims and the cache
 function M._reset()
   session, cache, warned = {}, { key = nil, set = {}, corrupt = false }, false
-  pending_parents = {}
 end
 
 return M

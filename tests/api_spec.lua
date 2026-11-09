@@ -1361,118 +1361,138 @@ T.it("malformed claims fail closed for scheme:// records only and are kept as th
   T.ok(require("obelus.store").agent_eligible({ file = "fugitive:///x" }))
 end)
 
-T.it("a fresh claim syncs the marker, the claims dir and the parent of every directory it created", function()
-  T.fresh()
-  clear_backends()
-  local state = fresh_claims() -- missing: the claim creates every level
+-- record (and optionally fail) every fsync, by path; returns a controller
+local function sync_recorder()
   local uv = vim.uv
   local open, close, fsync = uv.fs_open, uv.fs_close, uv.fs_fsync
-  local paths, synced, fail_path = {}, {}, nil
+  local rec = { paths = {}, attempted = {}, fail_path = nil }
   uv.fs_open = function(path, ...)
     local fd, e, c = open(path, ...)
     if fd then
-      paths[fd] = path
+      rec.paths[fd] = path
     end
     return fd, e, c
   end
   uv.fs_close = function(fd, ...)
-    paths[fd] = nil
+    rec.paths[fd] = nil
     return close(fd, ...)
   end
   uv.fs_fsync = function(fd)
-    local p = paths[fd]
-    if p and p == fail_path then
+    local p = rec.paths[fd]
+    rec.attempted[#rec.attempted + 1] = p
+    if p and p == rec.fail_path then
       return nil, "EIO: injected", "EIO"
     end
-    synced[#synced + 1] = p
     return fsync(fd)
   end
+  function rec.restore()
+    uv.fs_open, uv.fs_close, uv.fs_fsync = open, close, fsync
+  end
+  return rec
+end
+
+-- claims/ and every ancestor up to and including /
+local function ancestor_chain(dir)
+  local chain, d = {}, dir
+  while true do
+    chain[#chain + 1] = d
+    local parent = vim.fn.fnamemodify(d, ":h")
+    if parent == d then
+      return chain
+    end
+    d = parent
+  end
+end
+
+T.it("every claim syncs its marker, claims/ and every ancestor directory up to /", function()
+  T.fresh()
+  clear_backends()
+  fresh_claims() -- missing: the first claim creates every level
+  local rec = sync_recorder()
   local msgs, restore = capture_notify()
   local ok, err = pcall(function()
-    T.eq(api.claim_schemes({ "luodda" }), true)
-    local claims_dir = claims.dir()
-    local required = {
-      claims_dir .. "/luodda", -- the marker
-      claims_dir, -- its directory entry
-      vim.fn.fnamemodify(claims_dir, ":h"), -- parent of the created claims/
-      vim.fn.fnamemodify(claims_dir, ":h:h"), -- parent of the created obelus/
-      state, -- parent of the created nvim/
-      vim.fn.fnamemodify(state, ":h"), -- parent of the created state dir
-    }
-    for _, p in ipairs(required) do
-      T.ok(vim.tbl_contains(synced, p), "synced: " .. p .. "  (all: " .. vim.inspect(synced) .. ")")
+    local chain = ancestor_chain(claims.dir())
+    T.eq(chain[#chain], "/")
+    for _, step in ipairs({
+      { "luodda", "a fresh claim" },
+      { "luodda", "the same claim again (nothing to create)" },
+      { "memo", "another scheme" },
+    }) do
+      rec.attempted = {}
+      T.eq(api.claim_schemes({ step[1] }), true, step[2])
+      T.ok(vim.tbl_contains(rec.attempted, claims.dir() .. "/" .. step[1]), step[2] .. ": the marker")
+      for _, d in ipairs(chain) do
+        T.ok(vim.tbl_contains(rec.attempted, d), step[2] .. ": synced " .. d)
+      end
     end
-    -- a failing sync of one of those parents: not durable, marker kept
-    fresh_claims()
-    local d = claims.dir()
-    fail_path = vim.fn.fnamemodify(d, ":h:h") -- the parent of the created obelus/
-    T.eq(api.claim_schemes({ "memo" }), false, "a parent sync failed: not reported durable")
-    T.ok(uv.fs_stat(d .. "/memo"), "the marker is kept")
   end)
-  uv.fs_open, uv.fs_close, uv.fs_fsync = open, close, fsync
+  rec.restore()
   restore()
   if not ok then
     error(err, 0)
   end
 end)
 
-T.it("a failed parent sync is retried: true only once every required sync succeeded", function()
+T.it("a failed sync at ANY ancestor depth keeps the claim false across a restart until it succeeds", function()
   T.fresh()
   clear_backends()
   fresh_claims()
-  local uv = vim.uv
-  local open, close, fsync = uv.fs_open, uv.fs_close, uv.fs_fsync
-  local paths, attempted, fail_path = {}, {}, nil
-  uv.fs_open = function(path, ...)
-    local fd, e, c = open(path, ...)
-    if fd then
-      paths[fd] = path
-    end
-    return fd, e, c
-  end
-  uv.fs_close = function(fd, ...)
-    paths[fd] = nil
-    return close(fd, ...)
-  end
-  uv.fs_fsync = function(fd)
-    local p = paths[fd]
-    attempted[#attempted + 1] = p
-    if p and p == fail_path then
-      return nil, "EIO: injected", "EIO"
-    end
-    return fsync(fd)
-  end
+  local depths = #ancestor_chain(claims.dir())
+  local rec = sync_recorder()
   local msgs, restore = capture_notify()
   local ok, err = pcall(function()
-    -- the review's probe: EIO on the nvim/ level (claims.dir():h:h)
-    local base = vim.fn.fnamemodify(claims.dir(), ":h:h")
-    fail_path = base
-    T.eq(api.claim_schemes({ "luodda" }), false, "first claim: a parent sync failed")
-    T.ok(uv.fs_stat(claims.dir() .. "/luodda"), "the marker is kept")
-    attempted = {}
-    T.eq(api.claim_schemes({ "luodda" }), false, "retry while it still fails: still false")
-    T.ok(vim.tbl_contains(attempted, base), "the retry did try that parent again")
-    fail_path, attempted = nil, {}
-    T.eq(api.claim_schemes({ "luodda" }), true, "retry once it succeeds: true")
-    T.ok(vim.tbl_contains(attempted, base), "and it synced that parent")
-    attempted = {}
-    T.eq(api.claim_schemes({ "memo" }), true, "a later scheme")
-    T.ok(vim.tbl_contains(attempted, base), "re-syncs the chain too")
-    -- another editor (no memory of the failure in this process)
-    fresh_claims()
-    base = vim.fn.fnamemodify(claims.dir(), ":h:h")
-    fail_path = base
-    T.eq(api.claim_schemes({ "luodda" }), false)
-    claims._reset()
-    fail_path, attempted = nil, {}
-    T.eq(api.claim_schemes({ "luodda" }), true)
-    T.ok(vim.tbl_contains(attempted, base), "a fresh process syncs that parent before saying true")
+    for depth = 1, depths do
+      fresh_claims() -- a new state root each time (and no memory in this process)
+      local chain = ancestor_chain(claims.dir())
+      local target = chain[depth]
+      rec.fail_path = target
+      T.eq(api.claim_schemes({ "luodda" }), false, "depth " .. depth .. " (" .. target .. "): first claim")
+      claims._reset() -- a restart: nothing remembered
+      rec.attempted = {}
+      T.eq(api.claim_schemes({ "luodda" }), false, "depth " .. depth .. ": after a restart, still failing")
+      T.ok(vim.tbl_contains(rec.attempted, target), "depth " .. depth .. ": the failed sync was tried again")
+      rec.fail_path = nil
+      claims._reset()
+      T.eq(api.claim_schemes({ "luodda" }), true, "depth " .. depth .. ": after a restart, once it succeeds")
+    end
   end)
-  uv.fs_open, uv.fs_close, uv.fs_fsync = open, close, fsync
+  rec.restore()
   restore()
   if not ok then
     error(err, 0)
   end
+end)
+
+T.it("the review's restart probe in real processes: the 4th ancestor's failed sync is never forgotten", function()
+  local state = vim.fn.tempname()
+  fresh_claims(state)
+  -- the directory above claims/, obelus/, nvim/ and the state root: the
+  -- parent of the fourth claims-path directory, which round 6 found forgotten
+  local target = ancestor_chain(claims.dir())[5]
+  local function child(fail)
+    return in_new_nvim(state, [[
+local uv = vim.uv
+local open, close, fsync = uv.fs_open, uv.fs_close, uv.fs_fsync
+local paths = {}
+local fail = ]] .. vim.inspect(fail) .. [[
+
+uv.fs_open = function(path, ...)
+  local fd, e, c = open(path, ...)
+  if fd then paths[fd] = path end
+  return fd, e, c
+end
+uv.fs_close = function(fd, ...) paths[fd] = nil return close(fd, ...) end
+uv.fs_fsync = function(fd)
+  if fail and paths[fd] == fail then return nil, "EIO: injected", "EIO" end
+  return fsync(fd)
+end
+vim.notify = function() end
+io.write("saved=", tostring(require("obelus.api").claim_schemes({ "luodda" })), "\n")
+]])
+  end
+  T.contains(child(target), "saved=false\n", "editor 1: the sync fails")
+  T.contains(child(target), "saved=false\n", "editor 2 (a restart), still failing: the marker exists, still false")
+  T.contains(child(nil), "saved=true\n", "editor 3 (a restart), the sync works: true")
 end)
 
 T.it("a claim whose sync fails is not reported durable; its marker stays and blocks", function()

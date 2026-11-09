@@ -301,14 +301,10 @@ spec_mutate "claims-stat-error-fails-open" lua/obelus/claims.lua \
 spec_mutate "claims-mkdir-eexist-fails" lua/obelus/claims.lua \
   'local again = uv.fs_stat(dir) -- someone else may have created it meanwhile' 'local again = nil' \
   "a competing creator's EEXIST"
-# the parents of newly created claims directories are never synced (R4-N1)
-spec_mutate "claims-parents-not-synced" lua/obelus/claims.lua \
-  'synced[parent] = sync_dir(parent)' 'synced[parent] = true' \
-  'a fresh claim syncs the marker, the claims dir and the parent'
-# only the directories THIS call created get their parents synced; a retry skips the failed one (R5-B1)
-spec_mutate "claims-retry-skips-failed-parent" lua/obelus/claims.lua \
-  'for _ = 1, 4 do' 'for _ = 1, 1 do' \
-  'a failed parent sync is retried'
+# the chain skips every other ancestor directory (stateless durability, R6-B1)
+spec_mutate "claims-chain-skips-an-ancestor" lua/obelus/claims.lua \
+  'local parent = vim.fn.fnamemodify(d, ":h")' 'local parent = vim.fn.fnamemodify(d, ":h:h")' \
+  'every claim syncs its marker, claims/ and every ancestor'
 # an existing marker is reported durable without a successful sync (R3-N1)
 spec_mutate "claims-sync-not-verified" lua/obelus/claims.lua \
   'local ok = sync(rfd)' 'local ok = true' \
