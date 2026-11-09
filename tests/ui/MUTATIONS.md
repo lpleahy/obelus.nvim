@@ -16,9 +16,9 @@ collateral. Every failing test name is printed. Self-test mutations name the
 self-test case that must fail. `OBELUS_MUT_ONLY=name,…` runs a subset.
 
 Last run: 2026-11-09, Neovim v0.12.6, 53 baselines (41 + 12 from `obelus.api`).
-Result: **51 caught (18 visual or setup, 1 harness, 5 containment, 2 real-UI
-behaviour, 25 behaviour specs, each failing its named regression), 0 missed, 0
-invalid** under `nice -n 10`; 13 behaviour mutations had collateral failures,
+Result: **56 caught (18 visual or setup, 1 harness, 7 containment, 2 real-UI
+behaviour, 28 behaviour specs, each failing its named regression), 0 missed, 0
+invalid** under `nice -n 10`; 15 behaviour mutations had collateral failures,
 all with a clean pristine control. The per-row counts below for the first 18
 rows are from the 41-baseline run; the `api_*` baselines add to some of them.
 
@@ -74,6 +74,11 @@ rows are from the 41-baseline run; the `api_*` baselines add to some of them.
 | xdg-guard-sh-defaults-by-spelling (containment) | `tests/xdg_guard.sh`: the defaults are matched by spelling only | named self-test: "xdg-guard: private.sh, alias root" |
 | xdg-guard-lua-defaults-by-spelling (containment) | `tests/xdg_guard.lua`: the same on the nvim side | named self-test: "xdg-guard: direct nvim run.lua, alias root" |
 | xdg-guard-log-symlink-allowed (containment) | `tests/xdg_guard.sh`: a symlinked `NVIM_LOG_FILE` passes | named self-test: "xdg-guard: private.sh, log file is a symlink" |
+| api-late-cancel-loses-reason (behaviour) | `api.lua`: a cancel function returned after the send ended is called with no reason (and after done/error too) | named: "terminated INSIDE send()" |
+| claims-parents-not-synced (behaviour) | `claims.lua`: the parents of newly created directories are not synced | named: "a fresh claim syncs the marker, the claims dir and the parent" |
+| approve-hint-allows-format-controls (behaviour) | `approve.lua`: bidi embeddings/overrides and line/paragraph separators pass | named: "approve: focus_hint rejects bidi, format and C1 controls" |
+| xdg-guard-sh-relative-allowed (containment) | `tests/xdg_guard.sh`: relative values are accepted | named self-test: "xdg-guard: private.sh, relative XDG values" |
+| launcher-unsafe-tmpdir-base (containment) | `tests/private.sh`: the inherited TMPDIR is used unchecked | named self-test: "xdg-guard: private.sh, inherited TMPDIR in a home's .local" |
 | supervisor-skips-member-teardown (harness) | `supervise.pl`: the `teardown();` call is removed, so the group is released while members still run (R4-B1) | caught: 4 self-test failures (`parent-exit`, `parent-exit-harness`: exit 42 with log `reaped` only, straggler still alive) |
 
 The setup and zindex mutations come from the first independent review. Before the
