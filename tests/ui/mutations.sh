@@ -213,17 +213,33 @@ spec_mutate() { # name file old new
 # a backend thread falls through to obelus's own transports (the CLI)
 spec_mutate "api-cli-fallthrough" lua/obelus/transport/init.lua \
   'if api and api._active() then' 'if false then'
-# the CLI transport's own refusal is removed (defence in depth)
+# the CLI transport's own refusal of non-file/backend threads is removed
 spec_mutate "api-cli-guard-removed" lua/obelus/transport/cli.lua \
-  'package.loaded["obelus.api"]._guard_cli(payload)' 'local _ = payload'
+  'if not store.all_agent_eligible(payload.comments, payload.opts and payload.opts.actions_comments) then' 'if false then'
+# the eligibility predicate stops recognising non-file (URI) records
+spec_mutate "api-eligibility-ignores-uri" lua/obelus/store.lua \
+  'c.backend == nil and not (type(c.file) == "string"' 'c.backend == nil and not (false and type(c.file) == "string"'
 # approve with no UI opens a float instead of denying at once
 spec_mutate "approve-headless-falls-through" lua/obelus/approve.lua \
   'if not M.available() then
     return finish(false, a)' 'if false then
     return finish(false, a)'
-# the arming window is dropped: typeahead right after focusing approves
-spec_mutate "approve-typeahead-approves" lua/obelus/approve.lua \
-  'return a.explicit == true and vim.uv.hrtime() >= a.ready_at' 'return a.explicit == true'
+# no unarmed phase: focusing arms at once, so typeahead approves
+spec_mutate "approve-no-unarmed-phase" lua/obelus/approve.lua \
+  'a.armed = false' 'a.armed = true'
+# the drain is removed: input queued while unarmed survives into the armed prompt
+spec_mutate "approve-no-drain" lua/obelus/approve.lua \
+  'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'
+# the same, judged by the real-UI snapshot (api_approve_queued_typeahead)
+mutate "approve-no-drain-ui" lua/obelus/approve.lua \
+  'while n < 10000 and vim.fn.getchar(0) ~= 0 do' 'while false do'
+# a send's callback no longer checks that it owns its record and job
+spec_mutate "api-generation-check-removed" lua/obelus/api.lua \
+  'and require("obelus.store").get(st.id) == st.c
+    and require("obelus.jobs").get(st.id) == st.spec' 'and true'
+# replacing/unregistering a backend no longer cancels its sends
+spec_mutate "api-replace-keeps-old-sends" lua/obelus/api.lua \
+  'return st.b == old' 'return false'
 # a backend's threads leak into obelus's JSONL
 spec_mutate "api-thread-saved-to-jsonl" lua/obelus/store.lua \
   'goto continue -- obelus.api' 'local _ = nil -- obelus.api'

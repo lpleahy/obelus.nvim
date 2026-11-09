@@ -467,6 +467,30 @@ scenario("api_approve_prompt", function()
   C.settle()
 end)
 
+-- the review's blocked-loop case, with a real UI: focus, queue `a` (typeahead and
+-- pending input), block the loop past the unarmed window, let it arm, then run
+-- what is left of the typeahead. The prompt must still be open, focused and
+-- undecided (a decision would show as a notification and close the float).
+scenario("api_approve_queued_typeahead", function()
+  fresh()
+  require("obelus.api").approve({
+    summary = "Write 3 flashcards to the deck 'recursion'",
+    on_result = function(v)
+      vim.notify("approval result: " .. tostring(v))
+    end,
+  })
+  C.settle()
+  assert(require("obelus.api").approve_focus(), "focus failed")
+  vim.api.nvim_feedkeys("a", "t", false)
+  vim.api.nvim_input("a")
+  vim.uv.sleep(750)
+  C.advance(700) -- the unarmed window's timer: drain, then a scheduled drain + arm
+  C.settle()
+  assert(require("obelus.approve")._active().armed, "prompt did not arm")
+  vim.api.nvim_feedkeys("", "x", false)
+  C.settle()
+end)
+
 -- ── setup / keymap registration path ──────────────────────────────────────────
 scenario("registration", function()
   fresh()

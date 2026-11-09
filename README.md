@@ -154,9 +154,9 @@ Approve/Deny prompt. Full reference: `:h obelus-api-extension`.
 
 | Function | |
 | --- | --- |
-| `register_backend{ name, match, store, transport }` | Own buffers where `match(bufnr)` is true: their threads come from `store` (`list`/`create`/`update`/`delete`/`resolve`) and replies go through `transport.send(req, emit)` (`start`/`delta`/`done`/`error` events). obelus's own transports never run on them. |
+| `register_backend{ name, match, store, transport }` | Own buffers where `match(bufnr)` is true: their threads come from `store` (`list`/`create`/`update`/`delete`/`resolve`) and replies go through `transport.send({ id, text }, emit)` (`start`/`delta`/`done`/`error` events); the backend owns the history. obelus's own transports never run on them, nor on any other non-file (`scheme://`) record. |
 | `unregister_backend(name)` / `backends()` / `backend_for(bufnr?)` / `refresh(bufnr?)` | Manage and inspect backends |
-| `approve{ summary, details?, on_result }` / `approve_focus()` | A floating Approve/Deny prompt. It must be focused (`:ObelusApprove`) and armed before `a` approves; every other exit, and no UI at all, is Deny. |
+| `approve{ summary, details?, on_result }` / `approve_focus()` | A floating Approve/Deny prompt. It must be focused (`:ObelusApprove`); queued input is drained before it arms, then `a` approves. Every other exit, and no UI at all, is Deny. |
 
 ## Configuration
 

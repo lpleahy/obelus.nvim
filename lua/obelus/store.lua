@@ -46,6 +46,28 @@ function M.store_path()
   return data_path(root)
 end
 
+-- obelus.api: may this record's content reach obelus's own agents (the CLI and
+-- every other transport, prompts, briefings, @thread expansion)? Not for an
+-- extension backend's thread, and not for any record on a non-file buffer
+-- ("scheme://…"): such a record without a live owner is QUARANTINED — kept and
+-- shown, never sent or expanded. Decided from the record alone, so it holds
+-- after a restart, for unloaded buffers and before any backend registers.
+function M.agent_eligible(c)
+  return type(c) == "table" and c.backend == nil and not (type(c.file) == "string" and c.file:match("^%a[%w+.-]*://"))
+end
+
+---True when every record of every given list is agent_eligible.
+function M.all_agent_eligible(...)
+  for i = 1, select("#", ...) do
+    for _, c in ipairs(select(i, ...) or {}) do
+      if not M.agent_eligible(c) then
+        return false
+      end
+    end
+  end
+  return true
+end
+
 function M.next_id()
   seq = seq + 1
   return string.format("%d-%d", os.time(), seq)
@@ -61,8 +83,8 @@ function M.add(comment)
   if comment.tag == nil and M.active_tag and not comment.scratch then
     comment.tag = M.active_tag -- sticky tagging mode: new threads inherit the active tag
   end
-  if package.loaded["obelus.api"] then
-    package.loaded["obelus.api"]._adopt(comment) -- obelus.api: a backend buffer's comment goes to its backend
+  if package.loaded["obelus.api"] and not package.loaded["obelus.api"]._adopt(comment) then
+    return nil -- obelus.api: the backend could not store this comment (it said so)
   end
   table.insert(M.comments, comment)
   if opts().persist.auto then
@@ -173,12 +195,12 @@ end
 
 function M.update(id, fields)
   local c = M.get(id)
+  if c and c.backend and package.loaded["obelus.api"] and not package.loaded["obelus.api"]._on_update(c, fields) then
+    return nil -- obelus.api: the backend refused the edit/resolve; the mirror is unchanged
+  end
   if c then
     for k, v in pairs(fields) do
       c[k] = v
-    end
-    if c.backend and package.loaded["obelus.api"] then
-      package.loaded["obelus.api"]._on_update(c, fields) -- obelus.api: forward edit/resolve
     end
     if opts().persist.auto then
       M.save_soon()
@@ -190,10 +212,10 @@ end
 function M.remove(id)
   for i, c in ipairs(M.comments) do
     if c.id == id then
-      table.remove(M.comments, i)
-      if c.backend and package.loaded["obelus.api"] then
-        package.loaded["obelus.api"]._on_remove(c) -- obelus.api: forward the delete
+      if c.backend and package.loaded["obelus.api"] and not package.loaded["obelus.api"]._on_remove(c) then
+        return nil -- obelus.api: the backend refused the delete; the thread stays
       end
+      table.remove(M.comments, i)
       M.detach_from_batches(id)
       if opts().persist.auto then
         M.save_soon()
@@ -392,7 +414,7 @@ function M.pending()
     -- submit / dispatch-all / batch round, even with a draft waiting — gated on
     -- `ask` itself, so ask.scratch = false can't turn a question into a
     -- write-capable review dispatch. (scratch: the same, for any other scratch.)
-    if c.meta or c.ask or c.scratch or c.backend or c.status == "resolved" or c.dispatching then
+    if c.meta or c.ask or c.scratch or not M.agent_eligible(c) or c.status == "resolved" or c.dispatching then
       return false
     end
     local t = M.turns(c)
@@ -445,7 +467,7 @@ function M.pending_you_text(c)
     return nil
   end
   local tail = t[#t]
-  if tail and tail.author == "you" then
+  if tail and tail.author == "you" and not tail.committed then -- obelus.api: a backend's sent turn is no draft
     return tail.text
   end
   return nil
@@ -464,7 +486,7 @@ function M.set_pending_you(id, text)
   end
   local n = #c.turns
   local tail = c.turns[n]
-  if tail and tail.author == "you" then
+  if tail and tail.author == "you" and not tail.committed then -- obelus.api: never rewrite a sent turn
     if text == "" and n > 1 then
       table.remove(c.turns) -- clearing a reply draft drops it; the comment (n == 1) is kept
     else
@@ -705,9 +727,9 @@ function M.tag_comment(id, tag)
   if not c then
     return
   end
-  if c.meta or c.backend then
+  if c.meta or not M.agent_eligible(c) then
     return -- the project thread is never batch-curated; a tag on it would be a phantom
-    -- (obelus.api: nor is an extension backend's thread — it never joins the CLI's batches)
+    -- (obelus.api: nor is a non-file/backend thread — it never joins the CLI's batches)
   end
   if c.scratch then
     return -- an ask thread is a question, not review material: tags are batch curation
@@ -729,7 +751,7 @@ end
 ---@param tag string
 function M.tag_members(tag)
   return vim.tbl_filter(function(c)
-    return not c.meta and not c.scratch and c.tag == tag
+    return not c.meta and not c.scratch and c.tag == tag and M.agent_eligible(c)
   end, M.comments)
 end
 
@@ -981,6 +1003,7 @@ function M.load()
           rec.extmark_id = nil
           rec._stream_turn = nil -- migration: strip if an older build ever leaked one
           rec.batch_id = nil -- migration: membership is owned solely by batch.comment_ids now
+          rec.backend, rec.backend_id = nil, nil -- obelus.api: mirrors are never on disk
           for _, t in ipairs(rec.turns or {}) do
             t.narration_end = nil -- migration: runtime-only, strip if one ever leaked to disk
           end
@@ -1026,6 +1049,9 @@ function M.load()
   end
   M.load_batches()
   loaded_root = M.root()
+  if package.loaded["obelus.api"] then
+    package.loaded["obelus.api"]._on_reload() -- obelus.api: rebuild backend mirrors
+  end
 end
 
 -- Reset the cached root and reload if the project changed (DirChanged).

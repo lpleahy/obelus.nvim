@@ -7,13 +7,19 @@ local approve = require("obelus.approve")
 
 -- An in-memory backend. B.threads is its "database"; B.calls logs every store
 -- call; B.sends every transport.send (with the emit callback to drive it).
+-- B.fail[op] = true makes that store op throw (a raw sentinel message).
 local function memo_backend()
-  local B = { threads = {}, calls = {}, sends = {}, seq = 0 }
+  local B = { threads = {}, calls = {}, sends = {}, seq = 0, fail = {}, cancels = 0 }
   local function find(id)
     for i, t in ipairs(B.threads) do
-      if t.id == id then
+      if tostring(t.id) == id then
         return t, i
       end
+    end
+  end
+  local function guard(op)
+    if B.fail[op] then
+      error("RAW-STORE-ERROR " .. op)
     end
   end
   B.spec = {
@@ -28,6 +34,8 @@ local function memo_backend()
         return vim.deepcopy(B.threads)
       end,
       create = function(bufnr, new)
+        B.calls[#B.calls + 1] = { "create", bufnr, new.text }
+        guard("create")
         B.seq = B.seq + 1
         local t = {
           id = "n" .. B.seq,
@@ -37,20 +45,22 @@ local function memo_backend()
           status = "open",
         }
         B.threads[#B.threads + 1] = t
-        B.calls[#B.calls + 1] = { "create", bufnr, new.text }
         return vim.deepcopy(t)
       end,
       update = function(id, fields)
         B.calls[#B.calls + 1] = { "update", id, fields.text }
+        guard("update")
         find(id).turns[1].text = fields.text
       end,
       delete = function(id)
         B.calls[#B.calls + 1] = { "delete", id }
+        guard("delete")
         local _, i = find(id)
         table.remove(B.threads, i)
       end,
       resolve = function(id, resolved)
         B.calls[#B.calls + 1] = { "resolve", id, resolved }
+        guard("resolve")
         find(id).status = resolved and "resolved" or "open"
       end,
     },
@@ -58,7 +68,7 @@ local function memo_backend()
       send = function(req, emit)
         B.sends[#B.sends + 1] = { req = req, emit = emit }
         return function()
-          B.cancelled = true
+          B.cancels = B.cancels + 1
         end
       end,
     },
@@ -72,8 +82,7 @@ local function calls_of(B, op)
   end, B.calls)
 end
 
--- Spy on every transport obelus could run: if any of them is invoked for a
--- backend thread, the test fails. Returns the spy log and a restore function.
+-- Spy on every transport obelus could run. Returns the spy log and a restore fn.
 local function spy_transports()
   local reg = require("obelus.transport").transports
   local saved, log = {}, {}
@@ -100,28 +109,36 @@ local function capture_notify()
   end
 end
 
--- fresh obelus + the memo backend + a "memo://guide/1" buffer shown in the window
-local function setup(seed)
-  local ctx = T.fresh()
+local function clear_backends()
   for _, name in ipairs(api.backends()) do
     api.unregister_backend(name)
   end
+end
+
+-- a "memo://guide/<n>" buffer shown in the current window
+local function memo_buffer(name)
+  local buf = vim.api.nvim_create_buf(true, true)
+  vim.api.nvim_buf_set_name(buf, name or ("memo://guide/" .. buf))
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# Guide", "Recursion calls itself.", "Base case first." })
+  vim.api.nvim_set_current_buf(buf)
+  return buf
+end
+
+-- fresh obelus + the memo backend + a memo buffer shown in the window
+local function setup(seed)
+  local ctx = T.fresh()
+  clear_backends()
   local B = memo_backend()
   B.threads = seed or {}
   api.register_backend(B.spec)
-  local buf = vim.api.nvim_create_buf(true, true)
-  vim.api.nvim_buf_set_name(buf, "memo://guide/" .. buf)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "# Guide", "Recursion calls itself.", "Base case first." })
-  vim.api.nvim_set_current_buf(buf)
-  ctx.B, ctx.buf = B, buf
-  ctx.file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":p")
+  ctx.buf = memo_buffer()
+  ctx.B = B
+  ctx.file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ctx.buf), ":p")
   return ctx
 end
 
 local function teardown(ctx)
-  for _, name in ipairs(api.backends()) do
-    api.unregister_backend(name)
-  end
+  clear_backends()
   if ctx and ctx.buf and vim.api.nvim_buf_is_valid(ctx.buf) then
     vim.cmd("enew")
     pcall(vim.api.nvim_buf_delete, ctx.buf, { force = true })
@@ -147,9 +164,27 @@ local function new_comment(ctx, line, text)
   end
 end
 
+local function texts(c)
+  return vim.tbl_map(function(t)
+    return t.author .. ":" .. t.text .. (t.committed and "" or "*")
+  end, require("obelus.store").turns(c))
+end
+
+local SEED = {
+  {
+    id = 7,
+    range = { sl = 2, el = 2 },
+    turns = {
+      { author = "you", text = "why recursion?" },
+      { author = "agent", text = "It shrinks the problem." },
+    },
+  },
+}
+
+-- ── registration ───────────────────────────────────────────────────────────────
+
 T.it("api.version is semver 0.1.x and register_backend validates its spec", function()
   T.eq(api.version, "0.1.0")
-  T.ok(api.version:match("^%d+%.%d+%.%d+$"), "semver")
   local B = memo_backend()
   T.ok(not pcall(api.register_backend, { name = "x" }), "missing match/store/transport")
   local bad = vim.deepcopy(B.spec)
@@ -182,29 +217,19 @@ T.it("register/match: a backend owns its buffers only; a throwing match fails cl
   end)
 end)
 
-T.it("list: a backend's threads are mirrored into the UI store, never into the JSONL", function()
-  local seed = {
-    {
-      id = 7,
-      range = { sl = 2, el = 2 },
-      turns = { { author = "you", text = "why recursion?" }, { author = "agent", text = "It shrinks the problem." } },
-    },
-    { id = "bad" }, -- malformed (no range): skipped
-  }
+-- ── store: list / create / edit / resolve / delete ─────────────────────────────
+
+T.it("list: a backend's threads are mirrored as committed history, never into the JSONL", function()
+  local seed = vim.deepcopy(SEED)
+  seed[2] = { id = "bad" } -- malformed (no range): skipped
   with_backend(seed, function(ctx)
-    T.ok(#calls_of(ctx.B, "list") >= 1, "listed on register/show")
     local mine = ctx.store.by_file(ctx.file)
     T.eq(#mine, 1)
     local c = mine[1]
-    T.eq(c.id, "api:memo:7")
-    T.eq(c.backend, "memo")
-    T.eq(c.backend_id, "7")
+    T.eq({ c.id, c.backend, c.backend_id }, { "api:memo:7", "memo", "7" })
     T.eq(c.selected_text, { "Recursion calls itself." })
-    T.eq(#ctx.store.turns(c), 2)
-    -- rendered like any thread: an obelus extmark sits on the buffer
-    local marks = vim.api.nvim_buf_get_extmarks(ctx.buf, -1, 0, -1, {})
-    T.ok(#marks > 0, "the band/sign is placed")
-    -- never in the batch set, the project briefing or obelus's own JSONL
+    T.eq(texts(c), { "you:why recursion?", "agent:It shrinks the problem." })
+    T.ok(#vim.api.nvim_buf_get_extmarks(ctx.buf, -1, 0, -1, {}) > 0, "the band/sign is placed")
     T.eq(#ctx.store.pending(), 0)
     T.ok(not require("obelus.format").meta_context():find("why recursion", 1, true), "not in the CLI briefing")
     ctx.store.add(T.comment({ file = ctx.root .. "/a.lua", comment = "plain one" }))
@@ -215,51 +240,136 @@ T.it("list: a backend's threads are mirrored into the UI store, never into the J
   end)
 end)
 
-T.it("create / edit / resolve / reopen / delete go through the backend store", function()
+T.it("create / first-comment edit / resolve / reopen / delete go through the backend store", function()
   with_backend(nil, function(ctx)
     local c = new_comment(ctx, 3, "check the base case")
-    T.ok(c, "comment created")
-    T.eq(c.id, "api:memo:n1")
-    T.eq(c.backend_id, "n1")
-    T.eq(#ctx.B.threads, 1)
+    T.eq({ c.id, c.backend_id }, { "api:memo:n1", "n1" })
     T.eq(ctx.B.threads[1].turns[1].text, "check the base case")
     T.eq(ctx.B.threads[1].range.sl, 3)
+    T.eq(texts(c), { "you:check the base case" }, "the stored comment is committed, not a draft")
+    T.is_nil(ctx.store.pending_you_text(c))
     local review = require("obelus.review")
     review.resolve(c.id)
     review.resolve(c.id) -- already resolved: no second backend call
     T.eq(calls_of(ctx.B, "resolve"), { { "resolve", "n1", true } })
     review.reopen(c.id)
     T.eq(ctx.B.threads[1].status, "open")
-    ctx.store.update(c.id, { comment = "check both base cases" })
-    T.eq(ctx.B.threads[1].turns[1].text, "check both base cases")
-    -- a later list() shows what the backend holds
+    -- editing the first comment is a backend edit; history follows; refresh agrees
+    T.ok(ctx.store.update(c.id, { comment = "check both base cases" }))
+    T.eq(calls_of(ctx.B, "update"), { { "update", "n1", "check both base cases" } })
+    T.eq(texts(ctx.store.get(c.id)), { "you:check both base cases" })
     api.refresh(ctx.buf)
-    T.eq(ctx.store.get(c.id).comment, "check both base cases")
+    T.eq(texts(ctx.store.get(c.id)), { "you:check both base cases" })
     local msgs, restore = capture_notify()
     review.delete(c.id)
     restore()
     T.eq(#ctx.B.threads, 0)
     T.is_nil(ctx.store.get(c.id))
-    T.ok(#msgs >= 1)
+    T.contains(vim.inspect(msgs), "comment deleted")
   end)
 end)
 
-T.it("a backend store failure shows a fixed message and keeps the comment out of the JSONL", function()
+T.it("a failed create is refused (nothing kept, fixed message) and a retry succeeds", function()
   with_backend(nil, function(ctx)
-    ctx.B.spec.store.create = function()
-      error("RAW-STORE-ERROR from the backend")
-    end
+    ctx.B.fail.create = true
     local msgs, restore = capture_notify()
     local c = new_comment(ctx, 2, "unsaved note")
     restore()
-    T.ok(c and c.backend_error, "kept in memory, flagged")
+    T.is_nil(c, "no mirror without a backend record")
     T.eq(#msgs, 1)
-    T.contains(msgs[1].msg, "obelus: the memo backend could not save this comment")
-    T.ok(not msgs[1].msg:find("RAW", 1, true), "no raw backend text")
+    T.eq(msgs[1].msg, "obelus: the memo backend could not save this comment")
     ctx.store.save()
     T.ok(not table.concat(vim.fn.readfile(ctx.store.store_path()), "\n"):find("unsaved note", 1, true))
+    ctx.B.fail.create = nil
+    c = new_comment(ctx, 2, "unsaved note")
+    T.ok(c and c.backend_id == "n1", "retry stored it")
   end)
 end)
+
+T.it("failed update / resolve / delete leave the mirror as the backend has it; retries work", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local review = require("obelus.review")
+    local msgs, restore = capture_notify()
+    ctx.B.fail.resolve, ctx.B.fail.update, ctx.B.fail.delete = true, true, true
+    review.resolve(id)
+    review.resolve(id)
+    T.eq(#calls_of(ctx.B, "resolve"), 2, "each attempt reaches the backend")
+    T.eq(ctx.store.get(id).status, "open")
+    T.is_nil(ctx.store.update(id, { comment = "edited" }), "the caller learns the edit failed")
+    T.eq(ctx.store.get(id).comment, "why recursion?")
+    review.delete(id)
+    T.ok(ctx.store.get(id), "still there")
+    restore()
+    local all = vim.inspect(msgs)
+    T.ok(not all:find("comment deleted", 1, true) and not all:find("comment updated", 1, true), "no false success")
+    T.ok(not all:find("RAW", 1, true), "no raw backend text")
+    ctx.B.fail = {}
+    review.resolve(id)
+    T.eq(ctx.B.threads[1].status, "resolved")
+    T.ok(ctx.store.update(id, { comment = "edited" }))
+    api.refresh(ctx.buf)
+    T.eq({ ctx.store.get(id).comment, ctx.store.get(id).status }, { "edited", "resolved" })
+    review.delete(id)
+    T.is_nil(ctx.store.get(id))
+    T.eq(#ctx.B.threads, 0)
+  end)
+end)
+
+-- ── committed history vs local drafts (B3) ──────────────────────────────────────
+
+T.it("a sent user tail is history: a new reply is a separate draft, sent as id + text only", function()
+  local seed = vim.deepcopy(SEED)
+  seed[1].turns[3] = { author = "you", text = "already sent server turn" }
+  with_backend(seed, function(ctx)
+    local id = "api:memo:7"
+    T.is_nil(ctx.store.pending_you_text(ctx.store.get(id)), "a sent turn is not a draft")
+    require("obelus.review").chat_save(id, "new draft")
+    T.eq(texts(ctx.store.get(id)), {
+      "you:why recursion?",
+      "agent:It shrinks the problem.",
+      "you:already sent server turn",
+      "you:new draft*",
+    })
+    T.eq(ctx.B.threads[1].turns[3].text, "already sent server turn", "backend untouched")
+    require("obelus").chat_send(id, "new draft", "send")
+    T.eq(ctx.B.sends[1].req, { id = "7", text = "new draft" }, "only the id and the new text")
+    ctx.B.sends[1].emit({ type = "done", text = "answer" })
+    T.eq(texts(ctx.store.get(id))[4], "you:new draft", "sent and answered: now committed")
+    -- dispatching a thread whose tail is a sent, unanswered turn asks for an answer
+    local t = vim.deepcopy(seed[1])
+    t.id = 8
+    t.turns = { { author = "you", text = "unanswered" } }
+    table.insert(ctx.B.threads, t)
+    api.refresh(ctx.buf)
+    require("obelus").dispatch("api:memo:8")
+    T.eq(ctx.B.sends[2].req, { id = "8", text = "" })
+  end)
+end)
+
+T.it("clearing a draft drops only the draft; a draft survives refresh", function()
+  local seed = vim.deepcopy(SEED)
+  seed[1].turns[3] = { author = "you", text = "sent" }
+  with_backend(seed, function(ctx)
+    local id = "api:memo:7"
+    local review = require("obelus.review")
+    review.chat_save(id, "my draft")
+    api.refresh(ctx.buf)
+    T.eq(texts(ctx.store.get(id))[4], "you:my draft*", "draft kept across refresh")
+    T.eq(ctx.store.pending_you_text(ctx.store.get(id)), "my draft")
+    review.chat_save(id, "")
+    T.eq(#ctx.store.turns(ctx.store.get(id)), 3, "only the draft went")
+    review.chat_save(id, "")
+    T.eq(texts(ctx.store.get(id))[3], "you:sent", "a sent turn is never cleared")
+    -- a fresh comment's reply box starts empty: saving a draft never rewrites turn 1
+    local c = new_comment(ctx, 3, "first")
+    review.chat_save(c.id, "reply draft")
+    T.eq(texts(ctx.store.get(c.id)), { "you:first", "you:reply draft*" })
+    T.eq(#calls_of(ctx.B, "update"), 0)
+  end)
+end)
+
+-- ── transport ─────────────────────────────────────────────────────────────────
 
 T.it("a turn streams through the backend transport (start/delta/done); the CLI never runs", function()
   with_backend(nil, function(ctx)
@@ -269,27 +379,20 @@ T.it("a turn streams through the backend transport (start/delta/done); the CLI n
       require("obelus").chat_send(c.id, "and why first?", "send")
       T.eq(#ctx.B.sends, 1)
       local s = ctx.B.sends[1]
-      T.eq(s.req.id, "n1")
-      T.eq(s.req.text, "and why first?")
-      T.eq(s.req.bufnr, ctx.buf)
-      T.eq(s.req.thread.turns[#s.req.thread.turns], { author = "you", text = "and why first?" })
+      T.eq(s.req, { id = "n1", text = "and why first?" })
       T.ok(require("obelus.jobs").live(ctx.store.get(c.id)), "live while streaming")
       s.emit({ type = "start" })
       s.emit({ type = "delta", text = "It stops " })
       s.emit({ type = "delta", text = "the recursion." })
-      local turns = ctx.store.turns(ctx.store.get(c.id))
-      T.eq(turns[#turns].text, "It stops the recursion.")
+      T.eq(texts(ctx.store.get(c.id))[3], "agent:It stops the recursion.*")
       s.emit({ type = "done" })
       local cc = ctx.store.get(c.id)
       T.is_nil(cc.dispatching)
       T.ok(not require("obelus.jobs").is_running(c.id))
-      T.eq(ctx.store.turns(cc)[#ctx.store.turns(cc)], {
-        author = "agent",
-        text = "It stops the recursion.",
-        at = ctx.store.turns(cc)[#ctx.store.turns(cc)].at,
-      })
+      T.eq(texts(cc), { "you:what is a base case?", "you:and why first?", "agent:It stops the recursion." })
       s.emit({ type = "delta", text = "late" }) -- after done: ignored
-      T.eq(ctx.store.turns(ctx.store.get(c.id))[#ctx.store.turns(cc)].text, "It stops the recursion.")
+      s.emit({ type = "error" })
+      T.eq(texts(ctx.store.get(c.id))[3], "agent:It stops the recursion.")
     end)
     restore()
     if not ok then
@@ -299,7 +402,7 @@ T.it("a turn streams through the backend transport (start/delta/done); the CLI n
   end)
 end)
 
-T.it("a backend error: fixed message, no partial reply left, the message is a draft again", function()
+T.it("a backend error: fixed message, no partial reply, the message is a draft again", function()
   with_backend(nil, function(ctx)
     local c = new_comment(ctx, 2, "q")
     local msgs, restore = capture_notify()
@@ -312,9 +415,7 @@ T.it("a backend error: fixed message, no partial reply left, the message is a dr
     local cc = ctx.store.get(c.id)
     T.is_nil(cc.dispatching)
     T.eq(ctx.store.pending_you_text(cc), "follow-up")
-    for _, t in ipairs(ctx.store.turns(cc)) do
-      T.ok(t.author ~= "agent", "no agent turn survives a failed reply")
-    end
+    T.eq(texts(cc), { "you:q", "you:follow-up*" })
     local all = vim.inspect(msgs)
     T.ok(not all:find("RAW", 1, true), "raw backend text never shown")
     T.contains(all, "obelus: the memo backend could not answer — your message is back in the draft")
@@ -322,6 +423,7 @@ T.it("a backend error: fixed message, no partial reply left, the message is a dr
     ctx.B.spec.transport.send = function()
       error("RAW-THROW")
     end
+    api.register_backend(ctx.B.spec)
     msgs, restore = capture_notify()
     require("obelus").chat_send(c.id, "again", "send")
     restore()
@@ -330,58 +432,231 @@ T.it("a backend error: fixed message, no partial reply left, the message is a dr
   end)
 end)
 
-T.it("the CLI transport never runs on a backend-matched buffer (every entry point)", function()
+T.it("one terminal transition: done then a throw keeps the reply; repeated terminals are ignored", function()
   with_backend(nil, function(ctx)
-    local c = new_comment(ctx, 2, "note")
-    local transport = require("obelus.transport")
-    local log, restore = spy_transports()
-    local msgs, restore_n = capture_notify()
-    local ok, err = pcall(function()
-      -- explicit cli submit of a backend thread: routed to the backend instead
-      T.eq(transport.submit("cli", { comments = { c }, stream = true }), true)
-      T.eq(#ctx.B.sends, 1)
-      ctx.B.sends[1].emit({ type = "done", text = "ok" })
-      -- several threads / a batch / a fan-out including one: refused outright
-      local plain = ctx.store.add(T.comment({ file = ctx.root .. "/a.lua" }))
-      T.eq(transport.submit("cli", { comments = { plain, c } }), false)
-      T.eq(transport.submit("cli", { comments = { plain }, actions_comments = { plain, c } }), false)
-      -- a record on the matched buffer that predates the backend (no `backend`)
-      local raw = { id = "legacy-1", file = ctx.file, range = { sl = 1, el = 1 }, kind = "line", comment = "old" }
-      table.insert(ctx.store.comments, raw)
-      T.eq(transport.submit("cli", { comments = { raw } }), false)
-      -- batch submit/dispatch-all never pick backend threads up
-      T.ok(not vim.tbl_contains(ctx.store.pending(), c))
-    end)
-    restore_n()
+    local c = new_comment(ctx, 2, "q")
+    ctx.B.spec.transport.send = function(_, emit)
+      emit({ type = "done", text = "committed answer" })
+      emit({ type = "done", text = "second done" })
+      emit({ type = "error" })
+      error("RAW-AFTER-DONE")
+    end
+    api.register_backend(ctx.B.spec)
+    local msgs, restore = capture_notify()
+    require("obelus").chat_send(c.id, "ask", "send")
     restore()
-    if not ok then
-      error(err, 0)
-    end
-    T.eq(log, {}, "no obelus transport ran")
-    -- defence in depth: the real CLI transport itself refuses, before any spawn
-    local orig_system = vim.system
-    local spawned = false
-    vim.system = function()
-      spawned = true
-      error("must not spawn")
-    end
-    local ok2, err2 = pcall(transport.transports.cli, { comments = { c }, markdown = "x", opts = { stream = true } })
-    vim.system = orig_system
-    T.ok(not ok2, "cli refuses")
-    T.contains(tostring(err2), "refusing to run the CLI agent")
-    T.ok(not spawned, "nothing spawned")
-    T.ok(#msgs >= 2)
+    local cc = ctx.store.get(c.id)
+    T.eq(texts(cc), { "you:q", "you:ask", "agent:committed answer" })
+    T.eq(cc.last_result, "committed answer")
+    T.ok(not vim.inspect(msgs):find("back in the draft", 1, true), "no failure after success")
   end)
 end)
 
-T.it("with no backend registered, comments and submits are untouched", function()
-  local ctx = T.fresh()
-  for _, name in ipairs(api.backends()) do
-    api.unregister_backend(name)
+-- ── generations (B4) and reload (N1) ────────────────────────────────────────────
+
+local function start_send(ctx, id, text)
+  local n = #ctx.B.sends
+  require("obelus").chat_send(id, text, "send")
+  T.eq(#ctx.B.sends, n + 1, "send started")
+  return ctx.B.sends[n + 1]
+end
+
+T.it("cancel, then a late done: ignored, and the backend is told", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local s = start_send(ctx, id, "more?")
+    require("obelus").cancel(id)
+    T.eq(ctx.B.cancels, 1)
+    s.emit({ type = "done", text = "LATE" })
+    local c = ctx.store.get(id)
+    T.is_nil(c.dispatching)
+    T.ok(not vim.tbl_contains(texts(c), "agent:LATE"))
+  end)
+end)
+
+T.it("unregister then re-register: the old send's late events never touch the new run", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local old = start_send(ctx, id, "old request")
+    api.unregister_backend("memo")
+    T.eq(ctx.B.cancels, 1, "old send cancelled")
+    T.is_nil(ctx.store.get(id))
+    api.register_backend(ctx.B.spec)
+    local new = start_send(ctx, id, "new request")
+    old.emit({ type = "delta", text = "OLD" })
+    old.emit({ type = "done", text = "OLD_REPLY_IN_NEW_RUN" })
+    local c = ctx.store.get(id)
+    T.ok(c.dispatching and require("obelus.jobs").is_running(id), "new run still live")
+    new.emit({ type = "done", text = "new reply" })
+    c = ctx.store.get(id)
+    T.eq(texts(c)[#texts(c)], "agent:new reply")
+    T.ok(not vim.inspect(texts(c)):find("OLD", 1, true))
+  end)
+end)
+
+T.it("direct replacement while a send is in flight cancels and invalidates it", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local old = start_send(ctx, id, "old request")
+    api.register_backend(ctx.B.spec) -- same name: replacement
+    T.eq(ctx.B.cancels, 1)
+    local c = ctx.store.get(id)
+    T.ok(c and not c.dispatching and not require("obelus.jobs").is_running(id), "fresh, idle mirror")
+    local new = start_send(ctx, id, "new request")
+    old.emit({ type = "done", text = "OLD" })
+    T.ok(require("obelus.jobs").is_running(id), "old done did not clear the new job")
+    new.emit({ type = "done", text = "new reply" })
+    T.eq(texts(ctx.store.get(id))[#texts(ctx.store.get(id))], "agent:new reply")
+  end)
+end)
+
+T.it("a callback that no longer owns its record and job changes nothing", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local s = start_send(ctx, id, "q")
+    local other = { transport = "other" }
+    require("obelus.jobs").register(id, other) -- something else now owns this job slot
+    s.emit({ type = "done", text = "STALE" })
+    T.eq(require("obelus.jobs").get(id), other, "not cleared")
+    T.ok(not vim.tbl_contains(texts(ctx.store.get(id)), "agent:STALE"), "no reply landed")
+    require("obelus.jobs").clear(id)
+  end)
+end)
+
+T.it("a store reload rebuilds the mirrors and ends in-flight sends", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    local id = "api:memo:7"
+    local s = start_send(ctx, id, "q")
+    ctx.store.save()
+    ctx.store.load()
+    T.eq(#ctx.store.by_file(ctx.file), 1, "mirror rebuilt")
+    T.eq(ctx.B.cancels, 1)
+    s.emit({ type = "done", text = "STALE" })
+    local c = ctx.store.get(id)
+    T.ok(not c.dispatching and not vim.tbl_contains(texts(c), "agent:STALE"))
+    -- and the buffer is not marked as listed already: showing it again re-lists
+    ctx.B.threads[1].turns[2].text = "changed on the server"
+    ctx.store.load()
+    T.eq(texts(ctx.store.get(id))[2], "agent:changed on the server")
+  end)
+end)
+
+-- ── fail closed: non-file records, legacy and transitive (B1) ───────────────────
+
+local SECRET = "REVIEW_LEGACY_SECRET"
+
+local function legacy(file, id)
+  return { id = id or "legacy", file = file, range = { sl = 1, el = 1 }, kind = "line", comment = SECRET }
+end
+
+-- run the REAL cli transport with vim.system intercepted; returns spawned?, err
+local function real_cli(payload)
+  local orig, spawned = vim.system, false
+  vim.system = function()
+    spawned = true
+    error("intercepted")
   end
+  local ok, err = pcall(require("obelus.transport").transports.cli, payload)
+  vim.system = orig
+  return spawned, ok, err
+end
+
+T.it("restart with a URI record in the JSONL: quarantined, kept on disk, never sent (no backend yet)", function()
+  local ctx = T.fresh()
+  clear_backends()
+  local path = ctx.store.store_path()
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({
+    vim.json.encode(legacy("memo://guide/closed")),
+    vim.json.encode(T.comment({ id = "plain", file = ctx.root .. "/a.lua", comment = "plain" })),
+  }, path)
+  ctx.store.load()
+  local rec = ctx.store.get("legacy")
+  T.ok(rec and not ctx.store.agent_eligible(rec), "classified from the record alone")
+  T.eq(
+    vim.tbl_map(function(c)
+      return c.id
+    end, ctx.store.pending()),
+    { "plain" }
+  )
+  local log, restore = spy_transports()
+  local msgs, restore_n = capture_notify()
+  local r1 = require("obelus.transport").submit("cli", { comments = { rec } })
+  local r2 = require("obelus.transport").submit("cli", { comments = { ctx.store.get("plain"), rec } })
+  restore_n()
+  restore()
+  T.eq({ r1, r2 }, { false, false })
+  T.eq(log, {})
+  T.contains(vim.inspect(msgs), "never sent to obelus's agents")
+  local spawned, ok, err = real_cli({ comments = { rec }, markdown = SECRET, opts = { stream = true } })
+  T.ok(not spawned and not ok, "the CLI refuses before any spawn")
+  T.contains(tostring(err), "refusing to run the CLI agent")
+  ctx.store.save()
+  ctx.store.load()
+  T.ok(ctx.store.get("legacy"), "kept on disk, not deleted")
+end)
+
+T.it("an unloaded or matched legacy record never reaches the CLI, even with a backend registered", function()
+  with_backend(nil, function(ctx)
+    local unloaded = legacy("memo://guide/unloaded", "legacy-u")
+    local matched = legacy(ctx.file, "legacy-m")
+    table.insert(ctx.store.comments, unloaded)
+    table.insert(ctx.store.comments, matched)
+    local log, restore = spy_transports()
+    local msgs, restore_n = capture_notify()
+    local t = require("obelus.transport")
+    local r = {
+      t.submit("cli", { comments = { unloaded } }),
+      t.submit("cli", { comments = { matched } }),
+      t.submit("file", { comments = { matched } }),
+    }
+    restore_n()
+    restore()
+    T.eq(r, { false, false, false })
+    T.eq(log, {})
+    T.eq(#ctx.B.sends, 0, "a legacy record is not the backend's either")
+    T.ok(not real_cli({ comments = { unloaded }, markdown = "x", opts = {} }))
+    T.ok(#msgs >= 3)
+  end)
+end)
+
+T.it("@thread mentions and briefings never expand a legacy or backend thread", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    table.insert(ctx.store.comments, legacy(ctx.file, "legacy"))
+    table.insert(ctx.store.comments, legacy("memo://guide/unloaded", "legacy2"))
+    local mention = require("obelus.mention")
+    local suffix = mention.prompt_suffix("see @thread:legacy @thread:legacy2 @thread:api:memo:7") or ""
+    T.ok(not suffix:find(SECRET, 1, true), "no legacy content in the mention suffix")
+    T.ok(not suffix:find("why recursion", 1, true), "no backend content either")
+    for _, item in ipairs(mention._items and mention._items(ctx.store.root()) or {}) do
+      T.ok(not tostring(item.label):find("legacy", 1, true), "not offered for completion")
+    end
+    local brief = require("obelus.format").meta_context()
+    T.ok(not brief:find(SECRET, 1, true) and not brief:find("why recursion", 1, true), "briefing")
+    -- end to end: an ordinary file thread mentioning it, then the project thread
+    local log, restore = spy_transports()
+    local plain = ctx.store.add(T.comment({ file = ctx.root .. "/a.lua", comment = "look @thread:legacy" }))
+    require("obelus.transport").submit("cli", { comments = { plain } })
+    require("obelus").chat_send(ctx.store.meta_thread().id, "summarise @thread:legacy", "send")
+    restore()
+    T.eq(#log, 2, "ordinary threads still go to the CLI")
+    for _, entry in ipairs(log) do
+      T.ok(not entry.payload.markdown:find(SECRET, 1, true), "prompt free of legacy content")
+      T.ok(not entry.payload.markdown:find("why recursion", 1, true), "prompt free of backend content")
+      for _, x in ipairs((entry.payload.opts or {}).actions_comments or {}) do
+        T.ok(ctx.store.agent_eligible(x), "write-back targets are eligible only")
+      end
+    end
+  end)
+end)
+
+T.it("with no backend registered, ordinary file comments are untouched", function()
+  local ctx = T.fresh()
+  clear_backends()
   local c = ctx.store.add(T.comment({ file = ctx.root .. "/a.lua" }))
   T.is_nil(c.backend)
   T.ok(c.id:match("^%d+%-%d+$"), "obelus's own id scheme")
+  T.ok(ctx.store.agent_eligible(c))
   T.eq(#ctx.store.pending(), 1)
 end)
 
@@ -397,6 +672,7 @@ local function with_ui(fn)
   pcall(approve._reset)
   approve.arm_ms = saved_arm
   vim.api.nvim_list_uis = orig
+  pcall(vim.fn.getchar, 0) -- never leak a queued key into the next spec
   if not ok then
     error(err, 0)
   end
@@ -418,6 +694,15 @@ local function keys(k)
   vim.api.nvim_feedkeys(vim.keycode(k), "x", false)
 end
 
+local function wait_armed(a)
+  T.ok(
+    vim.wait(2000, function()
+      return a.armed == true
+    end, 5),
+    "prompt armed"
+  )
+end
+
 T.it("approve: headless (no UI) denies at once — no float, exactly once", function()
   T.eq(#vim.api.nvim_list_uis(), 0, "spec runs headless")
   local wins = #vim.api.nvim_list_wins()
@@ -429,7 +714,7 @@ T.it("approve: headless (no UI) denies at once — no float, exactly once", func
   T.eq(results, { false }, "still exactly once")
 end)
 
-T.it("approve: focus, wait out the arming window, `a` approves (exactly once)", function()
+T.it("approve: focus, let it arm, `a` approves (exactly once)", function()
   with_ui(function()
     approve.arm_ms = 30
     local src = vim.api.nvim_get_current_win()
@@ -438,7 +723,8 @@ T.it("approve: focus, wait out the arming window, `a` approves (exactly once)", 
     T.eq(vim.api.nvim_get_current_win(), src, "opens unfocused")
     T.eq(vim.api.nvim_win_get_config(a.win).focusable, false)
     T.ok(api.approve_focus(), "focused")
-    vim.wait(60)
+    T.ok(not a.armed, "unarmed at first")
+    wait_armed(a)
     keys("a")
     T.eq(results, { true })
     T.ok(not vim.api.nvim_win_is_valid(a.win), "closed")
@@ -448,12 +734,13 @@ T.it("approve: focus, wait out the arming window, `a` approves (exactly once)", 
   end)
 end)
 
-T.it("approve: Esc, q, closing the float and leaving it each deny", function()
+T.it("approve: Esc, q, Enter, closing the float and leaving it each deny", function()
   with_ui(function()
     for _, how in ipairs({ "<Esc>", "q", "close", "leave", "<CR>" }) do
       approve.arm_ms = 0
       local results, _, a = prompt()
       api.approve_focus()
+      wait_armed(a)
       if how == "close" then
         vim.api.nvim_win_close(a.win, true)
       elseif how == "leave" then
@@ -468,30 +755,44 @@ T.it("approve: Esc, q, closing the float and leaving it each deny", function()
       vim.wait(20)
       T.eq(results, { false }, how .. ": exactly once")
     end
-    -- Esc denies even before arming (unfocused prompts deny via cancel)
     local results, h = prompt()
     h.cancel()
     T.eq(results, { false })
   end)
 end)
 
-T.it("approve: typing and typeahead can never approve", function()
+T.it("approve: typing and typeahead in the unarmed window are ignored", function()
   with_ui(function()
     approve.arm_ms = 600
     local results, _, a = prompt()
-    -- typing in the source window never reaches the prompt
-    keys("a")
+    keys("a") -- typing in the source window never reaches the prompt
     keys("<Esc>")
-    T.eq(results, {}, "typing elsewhere: undecided")
-    T.ok(vim.api.nvim_win_is_valid(a.win))
-    -- focused, but `a` typed inside the arming window is discarded
+    T.eq(results, {})
     T.ok(api.approve_focus())
     keys("a")
     keys("aaa")
-    T.eq(results, {}, "typeahead ignored")
+    T.eq(results, {}, "processed while unarmed: ignored")
     T.ok(vim.api.nvim_win_is_valid(a.win), "still open")
     keys("<Esc>")
     T.eq(results, { false })
+  end)
+end)
+
+T.it("approve: input queued while unarmed, with the loop blocked past the window, never approves", function()
+  with_ui(function()
+    approve.arm_ms = 50
+    local results, _, a = prompt()
+    T.ok(api.approve_focus())
+    vim.api.nvim_feedkeys("a", "t", false) -- typeahead, queued, not yet executed
+    vim.api.nvim_input("a") -- pending input
+    vim.uv.sleep(200) -- the loop is blocked well past arm_ms
+    wait_armed(a)
+    T.eq(vim.fn.getchar(1), 0, "the drain consumed every queued key")
+    vim.api.nvim_feedkeys("", "x", false) -- execute whatever typeahead is left
+    T.eq(results, {}, "queued input did not approve")
+    T.ok(vim.api.nvim_win_is_valid(a.win))
+    keys("a") -- a fresh key after arming
+    T.eq(results, { true })
   end)
 end)
 
@@ -511,7 +812,7 @@ T.it("approve: a queued prompt waits its turn; validation rejects a missing on_r
     local a2 = approve._active()
     T.ok(a2 and a2 ~= a1, "second prompt shown")
     api.approve_focus()
-    vim.wait(10)
+    wait_armed(a2)
     keys("a")
     T.eq(r2, { true })
   end)

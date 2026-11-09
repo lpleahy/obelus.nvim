@@ -135,6 +135,9 @@ function M._capture(bufnr, file, kind, sl, sc, el, ec, opts)
       record[k] = v
     end
     local c = store.add(record)
+    if not c then
+      return opts.on_refused and opts.on_refused(text) -- obelus.api: the backend refused; retry
+    end
     render.place(bufnr, c)
     render.render_all() -- show it everywhere now (bands + the sidebar list)
     if opts.on_create then
@@ -144,17 +147,23 @@ function M._capture(bufnr, file, kind, sl, sc, el, ec, opts)
   if opts.text then
     return create(opts.text, true)
   end
-  render.compose({
-    title = opts.title or ("review: " .. vim.fn.fnamemodify(file, ":t")),
-    row = (el - sl) + 1,
-    -- <C-s> is "save as a draft" everywhere else in obelus: not a submit
-    on_submit = function(text, action)
-      create(text, action ~= "save", action)
-    end,
-    on_cancel = function(text)
-      create(text, false)
-    end,
-  })
+  local function compose(default)
+    render.compose({
+      title = opts.title or ("review: " .. vim.fn.fnamemodify(file, ":t")),
+      row = (el - sl) + 1,
+      default = default,
+      -- <C-s> is "save as a draft" everywhere else in obelus: not a submit
+      on_submit = function(text, action)
+        opts.on_refused = compose -- obelus.api: a refused save reopens the composer with the text
+        create(text, action ~= "save", action)
+      end,
+      on_cancel = function(text)
+        opts.on_refused = nil
+        create(text, false)
+      end,
+    })
+  end
+  compose()
 end
 
 -- The cursor line / the last visual selection as capture args — shared by the
@@ -209,7 +218,9 @@ function M.edit_comment(c)
     title = "edit comment",
     default = c.comment,
     on_submit = function(text)
-      store.update(c.id, { comment = text })
+      if not store.update(c.id, { comment = text }) then
+        return render.render_all() -- obelus.api: the backend refused the edit; it said why
+      end
       render.render_all()
       vim.notify("obelus: comment updated", vim.log.levels.INFO)
     end,

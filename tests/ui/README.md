@@ -55,7 +55,7 @@ OBELUS_UI_ONLY=band,chat make ui-snapshots    # only scenarios whose name contai
 
 `make test` runs the specs first, then the snapshots, even under `make -j`. The
 specs report executed and skipped counts separately. With a private XDG setup the
-21 markview and render-markdown specs are skipped (472 passed, 21 skipped). They run
+21 markview and render-markdown specs are skipped (484 passed, 21 skipped). They run
 only when those plugins are on the runtimepath.
 
 The harness reports two kinds of problem. `FAIL` means a rendering differs from its
@@ -97,8 +97,10 @@ diff.
   small mutations to a temp copy, covering visuals, extmarks, float stacking and
   setup. A mutation counts as caught only on a baseline mismatch with no harness
   error. One more mutation removes the supervisor's member teardown and must fail
-  the parent-exit self-tests. Five more mutate the `obelus.api` guards, which
-  draw nothing, and must fail the `[api]` behaviour specs. See `MUTATIONS.md`
+  the parent-exit self-tests. Nine more mutate the `obelus.api` guards, which
+  mostly draw nothing, and must fail the `[api]` behaviour specs; one more
+  removes the approve prompt's input drain and must fail the real-UI
+  `api_approve_queued_typeahead` snapshot. See `MUTATIONS.md`
   for the last results.
 - `make ui-selftest` (`tests/ui/selftest.sh`, about 1 min) checks the harness
   itself:
@@ -234,7 +236,8 @@ before changing code on these paths:
   meta-thread views;
 - the sidebar thread list has one representative snapshot per size, not
   exhaustive coverage;
-- `obelus.api`: one inline band, one streaming popup thread view and the
-  unfocused approve prompt are pinned; the sidebar list of backend threads and
-  the focused (armed) prompt are not. The api's guards are covered by
-  `tests/api_spec.lua` and the behaviour mutations instead;
+- `obelus.api`: one inline band, one streaming popup thread view, the
+  unfocused approve prompt and the focused prompt after queued typeahead under a
+  blocked loop are pinned; the sidebar list of backend threads is not. The
+  api's other guards are covered by `tests/api_spec.lua` and the behaviour
+  mutations instead;

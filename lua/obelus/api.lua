@@ -1,4 +1,4 @@
--- obelus.api: the public extension API (see :h obelus-api).
+-- obelus.api: the public extension API (see :h obelus-api-extension).
 --
 -- Two parts, both additive — with no backend registered and no prompt open,
 -- obelus behaves exactly as it does without this module:
@@ -6,15 +6,23 @@
 --     thread and composer UI on buffers that are NOT ordinary files (e.g.
 --     "luodda://guide/*"). Threads on a matched buffer live in the backend's
 --     store (never in obelus's JSONL) and turns go through the backend's
---     transport. obelus's own CLI transport never runs on them (fail closed).
+--     transport. obelus's own transports never run on them (fail closed — see
+--     store.agent_eligible, which also quarantines unowned non-file records).
 --   * approve{ summary, details?, on_result }: a keyboard-driven Approve/Deny
 --     float where every non-approve exit (and no UI at all) is Deny.
 --
 -- Threads of a backend are MIRRORED into obelus's in-memory store as ordinary
 -- records carrying `backend` (the backend name) and `backend_id`, so the existing
--- bands, thread view, spinner and composer render them unchanged. A handful of
--- one-line hooks in store.lua / transport forward mutations here; each hook is a
--- no-op unless this module is loaded and a record carries `backend`.
+-- bands, thread view, spinner and composer render them unchanged. Turns the
+-- backend reported are `committed` (immutable, never a draft); an unsent reply is
+-- a separate local draft turn after them. One-line hooks in store.lua and
+-- transport forward mutations here; each is a no-op unless this module is loaded
+-- and a record carries `backend`.
+--
+-- Every registration and every send carries a generation token: replacing or
+-- unregistering a backend (or reloading the store) cancels and invalidates its
+-- work, and a callback only changes anything while it still owns both the record
+-- and the job.
 local M = {}
 
 M.version = "0.1.0"
@@ -33,7 +41,7 @@ M.version = "0.1.0"
 ---@field id string|integer the backend's own stable id
 ---@field range obelus.api.Range
 ---@field kind? "line"|"char" (default: "char" when range.sc is set, else "line")
----@field turns? obelus.api.Turn[] the conversation, oldest first; turns[1] is the comment
+---@field turns? obelus.api.Turn[] the committed conversation, oldest first; turns[1] is the comment
 ---@field text? string the comment text, when `turns` is absent
 ---@field status? "open"|"resolved"
 ---@field ask? boolean an ask-mode question rather than a note
@@ -48,15 +56,13 @@ M.version = "0.1.0"
 ---@class obelus.api.Store
 ---@field list fun(bufnr: integer): obelus.api.Thread[]
 ---@field create fun(bufnr: integer, new: obelus.api.NewThread): obelus.api.Thread must return the stored thread (with id)
----@field update fun(id: string, fields: { text: string }) edit the comment text
+---@field update fun(id: string, fields: { text: string }) edit the comment text (turns[1])
 ---@field delete fun(id: string)
 ---@field resolve fun(id: string, resolved: boolean)
 
 ---@class obelus.api.TurnRequest
----@field id string the thread's backend id
----@field bufnr integer|nil the buffer showing the thread, if loaded
----@field text string the user's new message
----@field thread obelus.api.Thread the thread as obelus holds it, before this turn
+---@field id string the thread's backend id; the backend owns the history and replays it
+---@field text string the new user message; "" = answer the thread's last (sent) user turn
 
 ---@alias obelus.api.Event
 ---| { type: "start" }
@@ -74,11 +80,17 @@ M.version = "0.1.0"
 ---@field transport obelus.api.Transport
 ---@field label? string shown on the spinner (default: name)
 
----@type table<string, obelus.api.Backend>
-local backends = {}
+local backends = {} ---@type table<string, table> name -> registration (with .gen)
 local order = {} ---@type string[] registration order; first match wins
-local synced = {} ---@type table<integer, boolean> buffers listed since they were shown
+local synced = {} ---@type table<integer, integer> bufnr -> generation it was listed under
+local inflight = {} ---@type table<string, table> record id -> its send state
+local gen_seq = 0
 local augroup
+
+local function next_gen()
+  gen_seq = gen_seq + 1
+  return gen_seq
+end
 
 local function notify_failure(name, what)
   -- FIXED text: the backend's own error never reaches the screen, so nothing it
@@ -108,7 +120,7 @@ function M._active()
 end
 
 ---The name of the backend that owns `bufnr`, or nil. A `match` that throws
----counts as a match (fail closed: obelus's CLI must not run on that buffer).
+---counts as a match (fail closed).
 ---@param bufnr? integer
 ---@return string|nil
 function M.backend_for(bufnr)
@@ -124,16 +136,12 @@ function M.backend_for(bufnr)
   end
 end
 
--- Is `c` owned by a backend — mirrored from one, or on a buffer one matches?
-local function owned(c)
-  if type(c) ~= "table" then
-    return false
+-- The live registration owning mirror `c` — nil once it was replaced/removed.
+local function owner(c)
+  local b = c and c.backend and backends[c.backend]
+  if b and c._api_gen == b.gen and c.backend_id then
+    return b
   end
-  if c.backend ~= nil then
-    return true
-  end
-  local b = M._active() and buf_for_file(c.file)
-  return b and M.backend_for(b) ~= nil or false
 end
 
 local function mirror_id(name, bid)
@@ -144,21 +152,22 @@ local function valid_range(r)
   return type(r) == "table" and type(r.sl) == "number" and type(r.el) == "number" and r.sl >= 1 and r.el >= r.sl
 end
 
--- A backend thread as an obelus store record (nil if malformed).
-local function to_record(name, bufnr, file, t)
+-- A backend thread as an obelus store record (nil if malformed). Every turn is
+-- committed: the backend reported it, so it is history, never a draft.
+local function to_record(b, bufnr, file, t)
   if type(t) ~= "table" or (type(t.id) ~= "string" and type(t.id) ~= "number") or not valid_range(t.range) then
     return nil
   end
   local turns = {}
   for _, turn in ipairs(type(t.turns) == "table" and t.turns or {}) do
     if type(turn) == "table" and (turn.author == "you" or turn.author == "agent") and type(turn.text) == "string" then
-      turns[#turns + 1] = { author = turn.author, text = turn.text }
+      turns[#turns + 1] = { author = turn.author, text = turn.text, committed = true }
     end
   end
   if #turns == 0 and type(t.text) == "string" then
-    turns[1] = { author = "you", text = t.text }
+    turns[1] = { author = "you", text = t.text, committed = true }
   end
-  if #turns == 0 then
+  if #turns == 0 or turns[1].author ~= "you" then
     return nil
   end
   local r = t.range
@@ -171,8 +180,8 @@ local function to_record(name, bufnr, file, t)
     end
   end
   return {
-    id = mirror_id(name, tostring(t.id)),
-    backend = name,
+    id = mirror_id(b.name, tostring(t.id)),
+    backend = b.name,
     backend_id = tostring(t.id),
     file = file,
     range = { sl = r.sl, el = r.el, sc = kind == "char" and r.sc or nil, ec = kind == "char" and r.ec or nil },
@@ -185,29 +194,166 @@ local function to_record(name, bufnr, file, t)
     ask = t.ask == true or nil,
     created_at = os.time(),
     _api_status = status,
+    _api_gen = b.gen,
   }
 end
 
--- What obelus holds for a thread, in the backend's shape (handed to send()).
-local function to_thread(c)
-  local turns = {}
-  for _, t in ipairs(require("obelus.store").turns(c)) do
-    turns[#turns + 1] = { author = t.author, text = t.text }
+-- the local, unsent draft of a mirror: its trailing uncommitted "you" turn
+local function draft_of(c)
+  local tail = c.turns and c.turns[#c.turns]
+  if tail and tail.author == "you" and not tail.committed then
+    return tail
   end
-  return {
-    id = c.backend_id,
-    range = vim.deepcopy(c.range),
-    kind = c.kind,
-    turns = turns,
-    status = c.status == "resolved" and "resolved" or "open",
-    ask = c.ask,
-  }
 end
+
+-- ── sends ─────────────────────────────────────────────────────────────────────
+
+-- Does this send still own its record AND its job (same registration, same
+-- record table, same job registration)? Anything else is a stale callback.
+local function owns(st)
+  return not st.done
+    and backends[st.b.name] == st.b
+    and inflight[st.id] == st
+    and require("obelus.store").get(st.id) == st.c
+    and require("obelus.jobs").get(st.id) == st.spec
+end
+
+-- The ONE terminal transition of a send (idempotent): "done", "error",
+-- "cancel" (the user cancelled; review.cancel tidies the record) or
+-- "invalidate" (its registration or record went away).
+local function settle(st, kind, text)
+  if st.done then
+    return
+  end
+  local own = owns(st)
+  st.done = true
+  local store, jobs, progress = require("obelus.store"), require("obelus.jobs"), require("obelus.progress")
+  if inflight[st.id] == st then
+    inflight[st.id] = nil
+  end
+  if jobs.get(st.id) == st.spec then
+    jobs.clear(st.id)
+  end
+  if (kind == "cancel" or kind == "invalidate") and st.cancel then
+    pcall(st.cancel)
+  end
+  if not own then
+    pcall(progress.finish, st.job, false, "")
+    return -- stale: touch nothing that a newer registration/record owns
+  end
+  if kind == "done" then
+    store.stream_finish(st.id, text, nil, true)
+    if st.draft then
+      st.draft.committed = true -- handed to and answered by the backend: now history
+    end
+    if st.turn then
+      st.turn.committed = true
+    end
+    pcall(progress.finish, st.job, true, text)
+    require("obelus.review").refresh()
+  elseif kind == "error" then
+    -- like the CLI's failure path: drop the partial preview so nothing the backend
+    -- streamed stays in the thread as if it were a reply; the message is a draft again
+    store.stream_discard(st.id)
+    store.clear_dispatching(st.id)
+    pcall(progress.finish, st.job, false, "")
+    require("obelus.review").refresh()
+    notify_failure(st.b.name, "could not answer — your message is back in the draft")
+  elseif kind == "invalidate" then
+    store.abort(st.id)
+    pcall(progress.finish, st.job, false, "")
+  end
+end
+
+-- cancel and invalidate every send matching `pred`
+local function invalidate_sends(pred)
+  local victims = {}
+  for _, st in pairs(inflight) do
+    if pred(st) then
+      victims[#victims + 1] = st
+    end
+  end
+  for _, st in ipairs(victims) do
+    settle(st, "invalidate")
+  end
+end
+
+-- Stream one turn through the backend's transport, with the same store/progress
+-- choreography as transport/cli.lua's run_stream. The request carries only the
+-- thread id and the new text: the backend owns the history and its replay.
+local function run_turn(c, b)
+  local store, jobs = require("obelus.store"), require("obelus.jobs")
+  local draft = draft_of(c)
+  local tail = c.turns and c.turns[#c.turns]
+  local text
+  if draft then
+    text = draft.text
+  elseif tail and tail.author == "you" then
+    text = "" -- the backend has this turn already: ask it to answer
+  else
+    vim.notify("obelus: nothing to send on this thread — reply first", vim.log.levels.WARN)
+    return false
+  end
+  local id = c.id
+  store.stream_start(id)
+  local st = { b = b, c = c, id = id, draft = draft, turn = c._stream_turn, done = false, acc = "" }
+  st.spec = {
+    transport = "api:" .. b.name,
+    cancel = function()
+      settle(st, "cancel")
+    end,
+  }
+  inflight[id] = st
+  jobs.register(id, st.spec)
+  st.job = require("obelus.progress").start({ label = b.label, comments = { c } })
+  local function handle(ev)
+    if type(ev) ~= "table" or not owns(st) then
+      if not st.done and not owns(st) then
+        settle(st, "invalidate") -- a late callback found its record/job replaced
+      end
+      return
+    end
+    if ev.type == "delta" then
+      if type(ev.text) == "string" then
+        st.acc = st.acc .. ev.text
+        store.stream_update(id, st.acc)
+      end
+    elseif ev.type == "done" then
+      local final = type(ev.text) == "string" and ev.text or st.acc
+      settle(st, final:match("^%s*$") and "error" or "done", final)
+    elseif ev.type == "error" then
+      settle(st, "error")
+    end
+  end
+  local function emit(ev)
+    if vim.in_fast_event() then
+      vim.schedule(function()
+        handle(ev)
+      end)
+    else
+      handle(ev)
+    end
+  end
+  local ok, cancel = pcall(b.transport.send, { id = c.backend_id, text = text }, emit)
+  if type(cancel) == "function" then
+    st.cancel = cancel
+    if st.done then
+      pcall(cancel) -- already invalidated/cancelled while send() ran
+    end
+  end
+  if not ok then
+    settle(st, "error") -- a no-op when send() already finished (done, then threw)
+  end
+  return true
+end
+
+-- ── refresh / registration ────────────────────────────────────────────────────
 
 ---Re-read a backend buffer's threads from its store and repaint. Called
----automatically when a matched buffer is first shown; call it yourself after
----the backend's data changed elsewhere. Threads with a reply in flight keep
----their in-memory state.
+---automatically when a matched buffer is first shown (and after a store
+---reload); call it yourself after the backend's data changed elsewhere.
+---Threads with a reply in flight keep their state, and a local unsent draft
+---survives.
 ---@param bufnr? integer
 ---@return boolean ok
 function M.refresh(bufnr)
@@ -223,27 +369,31 @@ function M.refresh(bufnr)
     notify_failure(name, "could not list its threads")
     return false
   end
-  synced[bufnr] = true
+  synced[bufnr] = b.gen
   local store = require("obelus.store")
-  local keep, live = {}, {}
+  local keep, live, drafts = {}, {}, {}
   for _, c in ipairs(store.comments) do
-    local stale = c.backend == name and c.file == file and not c.dispatching and not c.backend_error
-    if not stale then
+    local mine = c.backend == name and c.file == file
+    if mine and owner(c) and inflight[c.id] and inflight[c.id].c == c then
+      keep[#keep + 1] = c -- a reply in flight: keep its live record
+      live[c.id] = true
+    elseif mine then
+      local d = owner(c) and draft_of(c)
+      drafts[c.id] = d and d.text or nil
+    else
       keep[#keep + 1] = c
-      if c.backend == name then
-        live[c.id] = true
-      end
     end
   end
   for _, t in ipairs(list) do
-    local rec = to_record(name, bufnr, file, t)
+    local rec = to_record(b, bufnr, file, t)
     if rec and not live[rec.id] then
+      if drafts[rec.id] then
+        rec.turns[#rec.turns + 1] = { author = "you", text = drafts[rec.id] }
+      end
       keep[#keep + 1] = rec
       live[rec.id] = true
     end
   end
-  -- in place: other modules hold no reference to the list itself, but keep the
-  -- identity anyway so a caller iterating store.comments sees one consistent table
   for i = #store.comments, 1, -1 do
     store.comments[i] = nil
   end
@@ -254,6 +404,14 @@ function M.refresh(bufnr)
   return true
 end
 
+local function refresh_loaded(name)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) and M.backend_for(buf) == name then
+      M.refresh(buf)
+    end
+  end
+end
+
 local function ensure_autocmds()
   if augroup then
     return
@@ -262,7 +420,8 @@ local function ensure_autocmds()
   vim.api.nvim_create_autocmd("BufWinEnter", {
     group = augroup,
     callback = function(ev)
-      if not synced[ev.buf] and M.backend_for(ev.buf) then
+      local name = M.backend_for(ev.buf)
+      if name and synced[ev.buf] ~= backends[name].gen then
         M.refresh(ev.buf)
       end
     end,
@@ -275,7 +434,26 @@ local function ensure_autocmds()
   })
 end
 
----Register (or replace) a backend. Errors on a malformed spec.
+-- drop a registration's work and mirrors (registration itself stays as is)
+local function drop(name)
+  local old = backends[name]
+  invalidate_sends(function(st)
+    return st.b == old
+  end)
+  local store = require("obelus.store")
+  for i = #store.comments, 1, -1 do
+    if store.comments[i].backend == name then
+      table.remove(store.comments, i)
+    end
+  end
+  for buf, _ in pairs(synced) do
+    synced[buf] = nil
+  end
+end
+
+---Register a backend. Registering a name again REPLACES it: the old
+---registration's sends are cancelled and its late callbacks ignored. Errors
+---on a malformed spec.
 ---@param spec obelus.api.Backend
 function M.register_backend(spec)
   local function need(cond, what)
@@ -291,45 +469,39 @@ function M.register_backend(spec)
     need(type(spec.store[fn]) == "function", "store." .. fn .. " must be a function")
   end
   need(type(spec.transport) == "table" and type(spec.transport.send) == "function", "transport.send must be a function")
-  if not backends[spec.name] then
+  if backends[spec.name] then
+    drop(spec.name) -- replacement: the old generation's work ends here
+  else
     order[#order + 1] = spec.name
   end
   backends[spec.name] = {
     name = spec.name,
+    gen = next_gen(),
     match = spec.match,
     store = spec.store,
     transport = spec.transport,
     label = type(spec.label) == "string" and spec.label or spec.name,
   }
   ensure_autocmds()
-  for _, b in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_loaded(b) and M.backend_for(b) == spec.name then
-      M.refresh(b)
-    end
-  end
+  refresh_loaded(spec.name)
+  pcall(require("obelus.render").render_all)
   return true
 end
 
----Remove a backend and drop its mirrored threads from obelus's memory (its
----data stays in the backend).
+---Remove a backend: cancel its sends, drop its mirrored threads from obelus's
+---memory (its data stays in the backend).
 ---@param name string
 function M.unregister_backend(name)
   if not backends[name] then
     return false
   end
+  drop(name)
   backends[name] = nil
   for i = #order, 1, -1 do
     if order[i] == name then
       table.remove(order, i)
     end
   end
-  local store = require("obelus.store")
-  for i = #store.comments, 1, -1 do
-    if store.comments[i].backend == name then
-      table.remove(store.comments, i)
-    end
-  end
-  synced = {}
   pcall(require("obelus.render").render_all)
   return true
 end
@@ -342,187 +514,127 @@ end
 
 -- ── store hooks (called from obelus.store) ────────────────────────────────────
 
--- store.add, before the record is inserted: a new comment on a backend buffer is
--- created in the backend. On failure it stays in memory only (never the JSONL,
--- never the CLI) and a fixed message says so.
+-- store.load, after the JSONL replaced the in-memory list: every mirror and its
+-- record identity is gone, so end all sends and list visible backend buffers again.
+function M._on_reload()
+  if not M._active() then
+    return
+  end
+  invalidate_sends(function()
+    return true
+  end)
+  synced = {}
+  for _, name in ipairs(order) do
+    refresh_loaded(name)
+  end
+end
+
+-- store.add, before the record is inserted. Returns false to refuse: a new
+-- comment on a backend buffer exists only once the backend stored it.
 function M._adopt(c)
   if c.backend ~= nil or not M._active() then
-    return
+    return true
   end
   local bufnr = buf_for_file(c.file)
   local name = bufnr and M.backend_for(bufnr)
   if not name then
-    return
+    return true
   end
-  c.backend = name
-  c.tag = nil -- backend threads never join a tag or a batch
-  c.scratch = nil -- their lifetime is the backend's, not ask-mode scratch
-  local ok, t = pcall(backends[name].store.create, bufnr, {
+  local b = backends[name]
+  local ok, t = pcall(b.store.create, bufnr, {
     range = vim.deepcopy(c.range),
     kind = c.kind,
     text = c.comment,
     selected_text = vim.deepcopy(c.selected_text or {}),
     ask = c.ask,
   })
-  if ok and type(t) == "table" and (type(t.id) == "string" or type(t.id) == "number") then
-    c.backend_id = tostring(t.id)
-    c.id = mirror_id(name, c.backend_id)
-    c._api_status = c.status
-  else
-    c.backend_error = true
-    notify_failure(name, "could not save this comment — it is kept only until you close nvim")
+  if not (ok and type(t) == "table" and (type(t.id) == "string" or type(t.id) == "number")) then
+    notify_failure(name, "could not save this comment")
+    return false
   end
+  c.backend = name
+  c.backend_id = tostring(t.id)
+  c.id = mirror_id(name, c.backend_id)
+  c.tag = nil -- backend threads never join a tag or a batch
+  c.scratch = nil -- their lifetime is the backend's, not ask-mode scratch
+  c.turns = { { author = "you", text = c.comment, committed = true } }
+  c._api_status = c.status
+  c._api_gen = b.gen
+  return true
 end
 
-local function synced_backend(c)
-  local b = backends[c.backend]
-  if b and not c.backend_error and c.backend_id then
-    return b
-  end
-end
-
--- store.update: forward a comment edit and a resolved/open flip
+-- store.update, BEFORE the fields are applied. Returns false to refuse (the
+-- backend failed or is gone): the mirror then stays as the backend has it.
 function M._on_update(c, fields)
-  local b = synced_backend(c)
+  local persisted = fields.comment ~= nil or fields.status ~= nil
+  local b = owner(c)
   if not b then
-    return
+    if persisted then
+      notify_failure(c.backend, "is not available — nothing was changed")
+    end
+    return not persisted
   end
-  if type(fields.comment) == "string" then
-    local ok = pcall(b.store.update, c.backend_id, { text = fields.comment })
-    if not ok then
+  if type(fields.comment) == "string" and fields.comment ~= c.comment then
+    if not pcall(b.store.update, c.backend_id, { text = fields.comment }) then
       notify_failure(b.name, "could not save the edit")
+      return false
+    end
+    if c.turns and c.turns[1] then
+      c.turns[1].text = fields.comment -- the backend took the edit: history follows
     end
   end
   if fields.status ~= nil then
     local resolved = fields.status == "resolved"
     if resolved ~= (c._api_status == "resolved") then
-      c._api_status = fields.status
-      local ok = pcall(b.store.resolve, c.backend_id, resolved)
-      if not ok then
+      if not pcall(b.store.resolve, c.backend_id, resolved) then
         notify_failure(b.name, resolved and "could not resolve the thread" or "could not reopen the thread")
+        return false
       end
+      c._api_status = fields.status -- acknowledged only now
     end
   end
+  return true
 end
 
--- store.remove
+-- store.remove, BEFORE the record is dropped. Returns false to refuse.
 function M._on_remove(c)
-  local b = synced_backend(c)
-  if b and not pcall(b.store.delete, c.backend_id) then
+  local b = owner(c)
+  if not b then
+    notify_failure(c.backend, "is not available — nothing was deleted")
+    return false
+  end
+  if not pcall(b.store.delete, c.backend_id) then
     notify_failure(b.name, "could not delete the thread")
+    return false
   end
+  invalidate_sends(function(st)
+    return st.c == c
+  end)
+  return true
 end
 
--- ── transport hooks (called from obelus.transport) ────────────────────────────
+-- ── transport hook (called from obelus.transport) ─────────────────────────────
 
--- Stream one turn through the backend's transport, with the same store/progress
--- choreography as transport/cli.lua's run_stream.
-local function run_turn(c, b)
-  local store = require("obelus.store")
-  local jobs = require("obelus.jobs")
-  local progress = require("obelus.progress")
-  local id = c.id
-  local req =
-    { id = c.backend_id, bufnr = buf_for_file(c.file), text = store.pending_you_text(c) or "", thread = to_thread(c) }
-  store.stream_start(id)
-  local st = { done = false, acc = "" }
-  jobs.register(id, {
-    transport = "api:" .. b.name,
-    cancel = function()
-      if not st.done then
-        st.done = true
-        jobs.clear(id)
-        if st.cancel then
-          pcall(st.cancel)
-        end
-      end
-    end,
-  })
-  st.job = progress.start({ label = b.label, comments = { c } })
-  local function fail()
-    st.done = true
-    jobs.clear(id)
-    -- like the CLI's failure path: drop the partial preview so nothing the backend
-    -- streamed stays in the thread as if it were a reply; the message is a draft again
-    store.stream_discard(id)
-    store.clear_dispatching(id)
-    pcall(progress.finish, st.job, false, "")
-    require("obelus.review").refresh()
-    notify_failure(b.name, "could not answer — your message is back in the draft")
-  end
-  local function handle(ev)
-    if st.done or type(ev) ~= "table" then
-      return
-    end
-    if ev.type == "delta" then
-      if type(ev.text) == "string" then
-        st.acc = st.acc .. ev.text
-        store.stream_update(id, st.acc)
-      end
-    elseif ev.type == "done" then
-      local text = type(ev.text) == "string" and ev.text or st.acc
-      if text:match("^%s*$") then
-        return fail()
-      end
-      st.done = true
-      jobs.clear(id)
-      store.stream_finish(id, text, nil, true)
-      pcall(progress.finish, st.job, true, text)
-      require("obelus.review").refresh()
-    elseif ev.type == "error" then
-      fail()
-    end
-  end
-  local function emit(ev)
-    if vim.in_fast_event() then
-      vim.schedule(function()
-        handle(ev)
-      end)
-    else
-      handle(ev)
-    end
-  end
-  local ok, cancel = pcall(b.transport.send, req, emit)
-  if not ok then
-    fail()
-  elseif type(cancel) == "function" then
-    st.cancel = cancel
-  end
-end
-
--- transport.submit, first thing: nil = not ours (obelus continues as usual);
--- true = sent through the backend; false = refused (fail closed).
+-- transport.submit, first thing: nil = no backend thread involved (obelus's own
+-- eligibility gate follows); true = sent through the backend; false = refused.
 function M._route_submit(opts)
   local comments = opts.comments or require("obelus.store").pending()
-  local any = false
+  local mine = false
   for _, list in ipairs({ comments, opts.actions_comments or {} }) do
     for _, c in ipairs(list) do
-      any = any or owned(c)
+      mine = mine or (type(c) == "table" and c.backend ~= nil)
     end
   end
-  if not any then
+  if not mine then
     return nil
   end
   local c = comments[1]
-  local b = #comments == 1 and not opts.actions_comments and not opts.batch and c.backend and synced_backend(c)
+  local b = #comments == 1 and not opts.actions_comments and not opts.batch and c.backend and owner(c)
   if not b then
     vim.notify("obelus: not sent — threads of an extension backend only go to that backend", vim.log.levels.ERROR)
     return false
   end
-  run_turn(c, b)
-  return true
-end
-
--- transport/cli.lua, before anything runs: the CLI agent (which can edit files)
--- must never see a backend thread, however the payload got there.
-function M._guard_cli(payload)
-  for _, list in ipairs({ payload.comments or {}, (payload.opts or {}).actions_comments or {} }) do
-    for _, c in ipairs(list) do
-      if owned(c) then
-        error("obelus: refusing to run the CLI agent on an extension backend's thread", 0)
-      end
-    end
-  end
+  return run_turn(c, b)
 end
 
 -- ── approve ───────────────────────────────────────────────────────────────────

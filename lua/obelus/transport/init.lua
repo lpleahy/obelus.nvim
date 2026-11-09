@@ -34,6 +34,14 @@ function M.submit(name, opts)
       return routed
     end
   end
+  -- a non-file (or backend) thread never reaches a transport below: fail closed
+  if not store.all_agent_eligible(opts.comments or store.pending(), opts.actions_comments) then
+    vim.notify(
+      "obelus: not sent — threads on non-file buffers are never sent to obelus's agents",
+      vim.log.levels.ERROR
+    )
+    return false
+  end
   name = name or config.options.transport.default
   local fn = M.transports[name]
   if not fn then

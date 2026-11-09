@@ -2,9 +2,15 @@
 -- Behaviour follows Luodda's approval prompt (lua/luodda/approve.lua):
 --   * text never approves: the float opens UNFOCUSED and unfocusable, so stray
 --     typing goes to whatever window you were in;
---   * approving takes a deliberate focus (:ObelusApprove or api.approve_focus())
---     that ARMS the prompt; keys typed in the arming window (typeahead) are
---     ignored, and only `a` approves once armed;
+--   * approving takes a deliberate focus (:ObelusApprove or api.approve_focus()).
+--     The prompt is then UNARMED: every key is ignored. Arming is a sequence of
+--     event-loop steps, not a clock reading: after `arm_ms` a timer DRAINS all
+--     queued input (getchar(0) until empty), then — on the next scheduled loop
+--     turn — drains again and only then arms. Typeahead queued while unarmed,
+--     even if the loop was blocked past `arm_ms`, is consumed by a drain before
+--     the armed flag can be set, so it can never approve; once armed, only a
+--     key that arrived after the last drain reaches the prompt, and only `a`
+--     approves;
 --   * every other exit is Deny: Esc, q, <C-c>, Enter, any other key once armed,
 --     leaving or closing the window, the UI detaching, the timeout, an error
 --     while opening, or no UI at all (headless: denied at once, no float);
@@ -18,14 +24,25 @@ local M = {}
 ---@field on_result fun(approved: boolean) called exactly once
 ---@field timeout_ms? integer deny after this long (default 120000)
 
-M.arm_ms = 600 -- the typeahead discard window after focusing
+M.arm_ms = 600 -- the unarmed (typeahead-discard) window after focusing
 M.timeout_ms = 120000
 
 local queue, active = {}, nil
 local pump
 
 local function armed(a)
-  return a.explicit == true and vim.uv.hrtime() >= a.ready_at
+  return a.armed == true
+end
+
+-- Discard every key already queued (typeahead and pending input), while the
+-- prompt is focused and unarmed.
+local function drain(a)
+  if a.win and vim.api.nvim_get_current_win() == a.win then
+    local n = 0
+    while n < 10000 and vim.fn.getchar(0) ~= 0 do
+      n = n + 1
+    end
+  end
 end
 
 ---Is there a UI that can show the prompt? Headless = no.
@@ -244,18 +261,36 @@ pump = function()
   end
 end
 
----Focus the pending prompt. Starts the arming window: keys typed in the prompt
----during the next `arm_ms` are ignored, after that `a` approves.
+---Focus the pending prompt, UNARMED. Keys are ignored until it arms: after
+---`arm_ms`, queued input is drained, and on the following loop turn drained
+---again before `a` can approve (see the header).
 function M.focus()
   local a = active
   if not a or a.done or not a.win or not vim.api.nvim_win_is_valid(a.win) or vim.fn.mode() ~= "n" then
     return false
   end
-  a.explicit = true
-  a.ready_at = vim.uv.hrtime() + M.arm_ms * 1e6
+  a.armed = false
+  a.focus_seq = (a.focus_seq or 0) + 1
+  local seq = a.focus_seq
   if vim.api.nvim_get_current_win() ~= a.win then
     vim.api.nvim_set_current_win(a.win)
   end
+  local function current()
+    return active == a and not a.done and a.focus_seq == seq and vim.api.nvim_get_current_win() == a.win
+  end
+  drain(a)
+  vim.defer_fn(function()
+    if not current() then
+      return
+    end
+    drain(a)
+    vim.schedule(function() -- a loop boundary after the drain: anything left was typed after it
+      if current() then
+        drain(a)
+        a.armed = true
+      end
+    end)
+  end, M.arm_ms)
   return true
 end
 
@@ -272,8 +307,7 @@ function M.approve(opts)
     title = opts.title and clean(opts.title) or nil,
     on_result = opts.on_result,
     timeout_ms = tonumber(opts.timeout_ms) or M.timeout_ms,
-    explicit = false,
-    ready_at = 0,
+    armed = false,
   }
   queue[#queue + 1] = a
   pump()
