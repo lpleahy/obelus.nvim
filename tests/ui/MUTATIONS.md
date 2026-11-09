@@ -1,28 +1,63 @@
 # Guard mutations
 
-These mutations show that the harness is sensitive. `sh tests/ui/mutations.sh`
-copies `lua/` and `tests/` to a private temp dir, applies one small mutation at a
-time to the copy and runs the harness there. Every mutation must make the harness
-fail. The real tree is never modified.
+These runs show that the harness is sensitive. `make ui-mutations`
+(`tests/ui/mutations.sh`) copies `lua/` and `tests/` to a private temp dir. It first
+checks that the unmodified copy passes; if not, it reports an invalid environment
+and stops with exit 2. It then applies one mutation at a time and runs the harness.
+A mutation counts as **caught** only when the run reaches comparison and reports a
+baseline mismatch with no harness error. A harness error under a mutation counts as
+**invalid**. The real tree is never modified.
 
-Last run: 2026-11-08, Neovim v0.12.6, baselines at this branch's HEAD.
+Last run: 2026-11-08, Neovim v0.12.6, 41 baselines. Result: **15 caught, 0 missed,
+0 invalid**, 102 s under `nice -n 10`.
 
 | Mutation | Change in the copy | Result |
 | --- | --- | --- |
-| band-highlight-group | `render.lua`: linewise band `line_hl_group` `ObelusThreadBg` → `ObelusThreadBar` | caught: 36 snapshots |
-| virt-text-column | `config.lua`: eol preview prefix `"  ▌ "` → `"   ▌ "` (virt_text shifts one column) | caught: 2 snapshots |
-| spinner-frame | `progress.lua`: spinner frame 2 `⠙` → `⠚` | caught: 8 snapshots |
-| panel-width | `panel.lua`: sidebar width `columns * 0.42` → `* 0.43` | caught: 4 snapshots |
-| markdown-bold-conceal | `thread.lua`: `**bold**` keeps its markers (no conceal) | caught: 24 snapshots |
-| band-hint-string | `render.lua`: band hint `K up · J down` → `K up \| J down` | caught: 2 snapshots |
-| composer-footer-label | `render.lua`: composer footer `save` → `store` | caught: 2 snapshots |
-| bubble-tint-colour | `config.lua`: `colors.tint` 0.08 → 0.09 (colours only, no layout change) | caught: 39 snapshots |
-| spinner-priority-extmark-only | `progress.lua`: inline spinner extmark priority 4500 → 4400 (invisible on screen) | caught: 8 snapshots |
-| keymap-desc | `init.lua`: `<prefix>?` keymap desc text | caught: 1 snapshot (registration) |
+| band-highlight-group | `render.lua`: linewise band `line_hl_group` `ObelusThreadBg` → `ObelusThreadBar` | caught: 38 snapshots |
+| virt-text-column | `config.lua`: eol preview prefix `"  ▌ "` → `"   ▌ "` (virt_text shifts one column) | caught: 2 |
+| spinner-frame | `progress.lua`: spinner frame 2 `⠙` → `⠚` | caught: 8 |
+| panel-width | `panel.lua`: sidebar width `columns * 0.42` → `* 0.43` | caught: 4 |
+| markdown-bold-conceal | `thread.lua`: `**bold**` keeps its markers (no conceal) | caught: 26 |
+| band-hint-string | `render.lua`: band hint `K up · J down` → `K up \| J down` | caught: 2 |
+| composer-footer-label | `render.lua`: composer footer `save` → `store` | caught: 2 |
+| bubble-tint-colour | `config.lua`: `colors.tint` 0.08 → 0.09 (colours only) | caught: 41 |
+| spinner-priority-extmark-only | `progress.lua`: inline spinner extmark priority 4500 → 4400 (invisible on screen) | caught: 8 |
+| keymap-desc | `init.lua`: `<prefix>?` keymap desc text | caught: 1 (registration) |
+| setup-overwrites-default-Y | `setup()` maps `Y` to `dd`, overwriting Neovim's default | caught: 1 (registration) |
+| setup-ungrouped-autocmd | `setup()` adds an ungrouped `BufEnter` autocmd | caught: 1 (registration) |
+| setup-new-namespace | `setup()` creates namespace `obelus_api_review` | caught: 1 (registration) |
+| chat-float-zindex | `config.lua`: `z.CHAT` 50 → 51 | caught: 6 |
+| setup-overwrites-highlight | `setup()` re-links `Search` to `IncSearch` | caught: 1 (registration) |
 
-Result: 10 caught, 0 missed. The suite took 53 s under `nice -n 10`.
+The last five mutations come from the independent review. Before the B3 fix, the
+`Y` overwrite and the ungrouped autocmd passed the whole suite.
 
-The first attempt at bubble-tint-colour changed the `or 0.08` fallback in
-`thread.lua`. That fallback is dead code, because `config.defaults` always sets
-`colors.tint`, so the run reported the mutation as missed. The mutation now targets
-the config default. The miss came from the mutation, not from a gap in the harness.
+## Harness failure modes (`make ui-selftest`)
+
+| Check | Result |
+| --- | --- |
+| Forced RPC timeout (`OBELUS_UI_GUARD_MS=1500`, child stuck in `while true do end`) | reported as a transport fault (`ERROR`), exit 1. `rpc.lua` reaps the child without the wrapper's fallback. No live child, no temp dir. |
+| Scenario raises an error | `ERROR … deliberate scenario failure`, exit 1. No live child, no temp dir. |
+| SIGTERM to `run.sh` mid-run, child wedged | exit 143. Parent and child killed by exact pid. No temp dir. |
+| 2.5 s wall-clock stall before each capture (progress, stream and popup scenarios) | 18/18 byte-identical to the baselines |
+
+A full 41-snapshot run with a 2.5 s stall before every capture was byte-identical
+to an undelayed run.
+
+Negative control for the stall check: in a temp copy with the virtual clock turned
+off (timers real, `settle` back to counted `vim.wait` turns),
+`progress_finish_ok` passes without a stall. With the 2.5 s stall both of its
+sizes fail: the `✓ fake` mark has cleared. This is the review's B2 reproduction.
+The check really does depend on the virtual clock.
+
+Wrong environment: with `baselines/NVIM_VERSION` set to `NVIM v0.0.0` in a temp
+copy, `mutations.sh` prints `INVALID ENVIRONMENT` and exits 2. It no longer reports
+"10 caught", as it did in the review.
+
+## History
+
+The first run had 10 mutations. The first attempt at bubble-tint-colour changed
+the `or 0.08` fallback in `thread.lua`. That fallback is dead code, because
+`config.defaults` always sets `colors.tint`, so the run reported the mutation as
+missed. The mutation now targets the config default. The miss came from the
+mutation, not from a gap in the harness.
