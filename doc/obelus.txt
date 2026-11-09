@@ -1514,8 +1514,12 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
     functions, `send` and its cancel) may call back into this API, e.g.
     through a synchronous RPC wait: the old registration is detached before
     its cancels run, only its own threads and jobs are removed, and obelus
-    re-checks the registration and the thread after every callback. When a
-    callback registers the same name again, the latest registration wins.
+    re-checks the exact registration, the buffer and the thread after every
+    callback. A result from a registration that was replaced or removed
+    while its callback ran is discarded (a `create()` result is refused and
+    the composer reopens): it is never relabelled for the newer
+    registration. When a callback registers the same name again, the latest
+    registration wins.
 
     Claimed schemes ~                                   *obelus-quarantine*
     A record on a "scheme://…" buffer whose scheme a backend ever claimed

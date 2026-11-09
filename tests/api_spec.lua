@@ -859,6 +859,77 @@ T.it("re-entrant cancel(): unregister whose cancel registers anew and sends keep
   end)
 end)
 
+T.it("re-entrant create(): a replacement with a colliding id keeps ITS record; the old result is dropped", function()
+  with_backend(nil, function(ctx)
+    local NEW = memo_backend()
+    NEW.threads = {
+      {
+        id = "n1",
+        range = { sl = 2, el = 2 },
+        turns = { { author = "you", text = "NEW OWNER RECORD", turn_id = "srv" } },
+      },
+    }
+    local create = ctx.B.spec.store.create
+    ctx.B.spec.store.create = function(bufnr, new)
+      local t = create(bufnr, new) -- the OLD store keeps "OLD OWNER CREATION" as n1
+      api.register_backend(NEW.spec) -- re-enters: a replacement whose own n1 differs
+      return t
+    end
+    api.register_backend(ctx.B.spec)
+    local msgs, restore = capture_notify()
+    local c = new_comment(ctx, 2, "OLD OWNER CREATION")
+    restore()
+    T.is_nil(c, "the stale create result was not adopted")
+    T.contains(vim.inspect(msgs), "changed while saving this comment")
+    local mirror = ctx.store.get("api:memo:n1")
+    T.eq(mirror.comment, "NEW OWNER RECORD", "the replacement's own record stands")
+    T.eq(#ctx.store.by_file(ctx.file), 1)
+    require("obelus").chat_send(mirror.id, "to the new owner", "send")
+    T.eq(#NEW.sends, 1)
+    T.eq({ NEW.sends[1].req.id, NEW.sends[1].req.text }, { "n1", "to the new owner" })
+    T.eq(#ctx.B.sends, 0, "nothing went to the old registration")
+  end)
+end)
+
+T.it("re-entrant match(): one that removes or replaces itself never yields a stale owner", function()
+  with_backend(vim.deepcopy(SEED), function(ctx)
+    -- removes itself and still says "mine", during a direct refresh
+    local remove_self = false
+    ctx.B.spec.match = function(bufnr)
+      if remove_self then
+        api.unregister_backend("memo")
+        return true
+      end
+      return vim.api.nvim_buf_get_name(bufnr):match("^memo://") ~= nil
+    end
+    api.register_backend(ctx.B.spec)
+    remove_self = true
+    local ok, res = pcall(api.refresh, ctx.buf)
+    T.ok(ok, "no error: " .. tostring(res))
+    T.eq(res, false, "no owner")
+    T.eq(api.backends(), {})
+    T.is_nil(api.backend_for(ctx.buf))
+    -- replaces itself: the replacement's answer is the only one that counts
+    local NEW = memo_backend()
+    NEW.threads = vim.deepcopy(SEED)
+    NEW.threads[1].turns[1].text = "FROM THE REPLACEMENT"
+    local B2 = memo_backend()
+    B2.threads = vim.deepcopy(SEED)
+    local replaced = false
+    B2.spec.match = function(bufnr)
+      if not replaced then
+        replaced = true
+        api.register_backend(NEW.spec)
+      end
+      return vim.api.nvim_buf_get_name(bufnr):match("^memo://") ~= nil
+    end
+    api.register_backend(B2.spec)
+    T.eq(ctx.store.get("api:memo:7").comment, "FROM THE REPLACEMENT")
+    require("obelus").chat_send("api:memo:7", "hello", "send")
+    T.eq({ #NEW.sends, #B2.sends }, { 1, 0 })
+  end)
+end)
+
 T.it("re-entrant delete()/resolve(): a refresh inside them never drops or edits the wrong record", function()
   local seed = vim.deepcopy(SEED)
   seed[2] = { id = 8, range = { sl = 3, el = 3 }, turns = { { author = "you", text = "keep me", turn_id = "k" } } }

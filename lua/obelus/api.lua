@@ -148,24 +148,40 @@ function M._active()
   return #order > 0
 end
 
+-- The registration that owns `bufnr`: name, registration — or nil. A `match`
+-- that throws counts as a match (fail closed). match() is EXTERNAL code: if it
+-- replaced or removed its own registration (or the buffer), its answer is
+-- stale and discarded; the third result is then true.
+local function owner_of(bufnr)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return nil
+  end
+  local stale = false
+  for _, name in ipairs(vim.deepcopy(order)) do
+    local b = backends[name]
+    if b then
+      local bufname = vim.api.nvim_buf_get_name(bufnr)
+      local ok, hit = pcall(b.match, bufnr)
+      local same = backends[name] == b
+        and vim.api.nvim_buf_is_valid(bufnr)
+        and vim.api.nvim_buf_get_name(bufnr) == bufname
+      if not same then
+        stale = true -- the answer belongs to a registration (or buffer) that is gone
+      elseif not ok or hit then
+        return name, b
+      end
+    end
+  end
+  return nil, nil, stale
+end
+
 ---The name of the backend that owns `bufnr`, or nil. A `match` that throws
 ---counts as a match (fail closed).
 ---@param bufnr? integer
 ---@return string|nil
 function M.backend_for(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
-  if not vim.api.nvim_buf_is_valid(bufnr) then
-    return nil
-  end
-  for _, name in ipairs(vim.deepcopy(order)) do -- match() is external: it may re-enter
-    local b = backends[name]
-    if b then
-      local ok, hit = pcall(b.match, bufnr)
-      if not ok or hit then
-        return name
-      end
-    end
-  end
+  return (owner_of(bufnr))
 end
 
 -- The live registration owning mirror `c` — nil once it was replaced/removed.
@@ -413,16 +429,16 @@ end
 ---@return boolean ok
 function M.refresh(bufnr)
   bufnr = (bufnr == nil or bufnr == 0) and vim.api.nvim_get_current_buf() or bufnr
-  local name = M.backend_for(bufnr)
-  local file = abspath(bufnr)
+  local name, b = owner_of(bufnr)
+  local file = name and abspath(bufnr)
   if not (name and file) then
     return false
   end
-  local b = backends[name]
   local ok, list = pcall(b.store.list, bufnr)
   -- list() is external: if it replaced or removed this registration, or the
-  -- buffer went away, this result is stale (the newer registration refreshed)
-  if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) then
+  -- buffer went away or was renamed, this result is stale (the newer
+  -- registration refreshed itself)
+  if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) or abspath(bufnr) ~= file then
     return false
   end
   if not ok or type(list) ~= "table" then
@@ -492,8 +508,8 @@ local function ensure_autocmds()
   vim.api.nvim_create_autocmd("BufWinEnter", {
     group = augroup,
     callback = function(ev)
-      local name = M.backend_for(ev.buf)
-      if name and synced[ev.buf] ~= backends[name].gen then
+      local name, b = owner_of(ev.buf)
+      if name and synced[ev.buf] ~= b.gen then
         M.refresh(ev.buf)
       end
     end,
@@ -644,11 +660,18 @@ function M._adopt(c)
     return true
   end
   local bufnr = buf_for_file(c.file)
-  local name = bufnr and M.backend_for(bufnr)
+  if not bufnr then
+    return true
+  end
+  local name, b, stale = owner_of(bufnr)
+  if stale and not name then
+    -- a match() changed its registration while deciding: fail closed, retry
+    notify_failure("matching", "changed while saving this comment — try again")
+    return false
+  end
   if not name then
     return true
   end
-  local b = backends[name]
   -- a retry of a refused create with unchanged text carries that attempt's id
   -- (capture keeps it), so an idempotent backend can join the two attempts
   local first_turn_id = c._api_turn_id or M._new_turn_id()
@@ -665,18 +688,20 @@ function M._adopt(c)
     notify_failure(name, "could not save this comment")
     return false
   end
-  -- create() is external: re-read the registration rather than trusting `b`.
-  -- A replacement of the same name owns the backend's records now; gone = refuse.
-  b = backends[name]
-  if not b then
-    notify_failure(name, "went away while saving this comment")
+  -- create() is external: its result belongs to registration `b` only. If `b`
+  -- was replaced or removed meanwhile (or the buffer changed), the result is
+  -- stale: it is never relabelled for a newer registration and never used to
+  -- remove that one's mirrors. Refuse; the current registration lists its own
+  -- store, and the composer keeps this attempt's turn id for a retry.
+  if backends[name] ~= b or not vim.api.nvim_buf_is_valid(bufnr) or abspath(bufnr) ~= c.file then
+    notify_failure(name, "changed while saving this comment — try again")
     return false
   end
   local store = require("obelus.store")
   local id = mirror_id(name, tostring(t.id))
-  for i = #store.comments, 1, -1 do -- a nested refresh may already list it: one copy only
+  for i = #store.comments, 1, -1 do -- a nested refresh of THIS registration may already list it
     local x = store.comments[i]
-    if x.id == id and not inflight[id] then
+    if x.id == id and x._api_gen == b.gen and not inflight[id] then
       table.remove(store.comments, i)
     end
   end

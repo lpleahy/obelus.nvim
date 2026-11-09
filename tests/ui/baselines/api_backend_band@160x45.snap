@@ -129,7 +129,7 @@ B1 ns=obelus_band (1)
 ## registry changes since setup: user commands (0)
 ## registry changes since setup: keymaps (0)
 ## registry changes since setup: autocmds (2)
-+ obelus_api BufWinEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/api.lua#d60952521c0a>
++ obelus_api BufWinEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/api.lua#ae060f3c34c0>
 + obelus_api BufWipeout pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/api.lua#ddd5dcf5adec>
 ## registry changes since setup: highlight groups (0)
 ## registry changes since setup: namespaces (0)
