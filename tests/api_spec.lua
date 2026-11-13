@@ -2225,6 +2225,7 @@ T.it("turn events: thinking, tool and notice rows show beside the reply and are 
     s.emit({ type = "tool", operation = "search" })
     rows = shown(c, true)
     T.ok(not has_row(rows, "Weighing the base case against the step."), "thinking collapsed")
+    T.is_nil(api._meta_of(c).thinking, "no thinking once the answer started")
     s.emit({ type = "thinking", text = "LATE THINKING" })
     T.ok(not vim.inspect(shown(c, true)):find("LATE THINKING", 1, true), "thinking after the answer started is ignored")
     s.emit({ type = "done" })

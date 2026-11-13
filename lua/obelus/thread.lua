@@ -2022,7 +2022,7 @@ function M.build(comment, width, opts)
     local turn_live = live and (comment._stream_turn == t or (comment._stream_turn == nil and agent and i == #turns))
     if meta and t == meta_turn then
       meta_lines(rows, meta_rows_of(meta, true), inner)
-      if turn_live and meta.thinking and (t.text == nil or t.text == "") then
+      if turn_live and meta.thinking then -- api._meta_of drops it once the reply has text
         meta_lines(rows, thinking_lines(meta, inner), inner)
       end
     end
