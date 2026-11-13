@@ -1480,7 +1480,7 @@ and composer UI on its own NON-FILE buffers, and gives it obelus's
 Approve/Deny prompt. Lua type annotations are in lua/obelus/api.lua.
 
 api.version                                             *obelus.api.version*
-    Semver string, currently "0.2.0". It describes RELEASED compatibility:
+    Semver string, currently "0.1.0". It describes RELEASED compatibility:
     a minor bump adds, a major bump breaks; it changes only with a release.
     Use it to require a compatible API (e.g. major == 0 and at least the
     minor you were written against). Use |obelus.api.capabilities| to detect
@@ -1505,7 +1505,7 @@ api.capabilities                                   *obelus.api.capabilities*
       turn_events          a backend registered with `turn_events = true`
                            may emit "thinking", "tool", "notice" and an
                            "error" with a `message`; see
-                           |obelus-api-turn-events|. Absent before 0.2.0.
+                           |obelus-api-turn-events|.
 
 api.register_backend({spec})                   *obelus.api.register_backend()*
     Register a backend. Registering a name again REPLACES it: the old
@@ -1573,27 +1573,43 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
                                     the latest 8 KiB are kept.
       { type = "tool", operation, url? }
                                     one line, worded as in Luodda's chat:
-                                    "> searched the web", "> fetched: <url>",
-                                    "> opened: <url>", else "> used a tool:
-                                    <operation> <url>".
+                                    "> searched the web" (with a url,
+                                    "> searched the web: <url>"),
+                                    "> fetched: <url>", "> opened: <url>",
+                                    else "> used a tool: <operation> <url>".
       { type = "notice", text }     one line, "> <text>".
       { type = "error", message? }  ends the turn as today (the message is
                                     back in the draft); the message shows as
-                                    "error: <message>" under the thread, and
-                                    in the notification in parentheses.
-    Tool and notice lines sit above the reply when they came before its
-    first text, else below it; they stay until the next send on the thread,
-    and also show under a failed turn. A cancelled or invalidated turn
-    keeps none of them. Bounds: an operation, url, notice or error message
-    is cut to 300 characters ("…"); at most 20 tool and notice lines per
+                                    "error: <message>" and in the
+                                    notification, in parentheses.
+    The rows belong to ONE turn, named by the `turn_id` of the user turn it
+    answers, and never show on any other turn:
+    - Tool and notice lines sit with the reply, above it when they came
+      before its first text, else below it. After a refresh they stay with
+      the agent turn right after the user turn of that `turn_id`; when the
+      backend no longer lists that pair (or the thread), they are dropped.
+    - A failed turn (an `error`, an empty `done`, a throwing `send()`)
+      keeps its tool and notice lines, and its error message if it gave
+      one, in their own "agent ↩" block under your message, while that
+      message is the last turn of the thread. They go when you send again,
+      when the message is answered or dropped (e.g. you empty the reply
+      box), and when a refresh no longer lists it.
+    - A new send on the thread clears the last turn's rows. A cancelled or
+      invalidated turn keeps none. Removing the thread, reloading the store
+      and replacing or unregistering the backend drop them.
+    Bounds: an operation, url, notice or error message is cut to 300
+    characters ("…"; a value over 64 KiB is first cut at a character
+    boundary, and also shows "…"); at most 20 tool and notice lines per
     turn, later ones dropped; every row is one line, cut to the width.
     All text is untrusted: controls (newlines and tabs too) become spaces,
     format characters (bidi controls, zero-width characters, the BOM, tag
     characters) are removed, as for an approve `focus_hint`, and spaces
-    collapse. An event with a wrong or missing field (no `text`, a blank
-    or non-string `operation`, a non-string `url`) is ignored, as is an
-    unknown type. A backend without `turn_events` behaves exactly as before
-    0.2.0.
+    collapse. An event with a wrong or missing field is ignored, as is an
+    unknown type: no `text`; a `text`, `operation` or `url` that is not a
+    string or is blank once neutralized (so a blank url or notice drops
+    the whole event); a thinking chunk that is blank or only format
+    characters when no thinking is shown yet. A backend without
+    `turn_events` behaves exactly as before this feature.
 
     Turn identity ~                                       *obelus-api-turns*
     Each user message obelus submits has a stable `turn_id`; every retry of
@@ -1655,8 +1671,12 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
     - obelus's own transports (the "cli" agent, which can edit files, and
       "file", "sidekick", "quickfix") never run on them;
     - any backend failure (a throw, `error`, an empty reply) shows a FIXED
-      message; the backend's own text is never shown. A failed reply
-      leaves nothing in the thread and puts your message back as a draft.
+      message and puts your message back as a draft; no partial reply
+      stays. A backend without `turn_events` never has its own text shown,
+      and its failed reply leaves nothing in the thread. A `turn_events`
+      backend's error `message` is shown (neutralized, bounded, labelled
+      "error:") with the turn's tool and notice lines under your message,
+      until you send again (|obelus-api-turn-events|).
     Unregistering or replacing a backend, or reloading the store, cancels
     its sends; every send callback checks that it still owns its thread and
     job before it changes anything. Backend callbacks (`match`, the store
