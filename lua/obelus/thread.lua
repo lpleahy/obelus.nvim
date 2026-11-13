@@ -1961,16 +1961,14 @@ function M.build(comment, width, opts)
   -- an obelus.api backend's display-only rows (nil for every other thread)
   local api = comment.backend and package.loaded["obelus.api"]
   local meta = api and api._meta_of(comment) or nil
+  -- the ONE agent turn the rows belong to (api._meta_of matched it by the user
+  -- turn's turn_id); never another turn — a failed turn's rows get their own block
   local meta_turn
-  if meta then
+  if meta and meta.turn then
     for _, t in ipairs(turns) do
-      if meta.turn and t == meta.turn then
+      if t == meta.turn then
         meta_turn = t
       end
-    end
-    local last = turns[#turns]
-    if not meta_turn and not meta.error and last and last.author == "agent" then
-      meta_turn = last -- the reply was re-listed: its rows stay with it
     end
   end
 
@@ -2049,12 +2047,6 @@ function M.build(comment, width, opts)
       "ObelusReplyBg",
       { { "agent ↩", "ObelusReplyHeader", role = "header" } }
     )
-    if meta and not meta_turn then
-      meta_lines(rows, meta_rows_of(meta), inner)
-      if meta.thinking then
-        meta_lines(rows, thinking_lines(meta, inner), inner)
-      end
-    end
     content_row(
       rows,
       true,
@@ -2064,9 +2056,10 @@ function M.build(comment, width, opts)
     )
   end
 
-  -- display-only rows with no turn to sit on (the turn failed and was dropped):
-  -- their own agent block, like the standalone spinner's, ending in the error
-  local orphan = meta and not meta_turn and not spinning
+  -- a failed turn's rows (its streamed reply was dropped; your message, the last
+  -- turn, waits to be sent again): their own agent block under it, like the
+  -- standalone spinner's, ending in the error message when there is one
+  local orphan = meta and meta.failed and not spinning
   if orphan then
     local list = meta_rows_of(meta)
     if meta.error then

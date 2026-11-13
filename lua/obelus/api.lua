@@ -26,7 +26,7 @@
 -- and the job.
 local M = {}
 
-M.version = "0.2.0"
+M.version = "0.1.0"
 
 -- What this obelus supports, for feature detection without touching private
 -- UI: read it by key (`api.capabilities.approval_handle`). ADVISORY: any Lua
@@ -147,8 +147,9 @@ local function next_gen()
 end
 
 local function notify_failure(name, what)
-  -- FIXED text: the backend's own error never reaches the screen, so nothing it
-  -- says can be mistaken for a reply
+  -- FIXED text: a backend's own error text reaches the screen only from a
+  -- turn_events backend, as its neutralized, bounded, labelled `message` (see
+  -- settle), never as anything that could be mistaken for a reply
   vim.notify(string.format("obelus: the %s backend %s", name, what), vim.log.levels.ERROR)
 end
 
@@ -288,18 +289,24 @@ end
 -- What a turn_events backend reports beside its reply: the model's thinking,
 -- tool lines, notices and a short error message. DISPLAY ONLY: kept here, in
 -- memory, per record id, never in the record's turns, never written anywhere,
--- never in a transport request (the backend owns its history and replay). A new
+-- never in a transport request (the backend owns its history and replay).
+-- They belong to ONE turn, named by the user turn's turn_id (stable across a
+-- refresh): they show only with the agent turn right after that user turn, or,
+-- for a failed turn, under that user turn while it is still the last, unanswered
+-- turn. Never on any other turn: when the turn is gone they are dropped. A new
 -- send on the thread clears them; so do cancel, invalidation, removal, a store
--- reload and replacing or unregistering the backend.
+-- reload, a refresh that no longer lists the turn, and replacing or
+-- unregistering the backend.
 
 M._META = {
   thinking_bytes = 8 * 1024, -- the latest thinking kept, in bytes
   field_chars = 300, -- an operation, url, notice or error message, in characters
+  field_bytes = 64 * 1024, -- read of a field at most (cut at a character boundary, then "…")
   rows = 20, -- tool and notice lines kept per reply; later ones are dropped
   thinking_rows = 8, -- thinking rows shown (the latest)
 }
 
-local meta = {} ---@type table<string, table> record id -> { st, b, turn, rows, thinking?, error? }
+local meta = {} ---@type table<string, table> record id -> { st, b, turn_id, rows, thinking?, cut?, failed?, error? }
 
 -- Untrusted text to one plain line: controls (C0, DEL, C1, line and paragraph
 -- separators, so also newlines and tabs) become spaces; every other code point
@@ -321,18 +328,34 @@ local function neutral(s)
 end
 
 -- a field of at most M._META.field_chars characters, "…" when cut; nil if not a
--- non-blank string
+-- non-blank string. A huge value is first cut to M._META.field_bytes at a
+-- character boundary (never inside a code point), then neutralized, then cut on
+-- characters; any cut shows "…".
 local function field(v)
   if type(v) ~= "string" then
     return nil
   end
-  local max = M._META.field_chars
-  local s = neutral(v:sub(1, max * 4)) -- no code point is longer than 4 bytes
+  local max, cut = M._META.field_chars, false
+  if #v > M._META.field_bytes then
+    local k = M._META.field_bytes
+    for _ = 1, 3 do -- back off over at most 3 continuation bytes of the next code point
+      local nb = v:byte(k + 1)
+      if not (nb and nb >= 0x80 and nb < 0xC0) then
+        break
+      end
+      k = k - 1
+    end
+    v, cut = v:sub(1, k), true
+  end
+  local s = neutral(v)
   if s == "" then
     return nil
   end
-  if vim.fn.strchars(s) > max then
-    s = vim.fn.strcharpart(s, 0, max - 1) .. "…"
+  if cut or vim.fn.strchars(s) > max then
+    if vim.fn.strchars(s) >= max then
+      s = vim.fn.strcharpart(s, 0, max - 1)
+    end
+    s = s .. "…"
   end
   return s
 end
@@ -352,7 +375,7 @@ end
 local function meta_for(st)
   local m = meta[st.id]
   if not (m and m.st == st) then
-    m = { st = st, b = st.b, turn = st.turn, rows = {} }
+    m = { st = st, b = st.b, turn_id = st.turn_id, rows = {} }
     meta[st.id] = m
   end
   return m
@@ -364,9 +387,14 @@ local function on_turn_event(st, ev)
     if type(ev.text) ~= "string" or st.acc ~= "" then
       return -- not text, or the answer started: thinking shows only before it
     end
+    local max = M._META.thinking_bytes
+    local old = meta[st.id]
+    old = old and old.st == st and old.thinking
+    if not old and neutral(ev.text:sub(-max)) == "" then
+      return -- blank or format-only thinking: no entry, no empty row
+    end
     local m = meta_for(st)
     local s = (m.thinking or "") .. ev.text
-    local max = M._META.thinking_bytes
     if #s > max then
       s = s:sub(-max):gsub("^[\128-\191]+", "") -- the latest bytes, from a whole character
       m.cut = true
@@ -395,22 +423,64 @@ local function on_turn_event(st, ev)
   end
 end
 
+-- Where a record's rows belong now: the agent turn right after the user turn
+-- with the rows' turn_id (a reply, live or done), or `true` for a failed turn
+-- whose user turn is still the last one. nil = their turn is gone.
+local function anchor(m, c)
+  local turns = require("obelus.store").turns(c)
+  for i, t in ipairs(turns) do
+    if t.author == "you" and t.turn_id ~= nil and t.turn_id == m.turn_id then
+      if m.failed then
+        return i == #turns or nil
+      end
+      local reply = turns[i + 1]
+      return reply and reply.author == "agent" and reply or nil
+    end
+  end
+end
+
 ---The display-only rows of a backend thread, for thread.build: nil, or
----{ turn?, rows = { { text, above } }, thinking?, cut?, error? }. A COPY: callers
----cannot reach the state.
+---{ turn?, failed?, rows = { { text, above } }, thinking?, cut?, error? }:
+---`turn` is the agent turn they show with; `failed` puts them in their own block
+---after the turns. A COPY: callers cannot reach the state. Rows whose turn is
+---gone are dropped here (never moved to another turn).
 ---@param c table a record
 function M._meta_of(c)
   local m = type(c) == "table" and c.backend and meta[c.id]
   if not (m and m.b.name == c.backend and backends[c.backend] == m.b) then
     return nil
   end
+  local at = anchor(m, c)
+  if not at then
+    if m.st.done then
+      meta[c.id] = nil
+    end
+    return nil
+  end
+  local thinking = not m.st.done and m.st.acc == "" and m.thinking ~= nil and neutral(m.thinking) or nil
   return {
-    turn = m.turn,
+    turn = at ~= true and at or nil,
+    failed = m.failed,
     rows = vim.deepcopy(m.rows),
-    thinking = not m.st.done and m.st.acc == "" and m.thinking ~= nil and neutral(m.thinking) or nil,
+    thinking = thinking ~= "" and thinking or nil,
     cut = m.cut,
     error = m.error,
   }
+end
+
+-- drop the rows of `b`'s records that are gone or whose turn is gone
+local function prune_meta(b)
+  local store = require("obelus.store")
+  for id, m in pairs(meta) do
+    if m.b == b and m.st.done then
+      local c = store.get(id)
+      if c then
+        M._meta_of(c)
+      else
+        meta[id] = nil
+      end
+    end
+  end
 end
 
 -- ── sends ─────────────────────────────────────────────────────────────────────
@@ -473,14 +543,14 @@ local function settle(st, kind, text, cancel_reason)
   if m and m.st == st then
     m.thinking = nil
     if kind == "error" then
-      m.turn = nil -- the streamed turn is dropped below
+      m.failed = true -- the streamed turn is dropped below: the rows stay under the message
       m.error = st.b.turn_events and st.err_msg or nil
     end
     if (kind ~= "done" and kind ~= "error") or (#m.rows == 0 and not m.error) then
       meta[st.id] = nil
     end
   elseif kind == "error" and st.b.turn_events and st.err_msg then
-    meta[st.id] = { st = st, b = st.b, rows = {}, error = st.err_msg }
+    meta[st.id] = { st = st, b = st.b, turn_id = st.turn_id, rows = {}, failed = true, error = st.err_msg }
   end
   if kind == "done" then
     store.stream_finish(st.id, text, nil, true)
@@ -556,7 +626,7 @@ local function run_turn(c, b)
   local id = c.id
   meta[id] = nil -- a new send: the last reply's display-only rows go
   store.stream_start(id)
-  local st = { b = b, c = c, id = id, draft = draft, turn = c._stream_turn, done = false, acc = "" }
+  local st = { b = b, c = c, id = id, draft = draft, turn = c._stream_turn, turn_id = turn_id, done = false, acc = "" }
   st.spec = {
     transport = "api:" .. b.name,
     cancel = function(reason) -- jobs.cancel(id, "user") from an explicit cancel
@@ -677,6 +747,7 @@ function M.refresh(bufnr)
   for i, c in ipairs(keep) do
     store.comments[i] = c
   end
+  prune_meta(b) -- rows whose thread or turn this listing no longer has
   pcall(require("obelus.render").render_all)
   return true
 end
@@ -976,9 +1047,7 @@ function M._on_remove(c)
   invalidate_sends(function(st)
     return st.c == c
   end)
-  if meta[c.id] and meta[c.id].st.c == c then
-    meta[c.id] = nil
-  end
+  meta[c.id] = nil -- by id: whatever record table now carries it
   return true
 end
 

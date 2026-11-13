@@ -195,8 +195,8 @@ local SEED = {
 
 -- ── registration ───────────────────────────────────────────────────────────────
 
-T.it("api.version is semver 0.2.x and register_backend validates its spec", function()
-  T.eq(api.version, "0.2.0")
+T.it("api.version is semver 0.1.x and register_backend validates its spec", function()
+  T.eq(api.version, "0.1.0")
   local B = memo_backend()
   T.ok(not pcall(api.register_backend, { name = "x" }), "missing match/store/transport")
   local bad = vim.deepcopy(B.spec)
@@ -2325,7 +2325,7 @@ T.it("turn events: unknown types and missing or wrong fields are ignored", funct
 end)
 
 T.it("turn events: text is bounded, and the bounds are the documented ones", function()
-  T.eq(api._META, { thinking_bytes = 8192, field_chars = 300, rows = 20, thinking_rows = 8 })
+  T.eq(api._META, { thinking_bytes = 8192, field_chars = 300, field_bytes = 65536, rows = 20, thinking_rows = 8 })
   with_events(true, function(ctx)
     local s = start_send(ctx, ID, "more?")
     s.emit({ type = "notice", text = string.rep("n", 1000) })
@@ -2390,5 +2390,218 @@ T.it("turn events: events after done, cancel, removal or unregister change nothi
     T.ok(api._meta_of(c) ~= nil)
     api.unregister_backend("memo")
     T.is_nil(api._meta_of(c))
+  end)
+end)
+
+T.it("review-1 B1a: a failed turn's rows never move onto an earlier reply", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "tool", operation = "fetch", url = "https://failed-turn.invalid/" })
+    local _, restore = capture_notify()
+    s.emit({ type = "error" }) -- no message
+    restore()
+    require("obelus").chat_save(ID, "") -- the user empties the reply box: the draft is dropped
+    local rows = shown(ctx.store.get(ID), false)
+    local at = {}
+    for i, r in ipairs(rows) do
+      at[r] = i
+    end
+    T.ok(
+      not (
+          at["> fetched: https://failed-turn.invalid/"]
+          and at["> fetched: https://failed-turn.invalid/"] < at["It shrinks the problem."]
+        ),
+      "the failed turn's tool line sits inside the earlier reply: " .. vim.inspect(rows)
+    )
+  end)
+end)
+
+T.it("review-1 B1b: a reply's rows never move onto a later reply after a refresh", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "one")
+    s.emit({ type = "notice", text = "ROW-OF-REPLY-ONE" })
+    s.emit({ type = "done", text = "reply one" })
+    local t = ctx.B.threads[1].turns
+    t[#t + 1] = { author = "you", text = "one", turn_id = s.req.turn_id }
+    t[#t + 1] = { author = "agent", text = "reply one" }
+    t[#t + 1] = { author = "you", text = "asked elsewhere", turn_id = "x1" }
+    t[#t + 1] = { author = "agent", text = "REPLY TWO" }
+    api.refresh(ctx.buf)
+    local rows = shown(ctx.store.get(ID), false)
+    local at = {}
+    for i, r in ipairs(rows) do
+      at[r] = i
+    end
+    T.ok(
+      not (at["> ROW-OF-REPLY-ONE"] and at["> ROW-OF-REPLY-ONE"] > at["reply one"]),
+      "reply one's row sits in reply two's block: " .. vim.inspect(rows)
+    )
+  end)
+end)
+
+T.it("review-1 B1c: a deleted thread's rows never show on a new thread with the same id", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "one")
+    s.emit({ type = "notice", text = "ROW-OF-DELETED-THREAD" })
+    s.emit({ type = "done", text = "reply one" })
+    local t = ctx.B.threads[1].turns
+    t[#t + 1] = { author = "you", text = "one", turn_id = s.req.turn_id }
+    t[#t + 1] = { author = "agent", text = "reply one" }
+    api.refresh(ctx.buf)
+    ctx.store.remove(ID)
+    ctx.B.threads =
+      { { id = 7, range = { sl = 3, el = 3 }, turns = { { author = "you", text = "a brand new thread" } } } }
+    api.refresh(ctx.buf)
+    local rows = shown(ctx.store.get(ID), false)
+    T.ok(
+      not vim.inspect(rows):find("ROW-OF-DELETED-THREAD", 1, true),
+      "the new thread shows the deleted thread's row: " .. vim.inspect(rows)
+    )
+  end)
+end)
+
+T.it(
+  "turn events: a failed turn without a message keeps its lines under the message, until it is sent again",
+  function()
+    with_events(true, function(ctx)
+      for _, how in ipairs({ "error", "blank done", "throw" }) do
+        local s
+        if how == "throw" then
+          ctx.B.spec.transport.send = function(req, emit)
+            ctx.B.sends[#ctx.B.sends + 1] = { req = req, emit = emit }
+            emit({ type = "tool", operation = "fetch", url = "https://failed.invalid/" .. how })
+            error("RAW-THROW")
+          end
+          local msgs, restore = capture_notify()
+          require("obelus").chat_send(ID, "more?", "send")
+          restore()
+          T.ok(#msgs > 0)
+          s = ctx.B.sends[#ctx.B.sends]
+        else
+          s = start_send(ctx, ID, "more?")
+          s.emit({ type = "tool", operation = "fetch", url = "https://failed.invalid/" .. how })
+          local _, restore = capture_notify()
+          s.emit(how == "error" and { type = "error" } or { type = "done", text = "  " })
+          restore()
+        end
+        local c = ctx.store.get(ID)
+        local rows = shown(c, false)
+        T.eq(
+          { rows[#rows - 2], rows[#rows - 1], rows[#rows] },
+          { "more?", "agent ↩", "> fetched: https://failed.invalid/" .. how },
+          how .. ": its own block after the message: " .. vim.inspect(rows)
+        )
+        T.ok(not vim.inspect(rows):find("error:", 1, true), how .. ": no error row without a message")
+        local m = api._meta_of(c)
+        T.ok(m.failed and m.turn == nil, how)
+        -- a refresh that still lists the message (stored, unanswered) keeps them
+        api.refresh(ctx.buf)
+        T.ok(api._meta_of(ctx.store.get(ID)) ~= nil, how .. ": kept while the message waits")
+        -- sending again clears them
+        ctx.B.spec.transport.send = memo_backend().spec.transport.send
+        local B = ctx.B
+        ctx.B.spec.transport.send = function(req, emit)
+          B.sends[#B.sends + 1] = { req = req, emit = emit }
+        end
+        api.register_backend(ctx.B.spec)
+        api.refresh(ctx.buf)
+        require("obelus").dispatch(ID)
+        T.is_nil(api._meta_of(ctx.store.get(ID)), how .. ": a new send clears them")
+        local s2 = ctx.B.sends[#ctx.B.sends]
+        s2.emit({ type = "done", text = "answered " .. how })
+      end
+    end)
+  end
+)
+
+T.it("turn events: rows follow their turn by turn_id across a refresh, and go when it is gone", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "one")
+    s.emit({ type = "notice", text = "ROW-ONE" })
+    s.emit({ type = "done", text = "reply one" })
+    local t = ctx.B.threads[1].turns
+    t[#t + 1] = { author = "you", text = "one", turn_id = s.req.turn_id }
+    t[#t + 1] = { author = "agent", text = "reply one" }
+    api.refresh(ctx.buf)
+    local rows = shown(ctx.store.get(ID), false)
+    local at = {}
+    for i, r in ipairs(rows) do
+      at[r] = i
+    end
+    T.ok(at["> ROW-ONE"] and at["> ROW-ONE"] < at["reply one"], "still with reply one: " .. vim.inspect(rows))
+    -- the backend no longer lists that turn: dropped at the refresh, not moved
+    ctx.B.threads[1].turns =
+      { t[1], t[2], { author = "you", text = "other", turn_id = "x" }, { author = "agent", text = "R2" } }
+    api.refresh(ctx.buf)
+    T.ok(not vim.inspect(shown(ctx.store.get(ID), false)):find("ROW-ONE", 1, true))
+    T.is_nil(api._meta_of(ctx.store.get(ID)))
+    -- removal drops by id, whatever record table carries it
+    local s2 = start_send(ctx, ID, "two")
+    s2.emit({ type = "notice", text = "ROW-TWO" })
+    s2.emit({ type = "done", text = "reply two" })
+    local turns = ctx.B.threads[1].turns
+    turns[#turns + 1] = { author = "you", text = "two", turn_id = s2.req.turn_id }
+    turns[#turns + 1] = { author = "agent", text = "reply two" }
+    api.refresh(ctx.buf)
+    T.ok(api._meta_of(ctx.store.get(ID)) ~= nil)
+    local saved = vim.deepcopy(ctx.B.threads)
+    ctx.store.remove(ID)
+    ctx.B.threads = saved -- the same thread listed again under the same id
+    api.refresh(ctx.buf)
+    T.is_nil(api._meta_of(ctx.store.get(ID)), "removal dropped them")
+  end)
+end)
+
+T.it("turn events: a store reload drops every row", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "one")
+    s.emit({ type = "notice", text = "BEFORE-RELOAD" })
+    s.emit({ type = "done", text = "reply" })
+    local t = ctx.B.threads[1].turns
+    t[#t + 1] = { author = "you", text = "one", turn_id = s.req.turn_id }
+    t[#t + 1] = { author = "agent", text = "reply" }
+    ctx.store.load()
+    local c = ctx.store.get(ID)
+    T.ok(c ~= nil, "the backend re-listed the thread")
+    T.is_nil(api._meta_of(c))
+    T.ok(not vim.inspect(shown(c, false)):find("BEFORE-RELOAD", 1, true))
+  end)
+end)
+
+T.it("turn events: thinking is neutralized, and blank thinking draws nothing", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    for _, blank in ipairs({ "", "\n", "   ", "\226\128\139", "\0", "\226\128\174\t" }) do
+      s.emit({ type = "thinking", text = blank })
+    end
+    T.is_nil(api._meta_of(ctx.store.get(ID)), "no entry for blank thinking")
+    local before = shown(ctx.store.get(ID), true)
+    T.ok(not vim.tbl_contains(before, ""), "no empty row: " .. vim.inspect(before))
+    s.emit({ type = "thinking", text = "x\27[2Jy\226\128\174z\226\128\139w\nv" })
+    local m = api._meta_of(ctx.store.get(ID))
+    T.eq(m.thinking, "x [2Jyzw v")
+    T.ok(vim.tbl_contains(shown(ctx.store.get(ID), true), "x [2Jyzw v"))
+    s.emit({ type = "done", text = "ok" })
+  end)
+end)
+
+T.it("turn events: a url is bounded, and a huge field is cut on a character with a mark", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "tool", operation = "fetch", url = "https://example.invalid/" .. string.rep("u", 1000) })
+    -- 64 KiB lands inside a two-byte character: never split
+    s.emit({ type = "notice", text = "a" .. string.rep("\195\169", 40000) })
+    -- a cut that leaves under 300 characters still shows "…"
+    s.emit({ type = "notice", text = "x" .. string.rep("\226\128\139", 30000) .. "HIDDEN-TAIL" })
+    -- removed characters inside the first 64 KiB: no false mark
+    s.emit({ type = "notice", text = "https://good.example/" .. string.rep("\226\128\139", 500) .. "@evil.invalid/" })
+    local m = api._meta_of(ctx.store.get(ID))
+    local url = m.rows[1].text
+    T.eq(vim.fn.strchars(url), #"> fetched: " + 300)
+    T.ok(vim.endswith(url, "…"), url)
+    T.eq(m.rows[2].text, "> a" .. string.rep("\195\169", 298) .. "…")
+    T.eq(m.rows[3].text, "> x…")
+    T.eq(m.rows[4].text, "> https://good.example/@evil.invalid/")
+    s.emit({ type = "done", text = "ok" })
   end)
 end)
