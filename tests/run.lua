@@ -64,6 +64,7 @@ for _, spec in ipairs({
   "api",
   "markview",
   "render_markdown",
+  "margin_layout",
 }) do
   local ok, err = pcall(require, spec .. "_spec")
   if not ok then

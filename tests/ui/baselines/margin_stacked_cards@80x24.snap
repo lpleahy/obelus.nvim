@@ -1,0 +1,281 @@
+# obelus ui snapshot: margin_stacked_cards @ 80x24
+## screen
+|  -- sample.lua: a small module the fixtures │      … 5 above/packed · [c / ]c  |
+|  annotate                                   │                                  |
+|▌ local M = {}                               │                                  |
+|                                             │                                  |
+|▌ local function clamp(x, lo, hi)            │ ┌────╭ [ ] #6 L11 · open ───────╮|
+|▌   if x < lo then                           │ │    │▎ ────────────────────────│|
+|      return lo                              │ │    │▎ you  L11-L11  · draft   │|
+|▌   end                                      │ │    │▎ note on line 11: check  │|
+|    return math.min(x, hi)                   │ │    │▎ the bounds here         │|
+|▌ end                                        │ │    │▎ ────────────────────────│|
+|                                             │ │    ╰──────────────────────────╯|
+|▌ function M.scale(values, factor)           │◀┘                                |
+|▌   local out = {}                           │◀─────╭ [ ] #7 L12 · open ───────╮|
+|▌   for i, v in ipairs(values) do            │      │▎ ────────────────────────│|
+|      out[i] = clamp(v * factor, 0, 100)     │      │▎ you  L12-L12  · draft   │|
+|    end                                      │      │▎ note on line 12: check  │|
+|▌   return out                               │      │▎ the bounds here         │|
+|  end                                        │      │▎ ────────────────────────│|
+|                                             │      ╰──────────────────────────╯|
+|▌ function M.sum(values)                     │                                  |
+|    local total = 0                          │                                  |
+|▌   for _, v in ipairs(values) do            │      … 6 below/packed · [c / ]c  |
+|sample.lua                 12,1           Top  margin preview · ? help          |
+|                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbfffffgghhhhhhhhhhhhhhhhhggggggggg|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbfbbbbgiijjjjjjjjjjjjjjjjjjjjjjjjg|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbfbbbbgkklllmmmmmmmmmmmmmmmmmmeeeg|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbfbbbbgkknnnnnnnnnnnnnnnnnnnnnneeg|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbfbbbbgkknnnnnnnnnnnnnnneeeeeeeeeg|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbfbbbbgjjjjjjjjjjjjjjjjjjjjjjjjjjg|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbfbbbbgggggggggggggggggggggggggggg|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecffbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ddooooooooooooooooeeeeeeeeeeeeeeeeeeeeeeeeeeecpppppppppppppppppppppppppppppppppp|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbbbbbbpiijjjjjjjjjjjjjjjjjjjjjjjjp|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbpkklllmmmmmmmmmmmmmmmmmmeeep|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbpkknnnnnnnnnnnnnnnnnnnnnneep|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbbbbbbpkknnnnnnnnnnnnnnneeeeeeeeep|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbpjjjjjjjjjjjjjjjjjjjjjjjjjjp|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbpppppppppppppppppppppppppppp|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr|
+|ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#e0e2ea bg=#14161b  [WinSeparator]
+d fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+e bg=#1e282d  [ObelusThreadBg]
+f fg=#9b9ea4  [ObelusChrome]
+g fg=#e0e2ea  [ObelusBorder]
+h fg=#e0e2ea bold  [ObelusMarginTitle]
+i fg=#8cf8f7  [ObelusThreadBarN]
+j fg=#6ec0c0  [ObelusThreadRuleN]
+k fg=#8cf8f7 bg=#1e282d  [ObelusThreadBar]
+l fg=#8cf8f7 bg=#1e282d bold  [ObelusThreadHeader]
+m fg=#9b9ea4 bg=#1e282d  [ObelusThreadMeta]
+n fg=#e0e2ea bg=#1e282d  [ObelusThreadText]
+o bg=#474236  [ObelusThreadBg+ObelusMarginSource]
+p fg=#fce094 bold  [ObelusMarginActive]
+q fg=#e0e2ea bg=#4f5258  [StatusLine]
+r fg=#c4c6cd bg=#2c2e33  [StatusLineNC]
+s default  [MsgArea]
+## cursor
+win=W1 mode=n pos=[12,0] screen=13,3
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=45x22 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+W2 split buf=B2([scratch]) screenpos=1,47 size=34x22 topline=1 textoff=0
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="NonText:ObelusChrome,EndOfBuffer:ObelusChrome",wrap=false}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+B2 [scratch] lines=22 {bufhidden="wipe",buftype="nofile",filetype="obelus_margin",modifiable=false}
+## extmarks
+B1 ns=obelus (13)
+  1:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  3:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  4:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  6:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  8:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  11:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  12:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  15:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  18:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  20:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  23:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  26:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B1 ns=obelus_margin_anchor_1000 (13)
+  1:0 {end_col=12,end_right_gravity=true,end_row=1,right_gravity=true}
+  3:0 {end_col=31,end_right_gravity=true,end_row=3,right_gravity=true}
+  4:0 {end_col=16,end_right_gravity=true,end_row=4,right_gravity=true}
+  6:0 {end_col=5,end_right_gravity=true,end_row=6,right_gravity=true}
+  8:0 {end_col=3,end_right_gravity=true,end_row=8,right_gravity=true}
+  10:0 {end_col=32,end_right_gravity=true,end_row=10,right_gravity=true}
+  11:0 {end_col=16,end_right_gravity=true,end_row=11,right_gravity=true}
+  12:0 {end_col=31,end_right_gravity=true,end_row=12,right_gravity=true}
+  15:0 {end_col=12,end_right_gravity=true,end_row=15,right_gravity=true}
+  18:0 {end_col=22,end_right_gravity=true,end_row=18,right_gravity=true}
+  20:0 {end_col=31,end_right_gravity=true,end_row=20,right_gravity=true}
+  23:0 {end_col=14,end_right_gravity=true,end_row=23,right_gravity=true}
+  26:0 {end_col=8,end_right_gravity=true,end_row=26,right_gravity=true}
+B2 ns=obelus_margin_cards (77)
+  4:1 {end_col=4,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  4:4 {end_col=7,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  4:7 {end_col=10,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  4:10 {end_col=13,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  4:13 {end_col=16,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  4:16 {end_col=20,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  4:20 {end_col=38,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginTitle",priority=4096,right_gravity=true}
+  4:38 {end_col=63,end_right_gravity=false,end_row=4,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  5:1 {end_col=4,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  5:8 {end_col=11,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  5:11 {end_col=15,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusThreadBarN",priority=4096,right_gravity=true}
+  5:15 {end_col=87,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusThreadRuleN",priority=4096,right_gravity=true}
+  5:87 {end_col=90,end_right_gravity=false,end_row=5,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  6:1 {end_col=4,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  6:8 {end_col=11,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  6:11 {end_col=15,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusThreadBar",priority=4096,right_gravity=true}
+  6:15 {end_col=18,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusThreadHeader",priority=4096,right_gravity=true}
+  6:18 {end_col=27,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  6:27 {end_col=37,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  6:37 {end_col=40,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  6:40 {end_col=43,end_right_gravity=false,end_row=6,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  7:1 {end_col=4,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  7:8 {end_col=11,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  7:11 {end_col=15,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusThreadBar",priority=4096,right_gravity=true}
+  7:15 {end_col=37,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  7:37 {end_col=39,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  7:39 {end_col=42,end_right_gravity=false,end_row=7,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  8:1 {end_col=4,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  8:8 {end_col=11,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  8:11 {end_col=15,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusThreadBar",priority=4096,right_gravity=true}
+  8:15 {end_col=30,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  8:30 {end_col=39,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  8:39 {end_col=42,end_right_gravity=false,end_row=8,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  9:1 {end_col=4,end_right_gravity=false,end_row=9,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  9:8 {end_col=11,end_right_gravity=false,end_row=9,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  9:11 {end_col=15,end_right_gravity=false,end_row=9,hl_eol=false,hl_group="ObelusThreadRuleN",priority=4096,right_gravity=true}
+  9:15 {end_col=87,end_right_gravity=false,end_row=9,hl_eol=false,hl_group="ObelusThreadRuleN",priority=4096,right_gravity=true}
+  9:87 {end_col=90,end_right_gravity=false,end_row=9,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  10:1 {end_col=4,end_right_gravity=false,end_row=10,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  10:8 {end_col=92,end_right_gravity=false,end_row=10,hl_eol=false,hl_group="ObelusMarginBorder",priority=4096,right_gravity=true}
+  11:0 {end_col=3,end_right_gravity=false,end_row=11,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  11:3 {end_col=6,end_right_gravity=false,end_row=11,hl_eol=false,hl_group="ObelusMarginConnector",priority=4096,right_gravity=true}
+  12:0 {end_col=3,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:3 {end_col=6,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:6 {end_col=9,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:9 {end_col=12,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:12 {end_col=15,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:15 {end_col=18,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:18 {end_col=22,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:22 {end_col=40,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  12:40 {end_col=65,end_right_gravity=false,end_row=12,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  13:6 {end_col=9,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  13:9 {end_col=13,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusThreadBarN",priority=4096,right_gravity=true}
+  13:13 {end_col=85,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusThreadRuleN",priority=4096,right_gravity=true}
+  13:85 {end_col=88,end_right_gravity=false,end_row=13,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  14:6 {end_col=9,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  14:9 {end_col=13,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusThreadBar",priority=4096,right_gravity=true}
+  14:13 {end_col=16,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusThreadHeader",priority=4096,right_gravity=true}
+  14:16 {end_col=25,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  14:25 {end_col=35,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  14:35 {end_col=38,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  14:38 {end_col=41,end_right_gravity=false,end_row=14,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  15:6 {end_col=9,end_right_gravity=false,end_row=15,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  15:9 {end_col=13,end_right_gravity=false,end_row=15,hl_eol=false,hl_group="ObelusThreadBar",priority=4096,right_gravity=true}
+  15:13 {end_col=35,end_right_gravity=false,end_row=15,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  15:35 {end_col=37,end_right_gravity=false,end_row=15,hl_eol=false,hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  15:37 {end_col=40,end_right_gravity=false,end_row=15,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  16:6 {end_col=9,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  16:9 {end_col=13,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusThreadBar",priority=4096,right_gravity=true}
+  16:13 {end_col=28,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  16:28 {end_col=37,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  16:37 {end_col=40,end_right_gravity=false,end_row=16,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  17:6 {end_col=9,end_right_gravity=false,end_row=17,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  17:9 {end_col=13,end_right_gravity=false,end_row=17,hl_eol=false,hl_group="ObelusThreadRuleN",priority=4096,right_gravity=true}
+  17:13 {end_col=85,end_right_gravity=false,end_row=17,hl_eol=false,hl_group="ObelusThreadRuleN",priority=4096,right_gravity=true}
+  17:85 {end_col=88,end_right_gravity=false,end_row=17,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+  18:6 {end_col=90,end_right_gravity=false,end_row=18,hl_eol=false,hl_group="ObelusMarginActive",priority=4096,right_gravity=true}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (34)
++ buf([scratch]) n    desc="obelus margin: check" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n <C-D>  desc="obelus margin: scroll source and cards" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#07d1a8aae8cc>
++ buf([scratch]) n <C-E>  desc="obelus margin: scroll source and cards" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#07d1a8aae8cc>
++ buf([scratch]) n <C-U>  desc="obelus margin: scroll source and cards" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#07d1a8aae8cc>
++ buf([scratch]) n <C-Y>  desc="obelus margin: scroll source and cards" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#07d1a8aae8cc>
++ buf([scratch]) n <CR>  desc="obelus margin: reply" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n <ScrollWheelDown>  desc="obelus margin: scroll source and cards" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#07d1a8aae8cc>
++ buf([scratch]) n <ScrollWheelUp>  desc="obelus margin: scroll source and cards" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#07d1a8aae8cc>
++ buf([scratch]) n <Tab>  desc="obelus margin: expand" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n ?  desc="obelus margin: help" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#54ebd12dbbc5>
++ buf([scratch]) n C  desc="obelus margin: cancel" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n D  desc="obelus margin: dispatch" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n J  desc="obelus margin: scroll card" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#923235645301>
++ buf([scratch]) n K  desc="obelus margin: scroll card" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#923235645301>
++ buf([scratch]) n R  desc="obelus margin: refresh" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ buf([scratch]) n [c  desc="obelus margin: previous comment" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#843c8b8554c3>
++ buf([scratch]) n \oC  desc="obelus margin: cancel" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n \oJ  desc="obelus margin: scroll card" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#923235645301>
++ buf([scratch]) n \oK  desc="obelus margin: scroll card" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#923235645301>
++ buf([scratch]) n \oR  desc="obelus margin: resolve/reopen" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n \od  desc="obelus margin: dispatch selected" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n \oh  desc="obelus margin: toggle resolved" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#302b59d91001>
++ buf([scratch]) n \oo  desc="obelus margin: open full thread" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n \or  desc="obelus margin: reply" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n \os  desc="obelus margin: batch checked" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n \ox  desc="obelus margin: delete selected" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n ]c  desc="obelus margin: next comment" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#dfd83a726705>
++ buf([scratch]) n dd  desc="obelus margin: delete" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n gd  desc="obelus margin: source" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#9ea9b72c799f>
++ buf([scratch]) n o  desc="obelus margin: reopen" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n q  desc="obelus margin: close" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#43e2aa7a140d>
++ buf([scratch]) n r  desc="obelus margin: reply" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n s  desc="obelus margin: batch" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
++ buf([scratch]) n x  desc="obelus margin: resolve" silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/margin.lua#fe81fa478ecf>
+## registry changes since setup: autocmds (27)
++ obelus_margin_preview BufFilePost pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview BufWinEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview BufWinLeave pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview BufWipeout pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview BufWritePost pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e1b34af311db>
++ obelus_margin_preview ColorScheme pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#b909309d036d>
++ obelus_margin_preview CursorMoved pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#cb3eed7287c6>
++ obelus_margin_preview CursorMovedI pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#cb3eed7287c6>
++ obelus_margin_preview OptionSet pattern="conceallevel" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="foldenable" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="foldlevel" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="foldmethod" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="linebreak" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="number" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="relativenumber" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="winbar" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview OptionSet pattern="wrap" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e688a245acf0>
++ obelus_margin_preview QuitPre pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#2ab3287af0e9>
++ obelus_margin_preview TabEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview TextChanged pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e1b34af311db>
++ obelus_margin_preview TextChangedI pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#e1b34af311db>
++ obelus_margin_preview VimLeavePre pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#51c71d4f00f3>
++ obelus_margin_preview VimResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview WinClosed pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview WinEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#cb3eed7287c6>
++ obelus_margin_preview WinResized pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
++ obelus_margin_preview WinScrolled pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/margin.lua#fa3877082043>
+## registry changes since setup: highlight groups (5)
++ ObelusMarginActive  {bold=true,cterm={bold=true},default=true,fg="#fce094"}
++ ObelusMarginBorder  {default=true,link="ObelusBorder"}
++ ObelusMarginConnector  {default=true,link="ObelusChrome"}
++ ObelusMarginSource  {bg="#474236",default=true}
++ ObelusMarginTitle  {bold=true,cterm={bold=true},default=true,fg="#e0e2ea"}
+## registry changes since setup: namespaces (3)
++ obelus_margin_anchor_1000  
++ obelus_margin_cards  
++ obelus_margin_view  
+## highlights
+DiagnosticInfo: fg=#8cf8f7
+EndOfBuffer: fg=#4f5258 -> NonText
+NonText: fg=#4f5258
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusChrome: fg=#9b9ea4
+ObelusMarginActive: fg=#fce094 bold default
+ObelusMarginBorder: fg=#e0e2ea -> ObelusBorder
+ObelusMarginConnector: fg=#9b9ea4 -> ObelusChrome
+ObelusMarginTitle: fg=#e0e2ea bold default
+ObelusThreadBar: fg=#8cf8f7 bg=#1e282d
+ObelusThreadBarN: fg=#8cf8f7
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadText: fg=#e0e2ea bg=#1e282d

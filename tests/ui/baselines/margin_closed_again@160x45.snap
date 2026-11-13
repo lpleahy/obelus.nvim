@@ -1,0 +1,186 @@
+# obelus ui snapshot: margin_closed_again @ 160x45
+## screen
+|  -- sample.lua: a small module the fixtures annotate                                                                                                           |
+|  local M = {}                                                                                                                                                  |
+|                                                                                                                                                                |
+|  local function clamp(x, lo, hi)                                                                                                                               |
+|    if x < lo then                                                                                                                                              |
+|      return lo                                                                                                                                                 |
+|    end                                                                                                                                                         |
+|    return math.min(x, hi)                                                                                                                                      |
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|▌ function M.scale(values, factor)                                                                                                                              |
+|  ╭ ◆ sample.lua  L11-L11 ─────────────────────────────────────────────────────────────────────────────────────────╮                                            |
+|  │  ────────────────────────────────────────────────────────────────────────────────────────────────────────────  │                                            |
+|  │▎ you  L11-L11                                                                                                  │                                            |
+|  │▎ negative factors are clamped to 0 silently — intended?                                                        │                                            |
+|  │  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄  │                                            |
+|  │▎ agent ↩                                                                                                       │                                            |
+|  │▎ Yes — intended. Inputs are percentages; see clamp.                                                            │                                            |
+|▌ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯                                            |
+|    local total = 0                                                                                                                                             |
+|    for _, v in ipairs(values) do                                                                                                                               |
+|      total = total + v                                                                                                                                         |
+|    end                                                                                                                                                         |
+|    return total                                                                                                                                                |
+|  end                                                                                                                                                           |
+|                                                                                                                                                                |
+|  return M                                                                                                                                                      |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|~                                                                                                                                                               |
+|sample.lua                                                                                                                                    11,1           All|
+|                                                                                                                                                                |
+## attrs
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|ccdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd|
+|aaefffffffffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaegghhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaejjkkklllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaejjnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeggooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooiiebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeppqqqqqqqrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aaeppssssssttttttttssssssssssssssssssssssssssssssuuuuusrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrebbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|cceeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddddddddddd|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv|
+|wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww|
+|xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|
+## legend
+a fg=#4f5258  [SignColumn]
+b default
+c fg=#8cf8f7  [SignColumn+DiagnosticInfo]
+d bg=#1e282d  [ObelusThreadBg]
+e fg=#e0e2ea  [FloatBorder]
+f fg=#e0e2ea bold  [FloatTitle]
+g fg=#4f5258 bg=#07080d  [NormalFloat+LineNr]
+h fg=#6ec0c0 bg=#07080d  [NormalFloat+ObelusThreadRuleN]
+i bg=#07080d  [NormalFloat]
+j fg=#8cf8f7 bg=#1e282d  [NormalFloat+LineNr+ObelusThreadBar]
+k fg=#8cf8f7 bg=#1e282d bold  [NormalFloat+ObelusThreadHeader+ObelusThreadBg]
+l fg=#9b9ea4 bg=#1e282d  [NormalFloat+ObelusThreadMeta+ObelusThreadBg]
+m bg=#1e282d  [NormalFloat+ObelusThreadBg]
+n fg=#e0e2ea bg=#1e282d  [NormalFloat+ObelusThreadText+ObelusThreadBg]
+o fg=#8bbe97 bg=#07080d  [NormalFloat+ObelusReplyRuleN]
+p fg=#b3f6c0 bg=#212828  [NormalFloat+LineNr+ObelusReplyBar]
+q fg=#b3f6c0 bg=#212828 bold  [NormalFloat+ObelusReplyHeader+ObelusReplyBg]
+r bg=#212828  [NormalFloat+ObelusReplyBg]
+s fg=#e0e2ea bg=#212828  [NormalFloat+ObelusReplyText+ObelusReplyBg]
+t fg=#e0e2ea bg=#212828 bold  [NormalFloat+ObelusReplyBold+ObelusReplyBg]
+u fg=#b3f6c0 bg=#212828  [NormalFloat+ObelusReplyCode+ObelusReplyBg]
+v fg=#4f5258  [EndOfBuffer]
+w fg=#e0e2ea bg=#4f5258  [StatusLine]
+x default  [MsgArea]
+## cursor
+win=W1 mode=n pos=[11,0] screen=11,3
+## windows
+W1 split buf=B1(sample.lua) screenpos=1,1 size=160x43 topline=1 textoff=2
+  wo {concealcursor="",conceallevel=0,cursorline=false,fillchars="",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=4,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="auto",smoothscroll=false,spell=false,statuscolumn="",winblend=0,winhighlight="",wrap=true}
+W2 float buf=B2([scratch]) screenpos=12,3 size=112x6 topline=1 textoff=2
+  cfg {anchor="NW",border=["╭","─","╮","│","╯","─","╰","│"],col=0,focusable=false,hide=false,mouse=false,relative="win",row=1,style="minimal",title=[[" ◆ sample.lua  L11-L11 "]],title_pos="left",win="W1",zindex=40}
+  wo {concealcursor="nvic",conceallevel=0,cursorline=false,fillchars="eob: ",foldcolumn="0",linebreak=false,list=false,number=false,numberwidth=1,relativenumber=false,scrolloff=0,sidescrolloff=0,signcolumn="no",smoothscroll=false,spell=false,statuscolumn="%!v:lua.require'obelus.panel'.statuscol(5)",winblend=0,winhighlight="FloatBorder:ObelusBorder,EndOfBuffer:NormalFloat,NonText:ObelusChrome,Visual:ObelusVisual",wrap=true}
+## buffers
+B1 sample.lua lines=27 {bufhidden="",buftype="",filetype="",modifiable=true}
+B2 [scratch] lines=4 {bufhidden="wipe",buftype="nofile",filetype="markdown",modifiable=false}
+## extmarks
+B1 ns=obelus (2)
+  10:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+  18:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true,sign_hl_group="DiagnosticInfo",sign_text="▌ "}
+B2 ns=obelus_panel (15)
+  0:0 {priority=4096,right_gravity=true,virt_lines=[[["────────────────────────────────────────────────────────────────────────────────────────────────────────────","ObelusThreadRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  0:0 {end_col=3,end_right_gravity=false,end_row=0,hl_eol=false,hl_group="ObelusThreadHeader",priority=4096,right_gravity=true}
+  0:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  0:3 {end_col=12,end_right_gravity=false,end_row=0,hl_eol=false,hl_group="ObelusThreadMeta",priority=4096,right_gravity=true}
+  1:0 {line_hl_group="ObelusThreadBg",priority=4096,right_gravity=true}
+  1:0 {end_col=56,end_right_gravity=false,end_row=1,hl_eol=false,hl_group="ObelusThreadText",priority=4096,right_gravity=true}
+  2:0 {priority=4096,right_gravity=true,virt_lines=[[["┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄","ObelusReplyRuleN"]]],virt_lines_above=true,virt_lines_leftcol=false,virt_lines_overflow="trunc"}
+  2:0 {end_col=9,end_right_gravity=false,end_row=2,hl_eol=false,hl_group="ObelusReplyHeader",priority=4096,right_gravity=true}
+  2:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  3:0 {line_hl_group="ObelusReplyBg",priority=4096,right_gravity=true}
+  3:0 {end_col=8,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  3:8 {end_col=16,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusReplyBold",priority=4096,right_gravity=true}
+  3:16 {end_col=46,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+  3:46 {end_col=51,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusReplyCode",priority=4096,right_gravity=true}
+  3:51 {end_col=52,end_right_gravity=false,end_row=3,hl_eol=false,hl_group="ObelusReplyText",priority=4096,right_gravity=true}
+## notifications
+## registry changes since setup: user commands (0)
+## registry changes since setup: keymaps (1)
++ buf(sample.lua) n Z  desc=nil silent=1 noremap=1 nowait=1 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/panel.lua#ff995aff2415>
+## registry changes since setup: autocmds (0)
+## registry changes since setup: highlight groups (5)
++ ObelusMarginActive  {bold=true,cterm={bold=true},default=true,fg="#fce094"}
++ ObelusMarginBorder  {default=true,link="ObelusBorder"}
++ ObelusMarginConnector  {default=true,link="ObelusChrome"}
++ ObelusMarginSource  {bg="#474236",default=true}
++ ObelusMarginTitle  {bold=true,cterm={bold=true},default=true,fg="#e0e2ea"}
+## registry changes since setup: namespaces (3)
++ obelus_margin_anchor_1000  
++ obelus_margin_cards  
++ obelus_margin_view  
+## highlights
+DiagnosticInfo: fg=#8cf8f7
+EndOfBuffer: fg=#4f5258 -> NonText
+FloatBorder: bg=#07080d -> NormalFloat
+NonText: fg=#4f5258
+Normal: fg=#e0e2ea bg=#14161b
+NormalFloat: bg=#07080d
+ObelusBorder: fg=#e0e2ea
+ObelusChrome: fg=#9b9ea4
+ObelusReplyBg: bg=#212828
+ObelusReplyBold: fg=#e0e2ea bg=#212828 bold
+ObelusReplyCode: fg=#b3f6c0 bg=#293330
+ObelusReplyHeader: fg=#b3f6c0 bg=#212828 bold
+ObelusReplyRuleN: fg=#8bbe97
+ObelusReplyText: fg=#e0e2ea bg=#212828
+ObelusThreadBg: bg=#1e282d
+ObelusThreadHeader: fg=#8cf8f7 bg=#1e282d bold
+ObelusThreadMeta: fg=#9b9ea4 bg=#1e282d
+ObelusThreadRuleN: fg=#6ec0c0
+ObelusThreadText: fg=#e0e2ea bg=#1e282d
+ObelusVisual: bg=#909298
+Visual: bg=#4f5258
