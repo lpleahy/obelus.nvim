@@ -121,6 +121,28 @@ Wrong environment: with `baselines/NVIM_VERSION` set to `NVIM v0.0.0` in a temp
 copy, `mutations.sh` prints `INVALID ENVIRONMENT` and exits 2. It no longer reports
 "10 caught", as it did in the review.
 
+## Margin view mutations
+
+Run by hand on 2026-11-13 (12:38 to 12:42 PM PT), Neovim v0.12.6, in a scratch
+detached worktree of `dc44ce1`, not by `mutations.sh`. Each mutation was applied
+alone, then `OBELUS_UI_ONLY=margin_ make ui-snapshots` and `make specs` ran, and
+the file was restored. A pristine control first passed: 14 margin snapshots and
+533 specs. As above, a snapshot counts as caught only on a baseline mismatch with
+no harness error; every run below had 0 errors, and every failing spec was a
+`[margin_layout]` case. Result: **9 caught, 0 missed, 0 invalid.**
+
+| Mutation | Change in the copy | Result |
+| --- | --- | --- |
+| margin-pane-width | `margin.lua`: pane width `* 0.43` → `* 0.44` | caught: 6 (every 80x24 margin snapshot that keeps the pane open; at 160x45 the pane is capped at 62) |
+| margin-active-border | `margin.lua`: the active card's border uses `ObelusMarginBorder`, not `ObelusMarginActive` | caught: 12 |
+| margin-indicator-label | `margin.lua`: top indicator label `above/packed` → `above` | caught: 12 |
+| margin-close-keeps-anchors | `margin.lua`: `M.close` no longer clears the source buffer's anchor namespace | caught: 2 (`margin_closed_again`, both sizes) |
+| margin-close-keeps-autocmds | `margin.lua`: `M.close` no longer deletes the margin's augroup | caught: 2 (`margin_closed_again`, both sizes) |
+| layout-default-gap | `margin_layout.lua`: `opts.gap or 1` → `or 0` | caught: 3 snapshots and 6 `[margin_layout]` specs |
+| layout-no-backward-pass | `margin_layout.lua`: `stack_down`'s backward pass keeps each top as it is | caught: 2 `[margin_layout]` specs (no snapshot changes: the fixtures never need the pass) |
+| layout-stack-up-mirror | `margin_layout.lua`: `stack_up` mirrors on `lo + hi + 1` | caught: 2 snapshots (`margin_stacked_cards`) and 2 specs |
+| layout-order-reversed | `margin_layout.lua`: cards sort by `order` descending | caught: 8 snapshots and 8 specs |
+
 ## History
 
 The first run had 10 mutations. The first attempt at bubble-tint-colour changed

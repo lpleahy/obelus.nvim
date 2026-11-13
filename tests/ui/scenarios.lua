@@ -521,6 +521,117 @@ scenario("api_approve_focus_hint", function()
   C.settle()
 end)
 
+-- ── margin view (:ObelusMargin): pinned as it behaves today ───────────────────
+-- The margin is a split pane right of the source window, with one card per
+-- visible thread, stacked around the active card (the one at the cursor).
+-- Opened through the user command, as a person does.
+local function open_margin()
+  vim.cmd("ObelusMargin on")
+  C.settle()
+  local s = require("obelus.margin")._state()
+  assert(s and vim.api.nvim_win_is_valid(s.win), "margin did not open")
+  return s
+end
+
+-- (a) one comment: one card, active, with its connector to line 11
+scenario("margin_one_comment", function()
+  local ctx = fresh()
+  add(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  open_margin()
+  C.settle()
+end)
+
+-- (b) many comments: the active card at the cursor, the rest stacked up and
+-- down from it, and what does not fit counted in the top/bottom indicators
+scenario("margin_stacked_cards", function()
+  local ctx = fresh()
+  for _, l in ipairs({ 2, 4, 5, 7, 9, 11, 12, 13, 16, 19, 21, 24, 27 }) do
+    add(ctx, { sl = l, comment = "note on line " .. l .. ": check the bounds here" })
+  end
+  require("obelus.render").render_all()
+  cursor(12)
+  open_margin()
+  C.settle()
+end)
+
+-- (c) an ask (AI) thread with an answered turn, next to a plain comment
+scenario("margin_ai_thread_answered", function()
+  local ctx = fresh()
+  local c = add(ctx, { sl = 4, el = 9, ask = true, comment = "why not math.max(lo, math.min(x, hi))?" })
+  ctx.store.add_turn(
+    c.id,
+    "agent",
+    "Same result: `math.max(lo, math.min(x, hi))` is the one-liner; the branch form reads more plainly."
+  )
+  add(ctx, { sl = 14, comment = "clamp could be inlined" })
+  require("obelus.render").render_all()
+  cursor(5)
+  open_margin()
+  C.settle()
+end)
+
+-- (d) <Tab> in the margin pane expands the active card (the long thread)
+scenario("margin_card_expanded", function()
+  local ctx = fresh()
+  conversation(ctx, { sl = 11, el = 13 })
+  add(ctx, { sl = 19, comment = "sum could use a fold" })
+  require("obelus.render").render_all()
+  cursor(11)
+  local s = open_margin()
+  vim.api.nvim_set_current_win(s.win)
+  vim.api.nvim_feedkeys(vim.keycode("<Tab>"), "x", false)
+  C.settle()
+  assert(s.expanded[next(s.expanded)], "the card did not expand")
+end)
+
+-- (e) the inline composer opened on the active card (the margin's reply key),
+-- with text typed: it sits inside the card and follows it
+scenario("margin_inline_composer", function()
+  local ctx = fresh()
+  short_thread(ctx, { sl = 11 })
+  add(ctx, { sl = 19, comment = "sum could use a fold" })
+  require("obelus.render").render_all()
+  cursor(11)
+  local s = open_margin()
+  require("obelus.margin").action("reply", s.source)
+  C.settle()
+  assert(s.composing and vim.api.nvim_win_is_valid(s.composing.win), "the composer did not open")
+  vim.api.nvim_buf_set_lines(s.composing.buf, 0, -1, false, { "so factor = -2 maps everything to 0?" })
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = s.composing.buf })
+  C.settle()
+end)
+
+-- (f) a reply streaming into a margin card (fake transport)
+scenario("margin_stream_reply", function()
+  local ctx = fresh()
+  local c = short_thread(ctx, { sl = 11 })
+  require("obelus.render").render_all()
+  cursor(11)
+  open_margin()
+  require("obelus").chat_send(c.id, "and for factor = -2?", "send")
+  ctx.F.delta("Let me check `clamp`… ")
+  ctx.F.block_start()
+  ctx.F.delta("With `factor = -2` every value maps to **0**.")
+  C.settle()
+end)
+
+-- (g) the margin opened, then closed with :ObelusMargin off: what stays
+-- behind (windows, extmarks, and the registry diff against setup) is pinned
+scenario("margin_closed_again", function()
+  local ctx = fresh()
+  short_thread(ctx, { sl = 11 })
+  add(ctx, { sl = 19, comment = "sum could use a fold" })
+  require("obelus.render").render_all()
+  cursor(11)
+  local s = open_margin()
+  vim.cmd("ObelusMargin off")
+  C.settle()
+  assert(not vim.api.nvim_win_is_valid(s.win), "the margin pane is still open")
+  assert(require("obelus.margin")._state() == nil, "the margin session is still there")
+end)
+
 -- ── setup / keymap registration path ──────────────────────────────────────────
 scenario("registration", function()
   fresh()
