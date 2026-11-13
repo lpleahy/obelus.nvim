@@ -143,6 +143,33 @@ no harness error; every run below had 0 errors, and every failing spec was a
 | layout-stack-up-mirror | `margin_layout.lua`: `stack_up` mirrors on `lo + hi + 1` | caught: 2 snapshots (`margin_stacked_cards`) and 2 specs |
 | layout-order-reversed | `margin_layout.lua`: cards sort by `order` descending | caught: 8 snapshots and 8 specs |
 
+## API turn-event mutations
+
+Run by hand on 2026-11-13 (1:07 to 1:15 PM PT), Neovim v0.12.6, in a scratch
+detached worktree of `90573e8`, not by `mutations.sh`. Each mutation was applied
+alone, then `make specs` and `OBELUS_UI_ONLY=api_ make ui-snapshots` (the 26
+`api_*` snapshots) ran, and the file was restored. A pristine control first
+passed: 542 specs and 26 snapshots. Every snapshot run had 0 errors; every
+failing spec was a `[api] turn events:` case. Result: **10 caught, 0 missed,
+0 invalid.**
+
+| Mutation | Change in the copy | Result |
+| --- | --- | --- |
+| meta-stored | `api.lua`: a tool or notice line is also appended to the reply (`stream_update`), so it is stored as turn text | caught: 2 specs, 10 snapshots |
+| meta-sent-back | `api.lua`: the next send appends the last reply's tool and notice lines to `req.text` | caught: 1 spec ("the next send carries only the user's text") |
+| no-opt-in-gate | `api.lua`: "thinking", "tool" and "notice" are handled without `turn_events` | caught: 1 spec (without the opt-in, rows and notification equal a plain run) |
+| no-neutralize | `api.lua`: format characters are kept (only controls become spaces) | caught: 2 specs |
+| field-bound-3000 | `api.lua`: `field_chars` 300 → 3000 | caught: 1 spec |
+| no-row-cap | `api.lua`: tool and notice lines are no longer capped at 20 | caught: 1 spec |
+| thinking-not-collapsed | `api.lua`: `_meta_of` keeps the thinking after the reply's first text | caught: 1 spec |
+| cancel-keeps-rows | `api.lua`: a cancelled turn keeps its rows | caught: 1 spec |
+| all-rows-above | `api.lua`: every line sits above the reply | caught: 1 spec, 6 snapshots |
+| no-rows-below-reply | `thread.lua`: the lines after the reply's first text are not drawn | caught: 1 spec, 6 snapshots |
+
+A first run, at `b245508`, missed thinking-not-collapsed: `thread.build`
+repeated `_meta_of`'s check, so either guard alone was enough. `90573e8` keeps
+the one in `_meta_of` and asserts it in the spec.
+
 ## History
 
 The first run had 10 mutations. The first attempt at bubble-tint-colour changed
