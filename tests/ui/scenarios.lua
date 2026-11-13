@@ -392,10 +392,14 @@ local GUIDE = {
 
 -- an in-memory backend owning "memo://" buffers, seeded with `threads`; shows
 -- "memo://guide/recursion" in the current window. ctx.sends collects each turn's
--- emit callback so a scenario can stream into it.
-local function memo_guide(ctx, threads)
+-- emit callback so a scenario can stream into it. opts.turn_events registers it
+-- with the display-only events; opts.file_buffer shows the guide in an ordinary
+-- (buftype "") buffer, which the margin view needs.
+local function memo_guide(ctx, threads, opts)
+  opts = opts or {}
   ctx.sends = {}
   require("obelus.api").register_backend({
+    turn_events = opts.turn_events,
     name = "memo",
     schemes = { "memo" },
     match = function(b)
@@ -418,9 +422,12 @@ local function memo_guide(ctx, threads)
       end,
     },
   })
-  local buf = vim.api.nvim_create_buf(true, true)
+  local buf = vim.api.nvim_create_buf(true, not opts.file_buffer)
   vim.api.nvim_buf_set_name(buf, "memo://guide/recursion")
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, GUIDE)
+  if opts.file_buffer then
+    vim.bo[buf].modified = false -- as a backend's freshly loaded page
+  end
   vim.api.nvim_set_current_buf(buf)
   return buf
 end
@@ -630,6 +637,88 @@ scenario("margin_closed_again", function()
   C.settle()
   assert(not vim.api.nvim_win_is_valid(s.win), "the margin pane is still open")
   assert(require("obelus.margin")._state() == nil, "the margin session is still there")
+end)
+
+-- ── obelus.api turn events: display-only rows beside a backend's reply ─────────
+-- The memo backend registers with turn_events; every scenario streams through
+-- the fake transport (ctx.sends) on the virtual clock.
+
+-- waiting for the answer: a notice, a tool line and the model's thinking above
+-- the "thinking…" row
+local function events_waiting(ctx)
+  require("obelus").chat_send("api:memo:1", "and for fibonacci?", "send")
+  local emit = ctx.sends[1]
+  emit({ type = "start" })
+  emit({ type = "notice", text = "switched to another provider" })
+  emit({ type = "tool", operation = "fetch", url = "https://example.invalid/fib" })
+  emit({
+    type = "thinking",
+    text = "Fibonacci has two base cases, fib(0) and fib(1); each call recurses on n - 1 and n - 2, "
+      .. "so both are needed or the recursion never stops for n = 1.",
+  })
+  C.settle()
+end
+
+-- answered: the lines from before the answer above it, a later one below it
+local function events_answered(ctx)
+  require("obelus").chat_send("api:memo:1", "and for fibonacci?", "send")
+  local emit = ctx.sends[1]
+  emit({ type = "start" })
+  emit({ type = "notice", text = "switched to another provider" })
+  emit({ type = "thinking", text = "Two base cases." })
+  emit({ type = "delta", text = "Two base cases: `fib(0) = 0` and `fib(1) = 1`." })
+  emit({ type = "tool", operation = "search" })
+  emit({ type = "done" })
+  C.settle()
+end
+
+-- failed: the partial reply is dropped, the message is a draft again, and the
+-- tool line and the short error message stay under the thread
+local function events_failed(ctx)
+  require("obelus").chat_send("api:memo:1", "and for fibonacci?", "send")
+  local emit = ctx.sends[1]
+  emit({ type = "start" })
+  emit({ type = "tool", operation = "open", url = "https://example.invalid/fib" })
+  emit({ type = "delta", text = "Two base" })
+  emit({ type = "error", message = "provider overloaded\nretry in a minute" })
+  C.settle()
+end
+
+local function events_panel(fill)
+  return function()
+    local ctx = fresh()
+    memo_guide(ctx, { MEMO_THREAD }, { turn_events = true })
+    cursor(4)
+    local panel = require("obelus.panel")
+    panel.open_thread("api:memo:1", true)
+    wait_chat(panel)
+    fill(ctx)
+  end
+end
+
+local function events_margin(fill)
+  return function()
+    local ctx = fresh()
+    memo_guide(ctx, { MEMO_THREAD }, { turn_events = true, file_buffer = true })
+    cursor(4)
+    open_margin()
+    fill(ctx)
+  end
+end
+
+scenario("api_events_panel_waiting", events_panel(events_waiting))
+scenario("api_events_panel_answered", events_panel(events_answered))
+scenario("api_events_panel_failed", events_panel(events_failed))
+scenario("api_events_margin_waiting", events_margin(events_waiting))
+scenario("api_events_margin_answered", events_margin(events_answered))
+scenario("api_events_margin_failed", events_margin(events_failed))
+
+-- the inline band on the backend's buffer, with the reply answered
+scenario("api_events_band_answered", function()
+  local ctx = fresh({ render = { bands = { style = "inline" } } })
+  memo_guide(ctx, { MEMO_THREAD }, { turn_events = true })
+  cursor(4)
+  events_answered(ctx)
 end)
 
 -- ── setup / keymap registration path ──────────────────────────────────────────

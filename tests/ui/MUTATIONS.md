@@ -143,6 +143,70 @@ no harness error; every run below had 0 errors, and every failing spec was a
 | layout-stack-up-mirror | `margin_layout.lua`: `stack_up` mirrors on `lo + hi + 1` | caught: 2 snapshots (`margin_stacked_cards`) and 2 specs |
 | layout-order-reversed | `margin_layout.lua`: cards sort by `order` descending | caught: 8 snapshots and 8 specs |
 
+## API turn-event mutations
+
+Run by hand on 2026-11-13 (1:07 to 1:15 PM PT), Neovim v0.12.6, in a scratch
+detached worktree of `90573e8`, not by `mutations.sh`. Each mutation was applied
+alone, then `make specs` and `OBELUS_UI_ONLY=api_ make ui-snapshots` (the 26
+`api_*` snapshots) ran, and the file was restored. A pristine control first
+passed: 542 specs and 26 snapshots. Every snapshot run had 0 errors; every
+failing spec was a `[api] turn events:` case. Result: **10 caught, 0 missed,
+0 invalid.**
+
+| Mutation | Change in the copy | Result |
+| --- | --- | --- |
+| meta-stored | `api.lua`: a tool or notice line is also appended to the reply (`stream_update`), so it is stored as turn text | caught: 2 specs, 10 snapshots |
+| meta-sent-back | `api.lua`: the next send appends the last reply's tool and notice lines to `req.text` | caught: 1 spec ("the next send carries only the user's text") |
+| no-opt-in-gate | `api.lua`: "thinking", "tool" and "notice" are handled without `turn_events` | caught: 1 spec (without the opt-in, rows and notification equal a plain run) |
+| no-neutralize | `api.lua`: format characters are kept (only controls become spaces) | caught: 2 specs |
+| field-bound-3000 | `api.lua`: `field_chars` 300 → 3000 | caught: 1 spec |
+| no-row-cap | `api.lua`: tool and notice lines are no longer capped at 20 | caught: 1 spec |
+| thinking-not-collapsed | `api.lua`: `_meta_of` keeps the thinking after the reply's first text | caught: 1 spec |
+| cancel-keeps-rows | `api.lua`: a cancelled turn keeps its rows | caught: 1 spec |
+| all-rows-above | `api.lua`: every line sits above the reply | caught: 1 spec, 6 snapshots |
+| no-rows-below-reply | `thread.lua`: the lines after the reply's first text are not drawn | caught: 1 spec, 6 snapshots |
+
+A first run, at `b245508`, missed thinking-not-collapsed: `thread.build`
+repeated `_meta_of`'s check, so either guard alone was enough. `90573e8` keeps
+the one in `_meta_of` and asserts it in the spec.
+
+### Round 2 (review-1 fixes)
+
+Run by hand on 2026-11-13 (2:39 to 2:57 PM PT), same method, in a scratch
+detached worktree of `fc3b9f6`. A pristine control first passed: 550 specs
+and 26 snapshots. The ten mutations above were rerun, along with the eleven
+review-1 survivors. Review-1's three B1 mutants targeted code that this round
+removed, so they were adapted: R-M15' puts back the "last agent turn"
+fallback, and R-M22' marks a turn failed only when it has a message. Three
+pairs were added. Each pair removes a survivor together with the guard that
+duplicates it. Result: **of 21 single mutations, 17 caught, 4 equivalent and 0 missed; all 3
+pairs caught.**
+P-M18+done-check survived at `fc3b9f6`. `a118507` adds the spec that catches
+it: a reply that arrives whole in `done`. That spec was rerun with the pair
+(caught) and with R-M18 alone (still equivalent).
+
+| Mutation | Change in the copy | Result |
+| --- | --- | --- |
+| the ten above | as above | caught, each by the same or more specs; cancel-keeps-rows by the cancel case, which now keeps partial text (`fc3b9f6`) |
+| R-M5 | `api.lua`: `_meta_of` returns thinking without neutralizing it | caught: 1 spec |
+| R-M8 | `api.lua`: `_on_remove` keeps the record's rows | caught: 1 spec |
+| R-M9 | `api.lua`: a store reload keeps the rows | caught: 1 spec |
+| R-M14 | `api.lua`: a tool url is neutralized but not bounded | caught: 1 spec |
+| R-M15' | `api.lua`: rows with no anchor fall back to the last agent turn | caught: 1 spec |
+| R-M19 | `api.lua`: no byte pre-cut before neutralizing a field | caught: 1 spec |
+| R-M22' | `api.lua`: a failed turn without a message is not marked failed | caught: 1 spec |
+| R-M3a | `api.lua`: an error's `message` is kept without the `turn_events` check in `handle` | equivalent: both uses in `settle` repeat the check |
+| R-M16 | `api.lua`: `detach` keeps the old registration's rows | equivalent: `_meta_of` shows rows only for the current registration |
+| R-M17 | `api.lua`: `_meta_of` ignores the registration | equivalent: `detach` has already dropped the rows |
+| R-M18 | `api.lua`: `settle` keeps the thinking text | equivalent: `_meta_of` returns thinking only while the turn runs |
+| P-M3a+settle-gates | R-M3a plus both `settle` checks removed | caught: 2 specs |
+| P-M16+M17 | R-M16 plus R-M17 | caught: 1 spec |
+| P-M18+done-check | R-M18 plus `_meta_of`'s `not m.st.done` removed | caught at `a118507`: 1 spec (survived at `fc3b9f6`) |
+
+The four equivalent mutants each remove one of two guards that check the same
+thing. Keeping both guards is a deliberate choice. Each pair shows that
+removing both is caught.
+
 ## History
 
 The first run had 10 mutations. The first attempt at bubble-tint-colour changed
