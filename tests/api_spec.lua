@@ -2588,7 +2588,14 @@ T.it("turn events: thinking is neutralized, and blank thinking draws nothing", f
     local m = api._meta_of(ctx.store.get(ID))
     T.eq(m.thinking, "x [2Jyzw v")
     T.ok(vim.tbl_contains(shown(ctx.store.get(ID), true), "x [2Jyzw v"))
+    -- a reply that arrives whole in `done` (no delta) still ends the thinking;
+    -- the tool line keeps the turn's entry alive, so only the end clears it
+    s.emit({ type = "tool", operation = "search" })
     s.emit({ type = "done", text = "ok" })
+    m = api._meta_of(ctx.store.get(ID))
+    T.ok(m ~= nil and #m.rows == 1, "the tool line stays with the reply")
+    T.is_nil(m.thinking, "no thinking once the turn has ended")
+    T.ok(not vim.inspect(shown(ctx.store.get(ID), false)):find("[2Jyzw", 1, true), "no thinking row after the end")
   end)
 end)
 
