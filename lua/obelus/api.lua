@@ -26,7 +26,7 @@
 -- and the job.
 local M = {}
 
-M.version = "0.1.0"
+M.version = "0.2.0"
 
 -- What this obelus supports, for feature detection without touching private
 -- UI: read it by key (`api.capabilities.approval_handle`). ADVISORY: any Lua
@@ -37,6 +37,9 @@ local CAPABILITIES = {
   approval_handle = true, -- approve{} returns { cancel(), focus() } scoped to that prompt
   approval_on_open = true, -- approve{ on_open = fun(handle) }
   transport_cancel_reason = true, -- send()'s cancel is called with { reason = "user"|"invalidate" }
+  -- a backend registered with turn_events = true may emit "thinking", "tool" and
+  -- "notice", and an "error" with a short `message`: shown as display-only rows
+  turn_events = true,
 }
 M.capabilities = setmetatable({}, {
   __index = CAPABILITIES,
@@ -107,7 +110,10 @@ M.capabilities = setmetatable({}, {
 ---| { type: "start" }
 ---| { type: "delta", text: string }  appended to the reply
 ---| { type: "done", text?: string }  the final reply (default: the deltas so far)
----| { type: "error" }                any message is ignored; obelus shows a fixed one
+---| { type: "error", message?: string } the message is ignored (obelus shows a fixed one) unless the backend registered with turn_events
+---| { type: "thinking", text: string } turn_events only: the model's thinking, shown while no reply text has arrived
+---| { type: "tool", operation: string, url?: string } turn_events only: one tool line
+---| { type: "notice", text: string }  turn_events only: one notice line
 
 ---@class obelus.api.Transport
 ---@field send fun(req: obelus.api.TurnRequest, emit: fun(ev: obelus.api.Event)): (fun(info: { reason: "user"|"invalidate" })|nil) may return a cancel function
@@ -118,6 +124,7 @@ M.capabilities = setmetatable({}, {
 ---@field store obelus.api.Store
 ---@field transport obelus.api.Transport
 ---@field label? string shown on the spinner (default: name)
+---@field turn_events? boolean opt in to the display-only events (capabilities.turn_events)
 ---@field schemes string[] the URI schemes this backend owns (lowercase, e.g. { "luodda" }); claimed and persisted
 
 local backends = {} ---@type table<string, table> name -> registration (with .gen)
@@ -277,6 +284,135 @@ local function draft_of(c)
   end
 end
 
+-- ── turn events (display only) ────────────────────────────────────────────────
+-- What a turn_events backend reports beside its reply: the model's thinking,
+-- tool lines, notices and a short error message. DISPLAY ONLY: kept here, in
+-- memory, per record id, never in the record's turns, never written anywhere,
+-- never in a transport request (the backend owns its history and replay). A new
+-- send on the thread clears them; so do cancel, invalidation, removal, a store
+-- reload and replacing or unregistering the backend.
+
+M._META = {
+  thinking_bytes = 8 * 1024, -- the latest thinking kept, in bytes
+  field_chars = 300, -- an operation, url, notice or error message, in characters
+  rows = 20, -- tool and notice lines kept per reply; later ones are dropped
+  thinking_rows = 8, -- thinking rows shown (the latest)
+}
+
+local meta = {} ---@type table<string, table> record id -> { st, b, turn, rows, thinking?, error? }
+
+-- Untrusted text to one plain line: controls (C0, DEL, C1, line and paragraph
+-- separators, so also newlines and tabs) become spaces; every other code point
+-- obelus.approve refuses in a focus hint (format controls: bidi embeddings,
+-- overrides, isolates and marks, zero-width characters, the BOM, tag characters)
+-- is dropped; runs of spaces collapse. Invalid UTF-8 bytes are read as single
+-- code points, so a stray C1 byte becomes a space too.
+local function neutral(s)
+  local forbidden = require("obelus.approve")._forbidden
+  local out = {}
+  for _, cp in ipairs(vim.fn.str2list((s:gsub("%z", " ")), true)) do
+    if cp < 0x20 or (cp >= 0x7F and cp <= 0x9F) or cp == 0x2028 or cp == 0x2029 then
+      out[#out + 1] = 0x20
+    elseif not forbidden(cp) then
+      out[#out + 1] = cp
+    end
+  end
+  return vim.trim((vim.fn.list2str(out, true):gsub("%s+", " ")))
+end
+
+-- a field of at most M._META.field_chars characters, "…" when cut; nil if not a
+-- non-blank string
+local function field(v)
+  if type(v) ~= "string" then
+    return nil
+  end
+  local max = M._META.field_chars
+  local s = neutral(v:sub(1, max * 4)) -- no code point is longer than 4 bytes
+  if s == "" then
+    return nil
+  end
+  if vim.fn.strchars(s) > max then
+    s = vim.fn.strcharpart(s, 0, max - 1) .. "…"
+  end
+  return s
+end
+
+-- the line a tool event shows, worded as in Luodda's chat
+local function tool_line(op, url)
+  if op == "search" then
+    return "> searched the web" .. (url and (": " .. url) or "")
+  elseif op == "fetch" and url then
+    return "> fetched: " .. url
+  elseif op == "open" and url then
+    return "> opened: " .. url
+  end
+  return "> used a tool: " .. op .. (url and (" " .. url) or "")
+end
+
+local function meta_for(st)
+  local m = meta[st.id]
+  if not (m and m.st == st) then
+    m = { st = st, b = st.b, turn = st.turn, rows = {} }
+    meta[st.id] = m
+  end
+  return m
+end
+
+-- one display-only event of a send that still owns its record
+local function on_turn_event(st, ev)
+  if ev.type == "thinking" then
+    if type(ev.text) ~= "string" or st.acc ~= "" then
+      return -- not text, or the answer started: thinking shows only before it
+    end
+    local m = meta_for(st)
+    local s = (m.thinking or "") .. ev.text
+    local max = M._META.thinking_bytes
+    if #s > max then
+      s = s:sub(-max):gsub("^[\128-\191]+", "") -- the latest bytes, from a whole character
+      m.cut = true
+    end
+    m.thinking = s
+  elseif ev.type == "tool" or ev.type == "notice" then
+    local text
+    if ev.type == "tool" then
+      local op = field(ev.operation)
+      local url = field(ev.url)
+      if not op or (ev.url ~= nil and not url) then
+        return -- no operation, or a url that is not text
+      end
+      text = tool_line(op, url)
+    else
+      local s = field(ev.text)
+      if not s then
+        return
+      end
+      text = "> " .. s
+    end
+    local m = meta_for(st)
+    if #m.rows < M._META.rows then
+      m.rows[#m.rows + 1] = { text = text, above = st.acc == "" }
+    end
+  end
+end
+
+---The display-only rows of a backend thread, for thread.build: nil, or
+---{ turn?, rows = { { text, above } }, thinking?, cut?, error? }. A COPY: callers
+---cannot reach the state.
+---@param c table a record
+function M._meta_of(c)
+  local m = type(c) == "table" and c.backend and meta[c.id]
+  if not (m and m.b.name == c.backend and backends[c.backend] == m.b) then
+    return nil
+  end
+  return {
+    turn = m.turn,
+    rows = vim.deepcopy(m.rows),
+    thinking = not m.st.done and m.st.acc == "" and m.thinking ~= nil and neutral(m.thinking) or nil,
+    cut = m.cut,
+    error = m.error,
+  }
+end
+
 -- ── sends ─────────────────────────────────────────────────────────────────────
 
 -- Does this send still own its record AND its job (same registration, same
@@ -330,6 +466,22 @@ local function settle(st, kind, text, cancel_reason)
     fire_cancel(st)
     return -- stale: touch nothing that a newer registration/record owns
   end
+  -- the display-only rows: thinking ends with the turn (it shows only while
+  -- waiting); tool and notice lines stay with the reply, or with the error,
+  -- until the next send; a cancelled or invalidated turn keeps none
+  local m = meta[st.id]
+  if m and m.st == st then
+    m.thinking = nil
+    if kind == "error" then
+      m.turn = nil -- the streamed turn is dropped below
+      m.error = st.b.turn_events and st.err_msg or nil
+    end
+    if (kind ~= "done" and kind ~= "error") or (#m.rows == 0 and not m.error) then
+      meta[st.id] = nil
+    end
+  elseif kind == "error" and st.b.turn_events and st.err_msg then
+    meta[st.id] = { st = st, b = st.b, rows = {}, error = st.err_msg }
+  end
   if kind == "done" then
     store.stream_finish(st.id, text, nil, true)
     if st.draft then
@@ -347,7 +499,12 @@ local function settle(st, kind, text, cancel_reason)
     store.clear_dispatching(st.id)
     pcall(progress.finish, st.job, false, "")
     require("obelus.review").refresh()
-    notify_failure(st.b.name, "could not answer — your message is back in the draft")
+    local m_err = meta[st.id] and meta[st.id].st == st and meta[st.id].error
+    notify_failure(
+      st.b.name,
+      m_err and ("could not answer (" .. m_err .. ") — your message is back in the draft")
+        or "could not answer — your message is back in the draft"
+    )
   elseif kind == "invalidate" then
     store.abort(st.id)
     pcall(progress.finish, st.job, false, "")
@@ -397,6 +554,7 @@ local function run_turn(c, b)
     return false
   end
   local id = c.id
+  meta[id] = nil -- a new send: the last reply's display-only rows go
   store.stream_start(id)
   local st = { b = b, c = c, id = id, draft = draft, turn = c._stream_turn, done = false, acc = "" }
   st.spec = {
@@ -424,7 +582,12 @@ local function run_turn(c, b)
       local final = type(ev.text) == "string" and ev.text or st.acc
       settle(st, final:match("^%s*$") and "error" or "done", final)
     elseif ev.type == "error" then
+      if b.turn_events then
+        st.err_msg = field(ev.message)
+      end
       settle(st, "error")
+    elseif b.turn_events and (ev.type == "thinking" or ev.type == "tool" or ev.type == "notice") then
+      on_turn_event(st, ev)
     end
   end
   local function emit(ev)
@@ -571,6 +734,11 @@ local function detach(name, old)
   invalidate_sends(function(st)
     return st.b == old
   end)
+  for id, m in pairs(meta) do
+    if m.b == old then
+      meta[id] = nil
+    end
+  end
 end
 
 ---Register a backend. Registering a name again REPLACES it: the old
@@ -592,6 +760,7 @@ function M.register_backend(spec)
   end
   need(type(spec.transport) == "table" and type(spec.transport.send) == "function", "transport.send must be a function")
   need(type(spec.schemes) == "table" and #spec.schemes > 0, "schemes must be a non-empty list")
+  need(spec.turn_events == nil or type(spec.turn_events) == "boolean", "turn_events must be a boolean")
   for _, s in ipairs(spec.schemes) do
     need(require("obelus.claims").valid(s), "invalid scheme " .. vim.inspect(s) .. " (lowercase, [a-z][a-z0-9+.-]*)")
   end
@@ -604,6 +773,7 @@ function M.register_backend(spec)
     store = spec.store,
     transport = spec.transport,
     label = type(spec.label) == "string" and spec.label or spec.name,
+    turn_events = spec.turn_events == true or nil,
   }
   if not old then
     order[#order + 1] = spec.name
@@ -674,6 +844,7 @@ function M._on_reload()
   invalidate_sends(function()
     return true
   end)
+  meta = {}
   synced = {}
   for _, name in ipairs(vim.deepcopy(order)) do
     if backends[name] then
@@ -805,6 +976,9 @@ function M._on_remove(c)
   invalidate_sends(function(st)
     return st.c == c
   end)
+  if meta[c.id] and meta[c.id].st.c == c then
+    meta[c.id] = nil
+  end
   return true
 end
 

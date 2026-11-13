@@ -370,6 +370,9 @@ local function forbidden(cp)
     or (cp >= 0xE0020 and cp <= 0xE007F)
 end
 
+-- shared with obelus.api, which neutralizes a backend's display-only text with it
+M._forbidden = forbidden
+
 ---Is `hint` an acceptable focus_hint: valid UTF-8, 1..128 bytes, 1..32
 ---display cells, not blank, and free of every forbidden code point above?
 function M._hint_ok(hint)

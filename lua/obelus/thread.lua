@@ -1700,6 +1700,45 @@ local function table_block_rows(rows_out, block, agent, bar, bg, meta_hl, body_h
   emit(border("╰", "┴", "╯"))
 end
 
+-- The display-only rows an obelus.api backend reported for a turn (see
+-- api._meta_of): tool and notice lines, the latest thinking while no reply text
+-- has arrived, the error message. One line each, in the reply's meta colour,
+-- clipped to the width. Never turns: a send carries only the user's text.
+local function meta_lines(rows, list, inner)
+  for _, text in ipairs(list) do
+    content_row(
+      rows,
+      true,
+      "ObelusReplyBar",
+      "ObelusReplyBg",
+      mark_role(clip_chunks({ { text, "ObelusReplyMeta" } }, inner), "meta")
+    )
+  end
+end
+
+local function meta_rows_of(meta, above)
+  local out = {}
+  for _, r in ipairs(meta.rows) do
+    if above == nil or r.above == above then
+      out[#out + 1] = r.text
+    end
+  end
+  return out
+end
+
+-- the thinking band: the latest rows of the wrapped thinking, "… " before the
+-- first when earlier text is not shown
+local function thinking_lines(meta, inner)
+  local lines = wrap(meta.thinking, math.max(inner - 2, 8))
+  local max = require("obelus.api")._META.thinking_rows
+  local first = math.max(#lines - max + 1, 1)
+  local out = {}
+  for i = first, #lines do
+    out[#out + 1] = ((i == first and (first > 1 or meta.cut)) and "… " or "") .. lines[i]
+  end
+  return out
+end
+
 -- Appends ONE turn's body rows: either the in-box "thinking…" spinner (streaming
 -- agent reply with no delta yet) or the fence/markdown/code walker that splits the
 -- turn text into body/code content rows. Pure extraction from the old build() loop
@@ -1919,6 +1958,21 @@ function M.build(comment, width, opts)
   local rows = {}
   local live = opts.live == true
   local spinner = opts.spinner or "⠋"
+  -- an obelus.api backend's display-only rows (nil for every other thread)
+  local api = comment.backend and package.loaded["obelus.api"]
+  local meta = api and api._meta_of(comment) or nil
+  local meta_turn
+  if meta then
+    for _, t in ipairs(turns) do
+      if meta.turn and t == meta.turn then
+        meta_turn = t
+      end
+    end
+    local last = turns[#turns]
+    if not meta_turn and not meta.error and last and last.author == "agent" then
+      meta_turn = last -- the reply was re-listed: its rows stay with it
+    end
+  end
 
   -- one block per conversation turn (you / agent), oldest first
   for i, t in ipairs(turns) do
@@ -1966,7 +2020,16 @@ function M.build(comment, width, opts)
     -- pushing a you-turn past it), else — no handle (one-shot/legacy) — the
     -- trailing agent turn.
     local turn_live = live and (comment._stream_turn == t or (comment._stream_turn == nil and agent and i == #turns))
+    if meta and t == meta_turn then
+      meta_lines(rows, meta_rows_of(meta, true), inner)
+      if turn_live and meta.thinking and (t.text == nil or t.text == "") then
+        meta_lines(rows, thinking_lines(meta, inner), inner)
+      end
+    end
     body_rows(rows, t, agent, bar, bg, code, body_hl, meta_hl, md, inner, turn_live, spinner)
+    if meta and t == meta_turn then
+      meta_lines(rows, meta_rows_of(meta, false), inner)
+    end
     ::continue::
   end
 
@@ -1986,6 +2049,12 @@ function M.build(comment, width, opts)
       "ObelusReplyBg",
       { { "agent ↩", "ObelusReplyHeader", role = "header" } }
     )
+    if meta and not meta_turn then
+      meta_lines(rows, meta_rows_of(meta), inner)
+      if meta.thinking then
+        meta_lines(rows, thinking_lines(meta, inner), inner)
+      end
+    end
     content_row(
       rows,
       true,
@@ -1995,8 +2064,33 @@ function M.build(comment, width, opts)
     )
   end
 
+  -- display-only rows with no turn to sit on (the turn failed and was dropped):
+  -- their own agent block, like the standalone spinner's, ending in the error
+  local orphan = meta and not meta_turn and not spinning
+  if orphan then
+    local list = meta_rows_of(meta)
+    if meta.error then
+      list[#list + 1] = "error: " .. meta.error
+    end
+    if #list == 0 then
+      orphan = false
+    else
+      if rules then
+        rule_row(rows, true, "┄", "ObelusReplyRuleN", "ObelusReplyRuleN")
+      end
+      content_row(
+        rows,
+        true,
+        "ObelusReplyBar",
+        "ObelusReplyBg",
+        { { "agent ↩", "ObelusReplyHeader", role = "header" } }
+      )
+      meta_lines(rows, list, inner)
+    end
+  end
+
   if rules then
-    local la = spinning or (tail and tail.author == "agent")
+    local la = spinning or orphan or (tail and tail.author == "agent")
     rule_row(
       rows,
       la,

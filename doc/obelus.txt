@@ -1480,7 +1480,7 @@ and composer UI on its own NON-FILE buffers, and gives it obelus's
 Approve/Deny prompt. Lua type annotations are in lua/obelus/api.lua.
 
 api.version                                             *obelus.api.version*
-    Semver string, currently "0.1.0". It describes RELEASED compatibility:
+    Semver string, currently "0.2.0". It describes RELEASED compatibility:
     a minor bump adds, a major bump breaks; it changes only with a release.
     Use it to require a compatible API (e.g. major == 0 and at least the
     minor you were written against). Use |obelus.api.capabilities| to detect
@@ -1502,6 +1502,10 @@ api.capabilities                                   *obelus.api.capabilities*
       transport_cancel_reason
                            `transport.send()`'s cancel function receives
                            `{ reason = "user"|"invalidate" }`
+      turn_events          a backend registered with `turn_events = true`
+                           may emit "thinking", "tool", "notice" and an
+                           "error" with a `message`; see
+                           |obelus-api-turn-events|. Absent before 0.2.0.
 
 api.register_backend({spec})                   *obelus.api.register_backend()*
     Register a backend. Registering a name again REPLACES it: the old
@@ -1514,6 +1518,9 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
                  (non-empty). Registering claims them (see
                  |obelus.api.claim_schemes()|).
       label      optional spinner label (default: name)
+      turn_events  optional boolean (default false): opt in to the
+                 display-only events of |obelus-api-turn-events|. Without
+                 it those events, and an error's message, are ignored.
       store      { list, create, update, delete, resolve }:
         list(bufnr)           -> Thread[]
         create(bufnr, new)    -> Thread (must carry the new `id`);
@@ -1539,13 +1546,54 @@ api.register_backend({spec})                   *obelus.api.register_backend()*
                               (ev.text appended), "done" (optional ev.text:
                               the full reply) or "error". The first "done"
                               or "error" ends the send; later events, and a
-                              throw after it, are ignored.
+                              throw after it, are ignored. With
+                              `turn_events`, also the display-only events
+                              of |obelus-api-turn-events|.
     A Thread is { id, range = { sl, el, sc?, ec? }, kind? ("line"|"char"),
     turns = { { author = "you"|"agent", text, turn_id? }, ... } (or `text`),
     status? ("open"|"resolved"), ask? }. Lines and columns are 1-based.
     The turns are the COMMITTED history: obelus never edits or drops them.
     Every user turn should carry the `turn_id` it was stored under; an
     unanswered user turn without one cannot be retried.
+
+    Turn events ~                                   *obelus-api-turn-events*
+    A backend registered with `turn_events = true` (check
+    `api.capabilities.turn_events` first) can show what its model does
+    beside the reply, as Luodda's own chat does. These are DISPLAY ONLY:
+    obelus keeps them in memory with the thread, never as turns, never in
+    a store call, never in a transport request (the backend owns its
+    history and its replay), and never on disk. Events:
+      { type = "thinking", text }   appended to the model's thinking. While
+                                    no reply text has arrived, the latest
+                                    rows (at most 8, wrapped; "… " marks
+                                    earlier text not shown) show above the
+                                    "thinking…" row. They go when the reply
+                                    starts or the turn ends. Thinking after
+                                    the reply started is ignored. At most
+                                    the latest 8 KiB are kept.
+      { type = "tool", operation, url? }
+                                    one line, worded as in Luodda's chat:
+                                    "> searched the web", "> fetched: <url>",
+                                    "> opened: <url>", else "> used a tool:
+                                    <operation> <url>".
+      { type = "notice", text }     one line, "> <text>".
+      { type = "error", message? }  ends the turn as today (the message is
+                                    back in the draft); the message shows as
+                                    "error: <message>" under the thread, and
+                                    in the notification in parentheses.
+    Tool and notice lines sit above the reply when they came before its
+    first text, else below it; they stay until the next send on the thread,
+    and also show under a failed turn. A cancelled or invalidated turn
+    keeps none of them. Bounds: an operation, url, notice or error message
+    is cut to 300 characters ("…"); at most 20 tool and notice lines per
+    turn, later ones dropped; every row is one line, cut to the width.
+    All text is untrusted: controls (newlines and tabs too) become spaces,
+    format characters (bidi controls, zero-width characters, the BOM, tag
+    characters) are removed, as for an approve `focus_hint`, and spaces
+    collapse. An event with a wrong or missing field (no `text`, a blank
+    or non-string `operation`, a non-string `url`) is ignored, as is an
+    unknown type. A backend without `turn_events` behaves exactly as before
+    0.2.0.
 
     Turn identity ~                                       *obelus-api-turns*
     Each user message obelus submits has a stable `turn_id`; every retry of

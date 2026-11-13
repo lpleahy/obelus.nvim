@@ -195,8 +195,8 @@ local SEED = {
 
 -- ── registration ───────────────────────────────────────────────────────────────
 
-T.it("api.version is semver 0.1.x and register_backend validates its spec", function()
-  T.eq(api.version, "0.1.0")
+T.it("api.version is semver 0.2.x and register_backend validates its spec", function()
+  T.eq(api.version, "0.2.0")
   local B = memo_backend()
   T.ok(not pcall(api.register_backend, { name = "x" }), "missing match/store/transport")
   local bad = vim.deepcopy(B.spec)
@@ -2120,5 +2120,274 @@ T.it("approve: a queued prompt waits its turn; validation rejects a missing on_r
     wait_armed(a2)
     keys("a")
     T.eq(r2, { true })
+  end)
+end)
+
+-- ── turn events (display only) ─────────────────────────────────────────────────
+
+-- with_backend, but the memo backend registers with `turn_events` = te
+local function with_events(te, fn)
+  local ctx = T.fresh()
+  clear_backends()
+  fresh_claims()
+  local B = memo_backend()
+  B.threads = vim.deepcopy(SEED)
+  B.spec.turn_events = te
+  api.register_backend(B.spec)
+  ctx.buf = memo_buffer()
+  ctx.B = B
+  ctx.file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(ctx.buf), ":p")
+  local ok, err = pcall(fn, ctx)
+  teardown(ctx)
+  if not ok then
+    error(err, 0)
+  end
+end
+
+-- the thread as text rows (content rows only), as thread.build lays it out
+local function shown(c, live)
+  local out = {}
+  for _, r in ipairs(require("obelus.thread").build(c, 80, { live = live, spinner = "*" })) do
+    if r.kind == "content" then
+      local parts = {}
+      for _, ch in ipairs(r.chunks) do
+        parts[#parts + 1] = ch[1]
+      end
+      out[#out + 1] = table.concat(parts)
+    end
+  end
+  return out
+end
+
+local function has_row(rows, text)
+  return vim.tbl_contains(rows, text)
+end
+
+local ID = "api:memo:7"
+
+T.it("turn events: the capability is declared and the opt-in must be a boolean", function()
+  T.eq(api.capabilities.turn_events, true)
+  T.ok(not pcall(function()
+    api.capabilities.turn_events = false
+  end), "read-only")
+  local B = memo_backend()
+  B.spec.turn_events = "yes"
+  T.ok(not pcall(api.register_backend, B.spec), "a non-boolean turn_events is refused")
+  clear_backends()
+end)
+
+T.it("turn events: without the opt-in every new event and an error's message are ignored exactly as before", function()
+  local function run(extra)
+    local rows, msgs
+    with_events(nil, function(ctx)
+      local s = start_send(ctx, ID, "more?")
+      if extra then
+        s.emit({ type = "thinking", text = "THINK" })
+        s.emit({ type = "tool", operation = "fetch", url = "https://example.invalid/x" })
+        s.emit({ type = "notice", text = "NOTICE" })
+      end
+      s.emit({ type = "delta", text = "partial" })
+      local c = ctx.store.get(ID)
+      rows = { live = shown(c, true) }
+      T.is_nil(api._meta_of(c))
+      local restore
+      msgs, restore = capture_notify()
+      s.emit(extra and { type = "error", message = "RAW-BACKEND-MESSAGE" } or { type = "error" })
+      restore()
+      rows.after = shown(ctx.store.get(ID), false)
+      T.is_nil(api._meta_of(ctx.store.get(ID)))
+    end)
+    return rows, msgs
+  end
+  local plain_rows, plain_msgs = run(false)
+  local rows, msgs = run(true)
+  T.eq(rows, plain_rows, "the thread renders the same rows")
+  T.eq(msgs, plain_msgs, "the same fixed notification")
+  T.eq(msgs[1].msg, "obelus: the memo backend could not answer — your message is back in the draft")
+end)
+
+T.it("turn events: thinking, tool and notice rows show beside the reply and are never turns", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "start" })
+    s.emit({ type = "notice", text = "switched to another provider" })
+    s.emit({ type = "thinking", text = "Weighing the base case " })
+    s.emit({ type = "thinking", text = "against the step." })
+    s.emit({ type = "tool", operation = "fetch", url = "https://example.invalid/rec" })
+    local c = ctx.store.get(ID)
+    local rows = shown(c, true)
+    T.ok(has_row(rows, "> switched to another provider"), vim.inspect(rows))
+    T.ok(has_row(rows, "> fetched: https://example.invalid/rec"), vim.inspect(rows))
+    T.ok(has_row(rows, "Weighing the base case against the step."), vim.inspect(rows))
+    T.ok(has_row(rows, "* thinking…"), "beside the spinner row")
+    -- the answer starts: the thinking goes, the lines stay above it
+    s.emit({ type = "delta", text = "Because it stops." })
+    s.emit({ type = "tool", operation = "search" })
+    rows = shown(c, true)
+    T.ok(not has_row(rows, "Weighing the base case against the step."), "thinking collapsed")
+    s.emit({ type = "thinking", text = "LATE THINKING" })
+    T.ok(not vim.inspect(shown(c, true)):find("LATE THINKING", 1, true), "thinking after the answer started is ignored")
+    s.emit({ type = "done" })
+    c = ctx.store.get(ID)
+    rows = shown(c, false)
+    local at = {}
+    for i, r in ipairs(rows) do
+      at[r] = i
+    end
+    T.ok(at["> switched to another provider"] < at["Because it stops."], "a line from before the answer sits above it")
+    T.ok(at["> searched the web"] > at["Because it stops."], "a line from after it sits below it")
+    T.ok(not at["Weighing the base case against the step."], "no thinking after the turn")
+    -- never turns, never stored: the record and the backend hold only the reply
+    T.eq(texts(c), { "you:why recursion?", "agent:It shrinks the problem.", "you:more?", "agent:Because it stops." })
+    local dump = vim.inspect(c) .. vim.inspect(ctx.B.threads) .. vim.inspect(ctx.B.calls)
+    for _, needle in ipairs({ "switched", "example.invalid", "Weighing", "searched" }) do
+      T.ok(not dump:find(needle, 1, true), needle .. " is not in the record or the backend's store")
+    end
+  end)
+end)
+
+T.it("turn events: the next send carries only the user's text; the old rows go", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "notice", text = "NOTICE-ONE" })
+    s.emit({ type = "thinking", text = "THINK-ONE" })
+    s.emit({ type = "tool", operation = "open", url = "https://example.invalid/one" })
+    s.emit({ type = "done", text = "first answer" })
+    T.ok(has_row(shown(ctx.store.get(ID), false), "> NOTICE-ONE"))
+    local s2 = start_send(ctx, ID, "and then?")
+    T.eq(vim.tbl_keys(s2.req), vim.tbl_keys({ id = 1, turn_id = 1, text = 1 }))
+    T.eq({ s2.req.id, s2.req.text }, { "7", "and then?" })
+    T.ok(not vim.inspect(s2.req):find("ONE", 1, true), "nothing display-only is sent back")
+    local rows = shown(ctx.store.get(ID), true)
+    T.ok(not vim.inspect(rows):find("ONE", 1, true), "a new send clears the last reply's rows: " .. vim.inspect(rows))
+    s2.emit({ type = "done", text = "second answer" })
+  end)
+end)
+
+T.it("turn events: an error shows its short message under the thread and in the notification", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "tool", operation = "fetch", url = "https://example.invalid/e" })
+    s.emit({ type = "delta", text = "PARTIAL" })
+    local msgs, restore = capture_notify()
+    s.emit({ type = "error", message = "provider overloaded\n(retry later)" })
+    restore()
+    local c = ctx.store.get(ID)
+    T.eq(
+      texts(c),
+      { "you:why recursion?", "agent:It shrinks the problem.", "you:more?*" },
+      "the message is a draft again"
+    )
+    local rows = shown(c, false)
+    T.ok(has_row(rows, "agent ↩"), vim.inspect(rows))
+    T.ok(has_row(rows, "> fetched: https://example.invalid/e"), vim.inspect(rows))
+    T.eq(rows[#rows], "error: provider overloaded (retry later)")
+    T.ok(not vim.inspect(rows):find("PARTIAL", 1, true), "the partial reply is still dropped")
+    T.eq(
+      msgs[1].msg,
+      "obelus: the memo backend could not answer (provider overloaded (retry later)) — your message is back in the draft"
+    )
+    -- an error without a message: the fixed text, and no error row
+    local s2 = start_send(ctx, ID, "more?")
+    msgs, restore = capture_notify()
+    s2.emit({ type = "error" })
+    restore()
+    T.eq(msgs[1].msg, "obelus: the memo backend could not answer — your message is back in the draft")
+    T.ok(not vim.inspect(shown(ctx.store.get(ID), false)):find("error:", 1, true))
+    T.is_nil(api._meta_of(ctx.store.get(ID)))
+  end)
+end)
+
+T.it("turn events: unknown types and missing or wrong fields are ignored", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    for _, ev in ipairs({
+      { type = "nope", text = "UNKNOWN" },
+      { type = "thinking" },
+      { type = "thinking", text = 42 },
+      { type = "tool" },
+      { type = "tool", operation = "   " },
+      { type = "tool", operation = 7 },
+      { type = "tool", operation = "fetch", url = 9 },
+      { type = "tool", operation = "fetch", url = "\226\128\174" }, -- only a bidi control: blank
+      { type = "notice" },
+      { type = "notice", text = { "x" } },
+      { type = "notice", text = "\n\t " },
+      "not a table",
+    }) do
+      s.emit(ev)
+    end
+    T.is_nil(api._meta_of(ctx.store.get(ID)), "nothing was kept")
+    s.emit({ type = "error", message = 12 })
+    T.is_nil(api._meta_of(ctx.store.get(ID)), "a non-string message shows no row")
+  end)
+end)
+
+T.it("turn events: text is bounded, and the bounds are the documented ones", function()
+  T.eq(api._META, { thinking_bytes = 8192, field_chars = 300, rows = 20, thinking_rows = 8 })
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "notice", text = string.rep("n", 1000) })
+    for i = 1, 25 do
+      s.emit({ type = "tool", operation = "op" .. i })
+    end
+    s.emit({ type = "thinking", text = string.rep("word ", 4000) .. "LAST" })
+    local m = api._meta_of(ctx.store.get(ID))
+    T.eq(#m.rows, 20, "at most 20 lines")
+    T.eq(m.rows[1].text, "> " .. string.rep("n", 299) .. "…")
+    T.eq(m.rows[20].text, "> used a tool: op19")
+    T.ok(m.cut and #m.thinking <= 8192 and m.thinking:sub(-4) == "LAST", "the latest 8 KiB of thinking")
+    local rows = shown(ctx.store.get(ID), true)
+    local think = vim.tbl_filter(function(r)
+      return r:find("word", 1, true) ~= nil
+    end, rows)
+    T.eq(#think, 8, "8 thinking rows")
+    T.ok(vim.startswith(think[1], "… "), think[1])
+    for _, r in ipairs(rows) do
+      T.ok(vim.fn.strdisplaywidth(r) <= 77, "one line within the width: " .. r)
+    end
+    s.emit({ type = "done", text = "ok" })
+  end)
+end)
+
+T.it("turn events: controls, bidi and zero-width characters are neutralized", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({
+      type = "notice",
+      text = "a\nb\tc\27[31md\0e\194\133f \226\128\174g\226\128\139h\239\187\191i\243\160\128\129j\226\129\166k",
+    })
+    s.emit({ type = "tool", operation = "fe\226\128\174tch", url = "https://ex\226\128\139ample.invalid/\27]8;;x" })
+    local m = api._meta_of(ctx.store.get(ID))
+    T.eq(m.rows[1].text, "> a b c [31md e f ghijk")
+    T.eq(m.rows[2].text, "> fetched: https://example.invalid/ ]8;;x")
+    s.emit({ type = "done", text = "ok" })
+  end)
+end)
+
+T.it("turn events: events after done, cancel, removal or unregister change nothing", function()
+  with_events(true, function(ctx)
+    local s = start_send(ctx, ID, "more?")
+    s.emit({ type = "notice", text = "KEPT" })
+    s.emit({ type = "done", text = "answer" })
+    s.emit({ type = "notice", text = "AFTER-DONE" })
+    s.emit({ type = "error", message = "AFTER-DONE-ERROR" })
+    local m = api._meta_of(ctx.store.get(ID))
+    T.eq(#m.rows, 1)
+    T.is_nil(m.error)
+    -- a cancelled turn keeps none of its rows
+    local s2 = start_send(ctx, ID, "again?")
+    s2.emit({ type = "notice", text = "CANCELLED" })
+    require("obelus").cancel(ID)
+    s2.emit({ type = "notice", text = "AFTER-CANCEL" })
+    T.is_nil(api._meta_of(ctx.store.get(ID)))
+    -- unregistering drops them
+    local s3 = start_send(ctx, ID, "once more?")
+    s3.emit({ type = "notice", text = "GONE" })
+    s3.emit({ type = "done", text = "x" })
+    local c = ctx.store.get(ID)
+    T.ok(api._meta_of(c) ~= nil)
+    api.unregister_backend("memo")
+    T.is_nil(api._meta_of(c))
   end)
 end)
