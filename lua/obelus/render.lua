@@ -209,6 +209,9 @@ function M.render_all()
     panel.refresh()
     panel.refresh_preview()
   end)
+  if package.loaded["obelus.margin"] then
+    package.loaded["obelus.margin"].refresh()
+  end
 end
 
 function M.toggle(scope)
@@ -354,6 +357,9 @@ function M.refresh_dynamic()
     panel.refresh()
     panel.refresh_preview() -- stream into the hover preview too
   end)
+  if package.loaded["obelus.margin"] then
+    package.loaded["obelus.margin"].refresh()
+  end
 end
 
 -- Band height cap: max_height as an absolute line count (>=1), a fraction of the
@@ -683,6 +689,14 @@ function M.on_cursor()
     -- reconcile the single hover preview: show it for the covered comment, hide it
     -- otherwise (off a comment, in a non-file window, or bands disabled here)
     if cover and pok then
+      -- the opt-in margin preview IS the preview for its source window: while one
+      -- is open there, skip the hover float only (everything else is unchanged;
+      -- the margin module is consulted only when it was loaded — see render_all)
+      local mg = package.loaded["obelus.margin"]
+      if mg and mg.suppresses_preview and mg.suppresses_preview(vim.api.nvim_get_current_win()) then
+        panel.hide_preview() -- also reconcile a hover left by another source window
+        return
+      end
       if cover ~= cover_id[bufnr] or not panel.preview_showing(cover) then
         cover_id[bufnr] = cover
         panel.preview(cover)
@@ -733,8 +747,21 @@ function M.compose(opts)
   end
   -- a small "you"-bubble input float: anchored at the cursor by default (new
   -- comment / quick reply), or over a parent window's bottom edge (popup reply).
+  -- opts.anchor = { win, row, col, width } (additive; nil = unchanged behaviour)
+  -- seats the float at an exact cell position inside another window — the margin
+  -- preview draws its inline reply box inside a card this way.
   local wcfg
-  if opts.parent_win and vim.api.nvim_win_is_valid(opts.parent_win) then
+  if opts.anchor and vim.api.nvim_win_is_valid(opts.anchor.win) then
+    wcfg = {
+      relative = "win",
+      win = opts.anchor.win,
+      anchor = "NW",
+      row = opts.anchor.row,
+      col = opts.anchor.col,
+      width = opts.anchor.width,
+      height = opts.height or 3,
+    }
+  elseif opts.parent_win and vim.api.nvim_win_is_valid(opts.parent_win) then
     wcfg = {
       relative = "win",
       win = opts.parent_win,
@@ -757,10 +784,18 @@ function M.compose(opts)
     }
   end
   wcfg.style = "minimal"
-  wcfg.border = "rounded"
-  wcfg.title = { { " ▎ " .. (opts.title or "you") .. " ", "ObelusInputHeader" } }
+  -- additive: opts.border (a border string or an 8-char table, used verbatim),
+  -- opts.title_hl and opts.zindex only apply when given; the defaults are unchanged
+  wcfg.border = opts.border ~= nil and opts.border or "rounded"
+  if opts.anchor then
+    -- seated inside a card box: the box already carries the bar, so the title is
+    -- the bare label in the top border
+    wcfg.title = { { " " .. (opts.title or "you") .. " ", opts.title_hl or "ObelusInputHeader" } }
+  else
+    wcfg.title = { { " ▎ " .. (opts.title or "you") .. " ", opts.title_hl or "ObelusInputHeader" } }
+  end
   wcfg.title_pos = "left"
-  wcfg.zindex = config.z.OVERLAY -- focused entry surface: beats any chat stack on screen
+  wcfg.zindex = opts.zindex ~= nil and opts.zindex or config.z.OVERLAY -- focused entry surface: beats any chat stack on screen
   if M.hints_shown() then -- footer built from the RESOLVED keys (config.chat_hint) — see panel.lua's twin
     local segs = {}
     local function add(name, default, label)

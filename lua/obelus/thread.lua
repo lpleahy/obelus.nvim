@@ -82,7 +82,13 @@ local function color(name, attr)
   end
 end
 
-function M.setup_highlights()
+-- The theme resolver: the colours setup_highlights() paints with are computed
+-- here, from THEME groups only (never from Obelus* groups, so it is ordering-safe
+-- w.r.t. the ColorScheme autocmd). Exposed read-only through M.palette() so other
+-- obelus surfaces (the margin) derive their groups from the same values. The
+-- chat-window Visual (`render.colors.selection`) is NOT resolved here: it may
+-- name an Obelus* group, so setup_highlights derives it after its own set() calls.
+local function resolve_palette()
   local cc = (require("obelus.config").options.render or {}).colors or {}
   -- All blended from the live theme, with robust fallbacks (transparent themes,
   -- missing DiagnosticOk, etc.) and overridable via config.render.colors.
@@ -126,6 +132,47 @@ function M.setup_highlights()
     codeb = blend(accent, bg, tint + 0.05)
     rcodeb = blend(agentc, bg, tint + 0.05)
   end
+  -- neutral-bg dividers for the sidebar (drawn as virt_lines, so the tint can't
+  -- bleed past the line into the neighbouring bubble)
+  local rs = cc.rule or 0.75
+  -- the reply/compose INPUT box: tinted with the DISTINCT brand colour (not you/agent)
+  -- + a brand border/bar, so the place you type is unmistakable from the history
+  local inbg = not transparent and blend(brand, bg, math.min(tint * 2.4, 0.26)) or nil
+  return {
+    bg = bg,
+    fg = fg,
+    accent = accent,
+    agent = agentc,
+    meta = meta,
+    brand = brand,
+    mention = mentionc,
+    transparent = transparent,
+    tint = tint,
+    band = band,
+    reply = reply,
+    codeb = codeb,
+    rcodeb = rcodeb,
+    rule = rs,
+    inbg = inbg,
+  }
+end
+
+-- Additive export: the resolved theme palette (a fresh table per call; the same
+-- values setup_highlights() paints with). Callers must not rely on Obelus* groups
+-- being defined yet — this reads the theme directly.
+function M.palette()
+  return resolve_palette()
+end
+
+-- Additive export: the blend helper the palette is built with (fg over bg at alpha,
+-- both 0xRRGGBB integers), so derived surfaces need no colour literals of their own.
+M.blend = blend
+
+function M.setup_highlights()
+  local cc = (require("obelus.config").options.render or {}).colors or {}
+  local p = resolve_palette()
+  local bg, fg, accent, agentc, meta, brand, mentionc = p.bg, p.fg, p.accent, p.agent, p.meta, p.brand, p.mention
+  local band, reply, codeb, rcodeb = p.band, p.reply, p.codeb, p.rcodeb
   local set = function(name, opts)
     vim.api.nvim_set_hl(0, name, opts)
   end
@@ -164,7 +211,7 @@ function M.setup_highlights()
   set("ObelusReplyCodeLabel", { fg = meta, bg = rcodeb })
   -- neutral-bg dividers for the sidebar (drawn as virt_lines, so the tint can't
   -- bleed past the line into the neighbouring bubble)
-  local rs = cc.rule or 0.75
+  local rs = p.rule
   set("ObelusThreadRuleN", { fg = blend(accent, bg, rs) })
   set("ObelusReplyRuleN", { fg = blend(agentc, bg, rs) })
   -- bar tick for divider rows: the bright bar colour with NO bg, so the left bar
@@ -192,7 +239,7 @@ function M.setup_highlights()
   set("ObelusTagBadge", { fg = brand, bold = true })
   -- the reply/compose INPUT box: tinted with the DISTINCT brand colour (not you/agent)
   -- + a brand border/bar, so the place you type is unmistakable from the history
-  local inbg = not transparent and blend(brand, bg, math.min(tint * 2.4, 0.26)) or nil
+  local inbg = p.inbg
   set("ObelusInput", { fg = fg, bg = inbg })
   set("ObelusInputBorder", { fg = brand, bg = inbg, bold = true })
   set("ObelusInputBar", { fg = brand, bg = inbg }) -- the input's left statuscolumn bar

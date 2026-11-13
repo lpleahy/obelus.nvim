@@ -1,5 +1,5 @@
 # obelus ui snapshot: registration @ 80x24
-## diff vs before obelus loaded: user commands (38)
+## diff vs before obelus loaded: user commands (39)
 + ObelusAsk  nargs="?" range="." count=nil bang=false bar=false complete=nil def="obelus: ask a question about the line/selection (read-only)" run=<lua <REPO>/lua/obelus/init.lua#9e38fb00d860>
 + ObelusAskClear  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: clear every ask thread" run=<lua <REPO>/lua/obelus/init.lua#a217119f4113>
 + ObelusBandStyle  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle thread display style (inline band | hover popup)" run=<lua <REPO>/lua/obelus/init.lua#428ba25ac1f3>
@@ -20,6 +20,7 @@
 + ObelusList  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: open the review list" run=<lua <REPO>/lua/obelus/init.lua#5b6d8b444215>
 + ObelusLoad  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: reload reviews from disk" run=<lua <REPO>/lua/obelus/init.lua#2a0b0d4227f7>
 + ObelusLogs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the run/error log (alias of :ObelusJobs)" run=<lua <REPO>/lua/obelus/init.lua#6e818e77969c>
++ ObelusMargin  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: opt-in margin preview" run=<lua <REPO>/lua/obelus/init.lua#ed5e5058f4bb>
 + ObelusMode  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle/set engagement mode (inline|sidebar)" run=<lua <REPO>/lua/obelus/init.lua#fe664411d49e>
 + ObelusPanel  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle the review threads sidebar" run=<lua <REPO>/lua/obelus/init.lua#7ac3aed67b87>
 + ObelusPerms  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: set (or cycle) the agent permission level â€þX” read-only | project-edit | unrestricted" run=<lua <REPO>/lua/obelus/init.lua#e538fcaccccf>
@@ -209,7 +210,7 @@
 + obelus_panel_conn  
 + obelus_preview_conn  
 + obelus_progress  
-## full after setup: user commands (42)
+## full after setup: user commands (43)
 EditQuery  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="Edit treesitter query"
 Inspect  nargs="0" range=nil count=nil bang=true bar=false complete=nil def="Inspect highlights and extmarks at the cursor"
 InspectTree  nargs="?" range="0" count="0" bang=false bar=false complete=nil def="Inspect treesitter language tree for buffer"
@@ -233,6 +234,7 @@ ObelusJobs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def=
 ObelusList  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: open the review list" run=<lua <REPO>/lua/obelus/init.lua#5b6d8b444215>
 ObelusLoad  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: reload reviews from disk" run=<lua <REPO>/lua/obelus/init.lua#2a0b0d4227f7>
 ObelusLogs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the run/error log (alias of :ObelusJobs)" run=<lua <REPO>/lua/obelus/init.lua#6e818e77969c>
+ObelusMargin  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: opt-in margin preview" run=<lua <REPO>/lua/obelus/init.lua#ed5e5058f4bb>
 ObelusMode  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle/set engagement mode (inline|sidebar)" run=<lua <REPO>/lua/obelus/init.lua#fe664411d49e>
 ObelusPanel  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle the review threads sidebar" run=<lua <REPO>/lua/obelus/init.lua#7ac3aed67b87>
 ObelusPerms  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: set (or cycle) the agent permission level â€þX” read-only | project-edit | unrestricted" run=<lua <REPO>/lua/obelus/init.lua#e538fcaccccf>

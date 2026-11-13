@@ -288,10 +288,32 @@ function M.quick_reply(id)
   })
 end
 
+---Opt-in margin preview; nil toggles, true opens, false closes.
+function M.margin(on)
+  return require("obelus.margin").toggle(on)
+end
+
 -- Setup ---------------------------------------------------------------------
 
 local function commands()
   local cmd = vim.api.nvim_create_user_command
+  cmd("ObelusMargin", function(a)
+    if a.args == "on" then
+      M.margin(true)
+    elseif a.args == "off" then
+      M.margin(false)
+    elseif a.args == "" then
+      M.margin()
+    else
+      vim.notify("obelus: use :ObelusMargin [on|off]", vim.log.levels.WARN)
+    end
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "on", "off" }
+    end,
+    desc = "obelus: opt-in margin preview",
+  })
   cmd("ObelusComment", function(a)
     if a.range > 0 then
       M.comment_visual()
