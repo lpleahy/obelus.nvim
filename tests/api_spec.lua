@@ -2379,7 +2379,14 @@ T.it("turn events: events after done, cancel, removal or unregister change nothi
     -- a cancelled turn keeps none of its rows
     local s2 = start_send(ctx, ID, "again?")
     s2.emit({ type = "notice", text = "CANCELLED" })
+    s2.emit({ type = "delta", text = "PARTIAL KEPT" }) -- a cancel keeps partial text as a turn
     require("obelus").cancel(ID)
+    local kept = vim.inspect(texts(ctx.store.get(ID)))
+    T.ok(kept:find("agent:PARTIAL KEPT", 1, true) ~= nil, "the partial reply is kept: " .. kept)
+    T.ok(
+      not vim.inspect(shown(ctx.store.get(ID), false)):find("CANCELLED", 1, true),
+      "no row beside the kept partial text"
+    )
     s2.emit({ type = "notice", text = "AFTER-CANCEL" })
     T.is_nil(api._meta_of(ctx.store.get(ID)))
     -- unregistering drops them
