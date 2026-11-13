@@ -147,6 +147,18 @@ The public surface of `require("obelus")` (also see `require("obelus.review")`, 
 | `submit_all(id, text)` | SUBMIT-ALL: a tag meta's batch round with member drafts folded in |
 | `clear()` | Clear all comments |
 
+### Extension API (`require("obelus.api")`, v0.1.0)
+
+For other plugins: obelus's comment and thread UI on non-file buffers, and an
+Approve/Deny prompt. Full reference: `:h obelus-api-extension`.
+
+| Function | |
+| --- | --- |
+| `register_backend{ name, schemes, match, store, transport }` | Own buffers where `match(bufnr)` is true: their threads come from `store` (`list`/`create`/`update`/`delete`/`resolve`) and replies go through `transport.send({ id, turn_id, text }, emit)` (idempotent on `turn_id`) (`start`/`delta`/`done`/`error` events); the backend owns the history. obelus's own transports never run on them, nor on any record of a scheme it claimed (`schemes`, persisted). |
+| `claim_schemes{ "luodda" }` / `claimed_schemes()` | Claim schemes early (from `plugin/`), before the backend registers |
+| `unregister_backend(name)` / `backends()` / `backend_for(bufnr?)` / `refresh(bufnr?)` | Manage and inspect backends |
+| `approve{ summary, details?, on_result, on_open?, focus_hint? }` → `{ cancel(), focus() }` / `approve_focus()` / `capabilities` | A floating Approve/Deny prompt. It must be focused (`:ObelusApprove`); queued input is drained before it arms, then `a` approves. Every other exit, and no UI at all, is Deny. |
+
 ## Configuration
 
 Defaults are in [`lua/obelus/config.lua`](lua/obelus/config.lua). Full reference at `:h obelus`

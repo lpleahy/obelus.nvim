@@ -25,6 +25,24 @@ end
 ---  round/snapshot commits on this.
 function M.submit(name, opts)
   opts = opts or {}
+  -- obelus.api: an extension backend's thread goes to that backend's transport,
+  -- never to a transport below (fail closed). No-op unless a backend is registered.
+  local api = package.loaded["obelus.api"]
+  if api and api._active() then
+    local routed = api._route_submit(opts)
+    if routed ~= nil then
+      return routed
+    end
+  end
+  -- a backend thread, or one on a backend-claimed scheme, never reaches a
+  -- transport below: fail closed (store.agent_eligible)
+  if not store.all_agent_eligible(opts.comments or store.pending(), opts.actions_comments) then
+    vim.notify(
+      "obelus: not sent — threads on a backend-claimed scheme are never sent to obelus's agents",
+      vim.log.levels.ERROR
+    )
+    return false
+  end
   name = name or config.options.transport.default
   local fn = M.transports[name]
   if not fn then

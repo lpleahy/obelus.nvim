@@ -1473,6 +1473,253 @@ submit_all({id}, {text})                                *obelus.submit_all()*
 clear()                                                      *obelus.clear()*
     Clear all comments.
 
+Extension API ~                                         *obelus-api-extension*
+
+`require("obelus.api")` lets another plugin use obelus's comment, thread
+and composer UI on its own NON-FILE buffers, and gives it obelus's
+Approve/Deny prompt. Lua type annotations are in lua/obelus/api.lua.
+
+api.version                                             *obelus.api.version*
+    Semver string, currently "0.1.0". It describes RELEASED compatibility:
+    a minor bump adds, a major bump breaks; it changes only with a release.
+    Use it to require a compatible API (e.g. major == 0 and at least the
+    minor you were written against). Use |obelus.api.capabilities| to detect
+    individual optional features, which can appear between releases (as on
+    an unreleased branch) without a version change.
+
+api.capabilities                                   *obelus.api.capabilities*
+    Advisory feature flags, for detection without touching private UI. Read
+    it by key; a flag that is absent (nil) means the feature is not there.
+    It is feature DETECTION within one trusted Lua process, not an
+    attestation: any Lua code in the same Neovim can change module tables,
+    so a flag cannot prove a behaviour. Ordinary assignment to it is
+    refused, as a guard against mistakes only. Callers should still handle
+    failure at the point of use (e.g. check the `focus()` result).
+      approval_focus_hint  `approve{}` accepts `focus_hint`
+      approval_handle      `approve{}` returns `{ cancel(), focus() }`
+                           scoped to that prompt
+      approval_on_open     `approve{}` accepts `on_open`
+      transport_cancel_reason
+                           `transport.send()`'s cancel function receives
+                           `{ reason = "user"|"invalidate" }`
+
+api.register_backend({spec})                   *obelus.api.register_backend()*
+    Register a backend. Registering a name again REPLACES it: the old
+    registration's sends are cancelled and its late callbacks ignored.
+    Errors on a malformed spec. `spec` fields:
+      name       string, `[%w_-]+`, unique
+      match      fun(bufnr): boolean — does this backend own the buffer?
+                 A `match` that throws counts as a match (fail closed).
+      schemes    the URI schemes it owns, lowercase, e.g. { "luodda" }
+                 (non-empty). Registering claims them (see
+                 |obelus.api.claim_schemes()|).
+      label      optional spinner label (default: name)
+      store      { list, create, update, delete, resolve }:
+        list(bufnr)           -> Thread[]
+        create(bufnr, new)    -> Thread (must carry the new `id`);
+                              `new` = { range, kind, text, turn_id,
+                              selected_text, ask? }; store `turn_id` with
+                              the comment (it is the first user turn)
+        update(id, { text })  edit the comment text (the first turn)
+        delete(id)
+        resolve(id, resolved) resolved = true resolves, false reopens
+        Any of them may throw to refuse; obelus then keeps the thread as
+        the backend has it and shows a fixed message.
+      transport  { send }:
+        send(req, emit)       -> optional cancel function
+                              `req` = { id, turn_id, text }: the thread's
+                              backend id, the user turn's stable id and its
+                              text. History is never sent: the backend owns
+                              it and its replay. See |obelus-api-turns|.
+                              The cancel function is called with
+                              `{ reason = "user" }` for an explicit user
+                              cancel and `{ reason = "invalidate" }` for every
+                              internal path (see |obelus-api-turns|).
+                              `emit(ev)` with ev.type "start", "delta"
+                              (ev.text appended), "done" (optional ev.text:
+                              the full reply) or "error". The first "done"
+                              or "error" ends the send; later events, and a
+                              throw after it, are ignored.
+    A Thread is { id, range = { sl, el, sc?, ec? }, kind? ("line"|"char"),
+    turns = { { author = "you"|"agent", text, turn_id? }, ... } (or `text`),
+    status? ("open"|"resolved"), ask? }. Lines and columns are 1-based.
+    The turns are the COMMITTED history: obelus never edits or drops them.
+    Every user turn should carry the `turn_id` it was stored under; an
+    unanswered user turn without one cannot be retried.
+
+    Turn identity ~                                       *obelus-api-turns*
+    Each user message obelus submits has a stable `turn_id`; every retry of
+    that message, with its text unchanged, sends the same id. Editing a draft
+    gives it a new id at once (it is a new message), so a refresh never
+    takes an edited draft for the version the backend stored: a refresh
+    reconciles only an unchanged, submitted draft with a stored turn of the
+    same id. A new comment's first turn works the same way: if `create()`
+    fails, the reopened composer keeps that attempt's `turn_id` until you
+    edit the text, so an unchanged retry can be joined by the backend.
+    Backends must be idempotent on `turn_id` (for `create()` too):
+      not stored yet        store the user turn under it, then answer it;
+      stored, unanswered    do not store it again, only answer it;
+      stored and answered   store and answer nothing; emit "done" with the
+                            stored answer.
+    So every retry is safe:
+      accepted, then done   the turn and its reply become history;
+      accepted, then the answer failed ("error")
+                            the message stays a draft with the SAME
+                            `turn_id`; retrying only asks for the answer.
+                            After a refresh the stored turn replaces the
+                            draft (matched by `turn_id`, never by text) and
+                            a dispatch asks for its answer;
+      cancel                the draft keeps its `turn_id`; retrying is safe
+                            whether or not the backend had stored the turn.
+                            The cancel function gets `{ reason = "user" }`
+                            only for an explicit user cancel (the cancel key
+                            or command); every internal path — a store reload
+                            (|:ObelusLoad|, a DirChanged to another root),
+                            replacing or unregistering the backend, deleting
+                            or clearing the thread — passes
+                            `{ reason = "invalidate" }`. A backend should stop
+                            server work only on "user"; on "invalidate" the
+                            answer can still complete and be listed later.
+                            Either way obelus detaches the send and ignores
+                            its late events. The cancel function is called
+                            exactly once, and never after "done" or "error"
+                            — also when the send ended inside `send()`
+                            itself: then it is called, with the same
+                            reason, as soon as `send()` returns it;
+      lost acknowledgement  (send threw, no events, the editor went away)
+                            retrying with the same `turn_id` is safe.
+
+    What changes on a matched buffer:
+    - its threads are read with `list()` when the buffer is first shown,
+      after a store reload (|:ObelusLoad|, a project change), and on
+      |obelus.api.refresh()|;
+    - a new comment exists only once `create()` stored it (on failure the
+      composer reopens with your text, so you can retry); edit,
+      resolve/reopen and delete go to `update()`, `resolve()` and
+      `delete()` and change obelus's copy only when the backend succeeded;
+    - a reply is a local DRAFT after the committed turns (it survives a
+      refresh unless the backend reports a turn with its `turn_id`) until it
+      is sent with `transport.send()`; it streams into the thread with the
+      usual spinner and, once answered, becomes history;
+    - these threads are kept in memory only: never written to obelus's
+      JSONL, never in a batch, a tag, the project thread's briefing or an
+      `@thread` mention;
+    - obelus's own transports (the "cli" agent, which can edit files, and
+      "file", "sidekick", "quickfix") never run on them;
+    - any backend failure (a throw, `error`, an empty reply) shows a FIXED
+      message; the backend's own text is never shown. A failed reply
+      leaves nothing in the thread and puts your message back as a draft.
+    Unregistering or replacing a backend, or reloading the store, cancels
+    its sends; every send callback checks that it still owns its thread and
+    job before it changes anything. Backend callbacks (`match`, the store
+    functions, `send` and its cancel) may call back into this API, e.g.
+    through a synchronous RPC wait: the old registration is detached before
+    its cancels run, only its own threads and jobs are removed, and obelus
+    re-checks the exact registration, the buffer and the thread after every
+    callback. A result from a registration that was replaced or removed
+    while its callback ran is discarded (a `create()` result is refused and
+    the composer reopens): it is never relabelled for the newer
+    registration. When a callback registers the same name again, the latest
+    registration wins.
+
+    Claimed schemes ~                                   *obelus-quarantine*
+    A record on a "scheme://…" buffer whose scheme a backend ever claimed
+    is never sent to obelus's agents or expanded into their prompts,
+    whether or not that backend is registered yet, the buffer is loaded or
+    `match` accepts it — e.g. a comment saved in obelus's JSONL before the
+    backend existed. Such a record is quarantined: it stays on disk and on
+    screen, and a submit that includes it is refused. Each claim is one
+    immutable file, `stdpath("state")/obelus/claims/<scheme>`, created
+    exclusively, so editors claiming at the same time never lose each
+    other's claim and a claim holds after a restart. If that directory
+    cannot be read (a stat or listing error other than "missing"), is not a
+    directory, or holds an entry that is not a regular file named after a
+    valid scheme, every "scheme://…" record is quarantined; obelus never
+    rewrites or removes those entries (removing a bad one by hand restores
+    classification; removing a claim file releases that claim). Ordinary
+    files and unclaimed schemes (fugitive://, oil://, …) behave exactly as
+    without this module.
+
+api.unregister_backend({name})               *obelus.api.unregister_backend()*
+    Remove a backend: cancel its sends; its threads leave obelus's memory
+    (not the backend).
+
+api.claim_schemes({schemes})                    *obelus.api.claim_schemes()*
+    Claim URI schemes (lowercase, e.g. { "luodda" }) before your backend
+    registers — call it from your plugin/ file — so their records are
+    quarantined from the start (|obelus-quarantine|). Errors on an invalid
+    name; returns whether the claim was saved (it holds for the session
+    either way). "Saved" means: the scheme's marker file exists (created
+    exclusively, or already there from another editor), and in THIS call a
+    sync succeeded for the marker, the claims directory and every ancestor
+    directory up to and including /. Nothing is remembered between calls,
+    so a sync that failed earlier — in this editor, another one, or before a
+    restart — is simply done again; an existing marker alone never counts.
+    A directory whose open or fsync fails with EINVAL or ENOTSUP (a
+    filesystem that cannot sync directories) is best effort and counts as
+    synced; any other error (EIO, EACCES, …) makes the call return false. Editors creating the claims
+    directories at the same time do not fail each other. A marker whose sync
+    failed is kept (it already blocks the scheme) and the call returns false.
+
+api.claimed_schemes()                         *obelus.api.claimed_schemes()*
+    The claimed schemes (saved and this session), sorted.
+
+api.backends()                                       *obelus.api.backends()*
+    Registered backend names, in match order (first match wins).
+
+api.backend_for({bufnr?})                         *obelus.api.backend_for()*
+    The name of the backend owning `bufnr` (default: current), or nil.
+
+api.refresh({bufnr?})                                 *obelus.api.refresh()*
+    Re-read the buffer's threads with `list()` and repaint. Threads with a
+    reply in flight keep their state; local drafts are kept.
+
+api.approve({opts})                                   *obelus.api.approve()*
+                                                        *obelus-api-approve*
+    A keyboard-driven Approve/Deny float. `opts`:
+      summary    string, plain text
+      details    optional string or list of lines
+      on_result  fun(approved: boolean) — called exactly once
+      timeout_ms optional, default 120000 (then Deny)
+      on_open    optional fun(handle) — called when THIS prompt's float
+                 opens (it may first wait behind another prompt)
+      focus_hint optional string shown instead of ":ObelusApprove" in the
+                 float's focus line, e.g. ",A / :Luodda approve". Plain
+                 one-line text: valid UTF-8, 1..32 display cells and at
+                 most 128 bytes, with no C0/C1 control, DEL, line or
+                 paragraph separator, and no Unicode format control
+                 (bidi embeddings, overrides, isolates and marks,
+                 zero-width characters, the BOM, tag characters, …);
+                 anything else raises an error. Absent, the float is
+                 exactly as without it.
+    Returns a handle scoped to this prompt: { cancel = fun(), focus = fun() }.
+    `cancel()` denies it (queued or open). `focus()` focuses it like
+    |:ObelusApprove| and returns true, but only while it is the open
+    prompt: on a queued, decided or stale handle it does nothing and
+    returns false.
+    - The float opens unfocused and cannot be reached with CTRL-W, so
+      typing never lands in it.
+    - To decide, focus it with |:ObelusApprove| (or `api.approve_focus()`).
+      It starts UNARMED and ignores every key. After 600 ms, all queued
+      input is drained (discarded); on the next event-loop turn it is
+      drained again and only then armed. Keys typed or queued before that,
+      even while Neovim was busy, can never approve. Each drain must find
+      the queue empty: more than 10000 queued keys, sustained input, or a
+      queued Esc, q, CTRL-C or Enter denies instead. Once armed, `a`
+      approves.
+    - Everything else denies: Enter, Esc, q and CTRL-C at once (also while
+      still unarmed), any other key once armed, leaving or closing the
+      prompt, the UI detaching, the timeout, and an error while opening it.
+    - With no UI attached (headless, `#nvim_list_uis() == 0`) it denies at
+      once and shows nothing.
+    - Prompts queue; one is shown at a time.
+
+api.approve_focus()                             *obelus.api.approve_focus()*
+                                                            *:ObelusApprove*
+    Focus the pending approval prompt and start arming it (see above).
+    `:ObelusApprove` does the same; it is created the first time
+    `api.approve()` runs.
+
 ==============================================================================
 12. DEBUGGING                                                 *obelus-debug*
 

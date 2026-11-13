@@ -82,7 +82,8 @@ local function working_set(batch)
   local seen, out = {}, {}
   for _, c in ipairs(store.batch_members(batch)) do
     seen[c.id] = true
-    if c.status ~= "resolved" then
+    -- obelus.api: a member whose scheme was claimed since leaves the batch's view
+    if c.status ~= "resolved" and store.agent_eligible(c) then
       out[#out + 1] = c
     end
   end
@@ -103,7 +104,8 @@ local function classify(batch, working)
   local resolved, added, replied, open = {}, {}, {}, {}
   for id, s in pairs(snap) do
     local c = store.get(id)
-    if c and c.status == "resolved" and s.status ~= "resolved" then
+    -- obelus.api: historical members are checked too — never quote a claimed one
+    if c and store.agent_eligible(c) and c.status == "resolved" and s.status ~= "resolved" then
       resolved[#resolved + 1] = c
     end
   end

@@ -1,0 +1,400 @@
+# obelus ui snapshot: registration @ 80x24
+## diff vs before obelus loaded: user commands (38)
++ ObelusAsk  nargs="?" range="." count=nil bang=false bar=false complete=nil def="obelus: ask a question about the line/selection (read-only)" run=<lua <REPO>/lua/obelus/init.lua#9e38fb00d860>
++ ObelusAskClear  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: clear every ask thread" run=<lua <REPO>/lua/obelus/init.lua#a217119f4113>
++ ObelusBandStyle  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle thread display style (inline band | hover popup)" run=<lua <REPO>/lua/obelus/init.lua#428ba25ac1f3>
++ ObelusBands  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle inline comment bands in this buffer" run=<lua <REPO>/lua/obelus/init.lua#6f8f62dd09d1>
++ ObelusCancel  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: cancel the in-flight dispatch at cursor" run=<lua <REPO>/lua/obelus/init.lua#beb48832b4be>
++ ObelusChat  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the thread chat sidebar for the comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#a41e7a68f594>
++ ObelusClear  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: clear all comments" run=<lua <REPO>/lua/obelus/init.lua#84bfed2a3548>
++ ObelusComment  nargs="0" range="." count=nil bang=false bar=false complete=nil def="obelus: add a review comment" run=<lua <REPO>/lua/obelus/init.lua#a656afa12f72>
++ ObelusContinue  nargs="?" range=nil count=nil bang=false bar=false complete=nil def="obelus: continue the open batch conversation (next round)" run=<lua <REPO>/lua/obelus/init.lua#f88ed97b1f92>
++ ObelusDelete  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: delete comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#985708c6ca07>
++ ObelusDispatch  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: dispatch comment at cursor to a background agent" run=<lua <REPO>/lua/obelus/init.lua#70ad6b0f5365>
++ ObelusDispatchAll  nargs="?" range=nil count=nil bang=true bar=false complete=nil def="obelus: dispatch every pending thread â€þX” one parallel agent each" run=<lua <REPO>/lua/obelus/init.lua#729d2da48fcf>
++ ObelusEdit  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: edit comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#149afef55a9f>
++ ObelusEdits  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle whether agents may apply edits (global; new agents only)" run=<lua <REPO>/lua/obelus/init.lua#85a59efedbe4>
++ ObelusHints  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle keybind hint footers" run=<lua <REPO>/lua/obelus/init.lua#6097a5585e7c>
++ ObelusImgClean  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: delete .ai/img files unreferenced by any stored text" run=<lua <REPO>/lua/obelus/init.lua#7de0466d3874>
++ ObelusJobs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the background-job output log" run=<lua <REPO>/lua/obelus/init.lua#e64609fc8b8f>
++ ObelusList  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: open the review list" run=<lua <REPO>/lua/obelus/init.lua#5b6d8b444215>
++ ObelusLoad  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: reload reviews from disk" run=<lua <REPO>/lua/obelus/init.lua#2a0b0d4227f7>
++ ObelusLogs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the run/error log (alias of :ObelusJobs)" run=<lua <REPO>/lua/obelus/init.lua#6e818e77969c>
++ ObelusMode  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle/set engagement mode (inline|sidebar)" run=<lua <REPO>/lua/obelus/init.lua#fe664411d49e>
++ ObelusPanel  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle the review threads sidebar" run=<lua <REPO>/lua/obelus/init.lua#7ac3aed67b87>
++ ObelusPerms  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: set (or cycle) the agent permission level â€þX” read-only | project-edit | unrestricted" run=<lua <REPO>/lua/obelus/init.lua#e538fcaccccf>
++ ObelusProject  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the project thread (get-or-create)" run=<lua <REPO>/lua/obelus/init.lua#301aa00018fd>
++ ObelusPrompt  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: show the last prompt sent to the agent (verbatim)" run=<lua <REPO>/lua/obelus/init.lua#f84e29bfee2c>
++ ObelusQuickReply  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: quick reply to the thread at cursor (inline float)" run=<lua <REPO>/lua/obelus/init.lua#da97e24f4c43>
++ ObelusRenderInfo  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: dump the renderer decision inputs for the chat/preview" run=<lua <REPO>/lua/obelus/init.lua#a8fe69c056ec>
++ ObelusRenderer  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: set the chat markdown renderer (markview|builtin|treesitter|render-markdown|auto)" run=<lua <REPO>/lua/obelus/init.lua#1fe20bf053aa>
++ ObelusReopen  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: reopen comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#4507f68b99bb>
++ ObelusResolve  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: resolve comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#1505c9b40147>
++ ObelusRespond  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: respond to the thread at cursor" run=<lua <REPO>/lua/obelus/init.lua#9bee9c1575ce>
++ ObelusSave  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: save reviews to disk" run=<lua <REPO>/lua/obelus/init.lua#fdc6fde466a7>
++ ObelusSubmit  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: submit the review batch" run=<lua <REPO>/lua/obelus/init.lua#9780aa9e0e37>
++ ObelusTag  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: tag/untag the thread at cursor (curates batch membership)" run=<lua <REPO>/lua/obelus/init.lua#2acc2074aa2b>
++ ObelusTagMode  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle sticky tagging mode (new threads inherit the tag)" run=<lua <REPO>/lua/obelus/init.lua#c681de6058c0>
++ ObelusTagThread  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the active tag's meta/batch thread (get-or-create)" run=<lua <REPO>/lua/obelus/init.lua#77f900f80332>
++ ObelusToggle  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle annotations" run=<lua <REPO>/lua/obelus/init.lua#5da9ed13a7fc>
++ ObelusToggleResolved  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: show/hide resolved comments" run=<lua <REPO>/lua/obelus/init.lua#742372334beb>
+## diff vs before obelus loaded: keymaps (40)
++ global n <M-d>  desc="obelus: thread down half-page" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#1d8fa4a3ce45>
++ global n <M-u>  desc="obelus: thread up half-page" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#6e0b763e9a0a>
++ global n \o?  desc="obelus: toggle keybind hints" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#152ef1cb3bf1>
++ global n \oA  desc="obelus: active tag's meta/batch thread" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#d8f9c4f16dc6>
++ global n \oB  desc="obelus: toggle band/popup style" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#19561d8a8633>
++ global n \oC  desc="obelus: cancel dispatch at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#810a37d5e5de>
++ global n \oD  desc="obelus: dispatch all in parallel (one agent each)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#987b13f29afd>
++ global n \oE  desc="obelus: cycle the agent permission level (global)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#49d5e9f53a5f>
++ global n \oG  desc="obelus: toggle sticky tagging mode" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#df25ca822add>
++ global n \oI  desc="obelus: clear every ask thread" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/review.lua#ae46a27907c2>
++ global n \oJ  desc="obelus: scroll thread down" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#0944dbaca248>
++ global n \oK  desc="obelus: scroll thread up" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#e5941c96d693>
++ global n \oR  desc="obelus: toggle resolved at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#ce4d12f14a64>
++ global n \oS  desc="obelus: force a new batch (even if one is open)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#7b31ff47dd28>
++ global n \oT  desc="obelus: toggle (global)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#3041dafd8725>
++ global n \oX  desc="obelus: clear all" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#daa5ef45fca0>
++ global n \oa  desc="obelus: project thread" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#29ab3e9f8c50>
++ global n \ob  desc="obelus: toggle inline bands" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#acb33886cedf>
++ global n \oc  desc="obelus: comment line" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/capture.lua#3aba3b9afc93>
++ global n \od  desc="obelus: dispatch one (background)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#a48d71fd09a5>
++ global n \oe  desc="obelus: toggle agent edits (global)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#8fc53170de03>
++ global n \of  desc="obelus: quick reply (inline float)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#6f1f5fa01ede>
++ global n \og  desc="obelus: tag/untag thread (batch group)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#ba1f4eaa8182>
++ global n \oh  desc="obelus: show/hide resolved" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#f71160ad047f>
++ global n \oi  desc="obelus: ask about this line (read-only)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/review.lua#750233b3aa5c>
++ global n \oj  desc="obelus: job output log" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#c984208d399a>
++ global n \ol  desc="obelus: list" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#ae93cd3b690b>
++ global n \om  desc="obelus: toggle inline/sidebar mode" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#21931b943e62>
++ global n \oo  desc="obelus: open full thread (scrollable)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#b95dfc185fff>
++ global n \op  desc="obelus: toggle threads sidebar" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#93a3caa08fba>
++ global n \oq  desc="obelus: quickfix" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#d4ca4483baa6>
++ global n \or  desc="obelus: reply to thread at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#0cfb254a9482>
++ global n \os  desc="obelus: submit / continue batch (auto)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#7aa12f15b0e5>
++ global n \ot  desc="obelus: toggle (buffer)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#02675a0ea10e>
++ global n \ox  desc="obelus: delete at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#fb5df367a3c3>
++ global n \oz  desc="obelus: pin/collapse band" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#8e8d3cb595ad>
++ global v \oc  desc="obelus: comment selection" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').comment_visual()<CR>"
++ global v \oi  desc="obelus: ask about the selection (read-only)" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').ask_visual()<CR>"
++ global x \oc  desc="obelus: comment selection" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').comment_visual()<CR>"
++ global x \oi  desc="obelus: ask about the selection (read-only)" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').ask_visual()<CR>"
+## diff vs before obelus loaded: autocmds (7)
++ obelus BufEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#51077263cd31>
++ obelus BufReadPost pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#51077263cd31>
++ obelus BufWritePost pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#859306e33f4a>
++ obelus ColorScheme pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#d15c86ca8782>
++ obelus CursorMoved pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#d8df28102929>
++ obelus DirChanged pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#cd7f8981fc4c>
++ obelus WinEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#d8df28102929>
+## diff vs before obelus loaded: highlight groups (112)
++ ObelusBorder  {fg="#e0e2ea"}
++ ObelusChrome  {fg="#9b9ea4"}
++ ObelusInput  {bg="#3b3d43",fg="#e0e2ea"}
++ ObelusInputBar  {bg="#3b3d43",fg="#e0e2ea"}
++ ObelusInputBorder  {bg="#3b3d43",bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusInputHeader  {bg="#3b3d43",bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusMention  {bold=true,cterm={bold=true},fg="#fce094"}
++ ObelusMetaThread  {bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusRangeText  {default=true,link="DiffText"}
++ ObelusReplyBar  {bg="#212828",fg="#b3f6c0"}
++ ObelusReplyBarN  {fg="#b3f6c0"}
++ ObelusReplyBg  {bg="#212828"}
++ ObelusReplyBold  {bg="#212828",bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusReplyCode  {bg="#293330",fg="#b3f6c0"}
++ ObelusReplyCodeLabel  {bg="#293330",fg="#9b9ea4"}
++ ObelusReplyHeader  {bg="#212828",bold=true,cterm={bold=true},fg="#b3f6c0"}
++ ObelusReplyHeaderN  {bold=true,cterm={bold=true},fg="#b3f6c0"}
++ ObelusReplyItalic  {bg="#212828",cterm={italic=true},fg="#e0e2ea",italic=true}
++ ObelusReplyLink  {cterm={underline=true},fg="#e0e2ea",underline=true}
++ ObelusReplyMention  {bg="#212828",bold=true,cterm={bold=true},fg="#fce094"}
++ ObelusReplyMeta  {bg="#212828",fg="#9b9ea4"}
++ ObelusReplyRule  {bg="#212828",fg="#b3f6c0"}
++ ObelusReplyRuleN  {fg="#8bbe97"}
++ ObelusReplyStrike  {cterm={strikethrough=true},fg="#9b9ea4",strikethrough=true}
++ ObelusReplyText  {bg="#212828",fg="#e0e2ea"}
++ ObelusSign  {default=true,link="DiffText"}
++ ObelusTagBadge  {bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusThreadBar  {bg="#1e282d",fg="#8cf8f7"}
++ ObelusThreadBarN  {fg="#8cf8f7"}
++ ObelusThreadBg  {bg="#1e282d"}
++ ObelusThreadBold  {bg="#1e282d",bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusThreadCode  {bg="#243338",fg="#8cf8f7"}
++ ObelusThreadCodeLabel  {bg="#243338",fg="#9b9ea4"}
++ ObelusThreadHeader  {bg="#1e282d",bold=true,cterm={bold=true},fg="#8cf8f7"}
++ ObelusThreadHeaderN  {bold=true,cterm={bold=true},fg="#8cf8f7"}
++ ObelusThreadItalic  {bg="#1e282d",cterm={italic=true},fg="#e0e2ea",italic=true}
++ ObelusThreadLink  {cterm={underline=true},fg="#e0e2ea",underline=true}
++ ObelusThreadMention  {bg="#1e282d",bold=true,cterm={bold=true},fg="#fce094"}
++ ObelusThreadMeta  {bg="#1e282d",fg="#9b9ea4"}
++ ObelusThreadRule  {bg="#1e282d",fg="#8cf8f7"}
++ ObelusThreadRuleN  {fg="#6ec0c0"}
++ ObelusThreadStrike  {cterm={strikethrough=true},fg="#9b9ea4",strikethrough=true}
++ ObelusThreadTag  {bold=true,cterm={bold=true},fg="#e0e2ea"}
++ ObelusThreadText  {bg="#1e282d",fg="#e0e2ea"}
++ ObelusVisual  {bg="#909298"}
++ Obelus_MarkviewBlockQuoteDefault  {fg="#9b9ea4"}
++ Obelus_MarkviewCode  {bg="#212828"}
++ Obelus_MarkviewCodeFg  {fg="#212828"}
++ Obelus_MarkviewCodeInfo  {bg="#212828",fg="#9b9ea4"}
++ Obelus_MarkviewCodeLabel  {bg="#212828",fg="#9b9ea4"}
++ Obelus_MarkviewHeading1  {bg="#212828"}
++ Obelus_MarkviewHeading2  {bg="#212828"}
++ Obelus_MarkviewHeading3  {bg="#212828"}
++ Obelus_MarkviewHeading4  {bg="#212828"}
++ Obelus_MarkviewHeading5  {bg="#212828"}
++ Obelus_MarkviewHeading6  {bg="#212828"}
++ Obelus_MarkviewHyperlink  {fg="#9b9ea4"}
++ Obelus_MarkviewIcon0  {bg="#212828"}
++ Obelus_MarkviewIcon1  {bg="#212828"}
++ Obelus_MarkviewIcon2  {bg="#212828"}
++ Obelus_MarkviewIcon3  {bg="#212828"}
++ Obelus_MarkviewIcon3Fg  {fg="#9b9ea4"}
++ Obelus_MarkviewIcon4  {bg="#212828"}
++ Obelus_MarkviewIcon5  {bg="#212828"}
++ Obelus_MarkviewIcon6  {bg="#212828"}
++ Obelus_MarkviewInlineCode  {fg="#8cf8f7"}
++ Obelus_MarkviewPalette0  {bg="#212828"}
++ Obelus_MarkviewPalette0Bg  {bg="#212828"}
++ Obelus_MarkviewPalette1  {bg="#212828"}
++ Obelus_MarkviewPalette1Bg  {bg="#212828"}
++ Obelus_MarkviewPalette2  {bg="#212828"}
++ Obelus_MarkviewPalette2Bg  {bg="#212828"}
++ Obelus_MarkviewPalette3  {bg="#212828"}
++ Obelus_MarkviewPalette3Bg  {bg="#212828"}
++ Obelus_MarkviewPalette4  {bg="#212828"}
++ Obelus_MarkviewPalette4Bg  {bg="#212828"}
++ Obelus_MarkviewPalette5  {bg="#212828"}
++ Obelus_MarkviewPalette5Bg  {bg="#212828"}
++ Obelus_MarkviewPalette6  {bg="#212828"}
++ Obelus_MarkviewPalette6Bg  {bg="#212828"}
++ Obelus_MarkviewPalette7  {bold=true,cterm={bold=true},fg="#e0e2ea"}
++ Obelus_MarkviewPalette7Bg  {bg="#212828"}
++ Obelus_MarkviewPunctuationSpecial  {fg="#8cf8f7"}
++ Obelus_RenderMdBullet  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdChecked  {fg="#8cf8f7"}
++ Obelus_RenderMdCode  {bg="#212828"}
++ Obelus_RenderMdCodeBorder  {bg="#212828"}
++ Obelus_RenderMdCodeBorderFg  {fg="#212828"}
++ Obelus_RenderMdCodeFallback  {fg="#e0e2ea"}
++ Obelus_RenderMdCodeInfo  {bg="#212828",fg="#9b9ea4"}
++ Obelus_RenderMdCodeInline  {fg="#8cf8f7"}
++ Obelus_RenderMdCodeInlineFg  {}
++ Obelus_RenderMdDash  {fg="#4f5258"}
++ Obelus_RenderMdH1  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdH1Bg  {bg="#212828"}
++ Obelus_RenderMdH2  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdH2Bg  {bg="#212828"}
++ Obelus_RenderMdH3  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdH3Bg  {bg="#212828"}
++ Obelus_RenderMdH4  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdH4Bg  {bg="#212828"}
++ Obelus_RenderMdH5  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdH5Bg  {bg="#212828"}
++ Obelus_RenderMdH6  {bg="#212828",fg="#e0e2ea"}
++ Obelus_RenderMdH6Bg  {bg="#212828"}
++ Obelus_RenderMdHeadBorderFg  {fg="#212828"}
++ Obelus_RenderMdLink  {fg="#9b9ea4"}
++ Obelus_RenderMdLinkTitle  {fg="#9b9ea4"}
++ Obelus_RenderMdQuote  {fg="#9b9ea4"}
++ Obelus_RenderMdTableHead  {fg="#e0e2ea"}
++ Obelus_RenderMdTableRow  {fg="#e0e2ea"}
++ Obelus_RenderMdUnchecked  {fg="#8cf8f7"}
+## diff vs before obelus loaded: namespaces (8)
++ obelus  
++ obelus_band  
++ obelus_mention  
++ obelus_mention_hl  
++ obelus_panel  
++ obelus_panel_conn  
++ obelus_preview_conn  
++ obelus_progress  
+## full after setup: user commands (42)
+EditQuery  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="Edit treesitter query"
+Inspect  nargs="0" range=nil count=nil bang=true bar=false complete=nil def="Inspect highlights and extmarks at the cursor"
+InspectTree  nargs="?" range="0" count="0" bang=false bar=false complete=nil def="Inspect treesitter language tree for buffer"
+ObelusAsk  nargs="?" range="." count=nil bang=false bar=false complete=nil def="obelus: ask a question about the line/selection (read-only)" run=<lua <REPO>/lua/obelus/init.lua#9e38fb00d860>
+ObelusAskClear  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: clear every ask thread" run=<lua <REPO>/lua/obelus/init.lua#a217119f4113>
+ObelusBandStyle  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle thread display style (inline band | hover popup)" run=<lua <REPO>/lua/obelus/init.lua#428ba25ac1f3>
+ObelusBands  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle inline comment bands in this buffer" run=<lua <REPO>/lua/obelus/init.lua#6f8f62dd09d1>
+ObelusCancel  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: cancel the in-flight dispatch at cursor" run=<lua <REPO>/lua/obelus/init.lua#beb48832b4be>
+ObelusChat  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the thread chat sidebar for the comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#a41e7a68f594>
+ObelusClear  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: clear all comments" run=<lua <REPO>/lua/obelus/init.lua#84bfed2a3548>
+ObelusComment  nargs="0" range="." count=nil bang=false bar=false complete=nil def="obelus: add a review comment" run=<lua <REPO>/lua/obelus/init.lua#a656afa12f72>
+ObelusContinue  nargs="?" range=nil count=nil bang=false bar=false complete=nil def="obelus: continue the open batch conversation (next round)" run=<lua <REPO>/lua/obelus/init.lua#f88ed97b1f92>
+ObelusDelete  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: delete comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#985708c6ca07>
+ObelusDispatch  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: dispatch comment at cursor to a background agent" run=<lua <REPO>/lua/obelus/init.lua#70ad6b0f5365>
+ObelusDispatchAll  nargs="?" range=nil count=nil bang=true bar=false complete=nil def="obelus: dispatch every pending thread â€þX” one parallel agent each" run=<lua <REPO>/lua/obelus/init.lua#729d2da48fcf>
+ObelusEdit  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: edit comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#149afef55a9f>
+ObelusEdits  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle whether agents may apply edits (global; new agents only)" run=<lua <REPO>/lua/obelus/init.lua#85a59efedbe4>
+ObelusHints  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle keybind hint footers" run=<lua <REPO>/lua/obelus/init.lua#6097a5585e7c>
+ObelusImgClean  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: delete .ai/img files unreferenced by any stored text" run=<lua <REPO>/lua/obelus/init.lua#7de0466d3874>
+ObelusJobs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the background-job output log" run=<lua <REPO>/lua/obelus/init.lua#e64609fc8b8f>
+ObelusList  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: open the review list" run=<lua <REPO>/lua/obelus/init.lua#5b6d8b444215>
+ObelusLoad  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: reload reviews from disk" run=<lua <REPO>/lua/obelus/init.lua#2a0b0d4227f7>
+ObelusLogs  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the run/error log (alias of :ObelusJobs)" run=<lua <REPO>/lua/obelus/init.lua#6e818e77969c>
+ObelusMode  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle/set engagement mode (inline|sidebar)" run=<lua <REPO>/lua/obelus/init.lua#fe664411d49e>
+ObelusPanel  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: toggle the review threads sidebar" run=<lua <REPO>/lua/obelus/init.lua#7ac3aed67b87>
+ObelusPerms  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: set (or cycle) the agent permission level â€þX” read-only | project-edit | unrestricted" run=<lua <REPO>/lua/obelus/init.lua#e538fcaccccf>
+ObelusProject  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the project thread (get-or-create)" run=<lua <REPO>/lua/obelus/init.lua#301aa00018fd>
+ObelusPrompt  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: show the last prompt sent to the agent (verbatim)" run=<lua <REPO>/lua/obelus/init.lua#f84e29bfee2c>
+ObelusQuickReply  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: quick reply to the thread at cursor (inline float)" run=<lua <REPO>/lua/obelus/init.lua#da97e24f4c43>
+ObelusRenderInfo  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: dump the renderer decision inputs for the chat/preview" run=<lua <REPO>/lua/obelus/init.lua#a8fe69c056ec>
+ObelusRenderer  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: set the chat markdown renderer (markview|builtin|treesitter|render-markdown|auto)" run=<lua <REPO>/lua/obelus/init.lua#1fe20bf053aa>
+ObelusReopen  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: reopen comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#4507f68b99bb>
+ObelusResolve  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: resolve comment at cursor" run=<lua <REPO>/lua/obelus/init.lua#1505c9b40147>
+ObelusRespond  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: respond to the thread at cursor" run=<lua <REPO>/lua/obelus/init.lua#9bee9c1575ce>
+ObelusSave  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: save reviews to disk" run=<lua <REPO>/lua/obelus/init.lua#fdc6fde466a7>
+ObelusSubmit  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: submit the review batch" run=<lua <REPO>/lua/obelus/init.lua#9780aa9e0e37>
+ObelusTag  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: tag/untag the thread at cursor (curates batch membership)" run=<lua <REPO>/lua/obelus/init.lua#2acc2074aa2b>
+ObelusTagMode  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle sticky tagging mode (new threads inherit the tag)" run=<lua <REPO>/lua/obelus/init.lua#c681de6058c0>
+ObelusTagThread  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: open the active tag's meta/batch thread (get-or-create)" run=<lua <REPO>/lua/obelus/init.lua#77f900f80332>
+ObelusToggle  nargs="?" range=nil count=nil bang=false bar=false complete="<fn>" def="obelus: toggle annotations" run=<lua <REPO>/lua/obelus/init.lua#5da9ed13a7fc>
+ObelusToggleResolved  nargs="0" range=nil count=nil bang=false bar=false complete=nil def="obelus: show/hide resolved comments" run=<lua <REPO>/lua/obelus/init.lua#742372334beb>
+Open  nargs="1" range=nil count=nil bang=false bar=false complete="file" def="Open file with system default handler. See :help vim.ui.open()"
+## full after setup: keymaps (127)
+global i <C-S>  desc="vim.lsp.buf.signature_help()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global i <C-U>  desc=":help i_CTRL-U-default" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs="<C-G>u<C-U>"
+global i <C-W>  desc=":help i_CTRL-W-default" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs="<C-G>u<C-W>"
+global i <S-Tab>  desc="vim.snippet.jump if active, otherwise <S-Tab>" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global i <Tab>  desc="vim.snippet.jump if active, otherwise <Tab>" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n &  desc=":help &-default" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=":&&<CR>"
+global n <C-L>  desc=":help CTRL-L-default" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs="<Cmd>nohlsearch|diffupdate|normal! <C-L><CR>"
+global n <C-W><C-D>  desc="Show diagnostics under the cursor" silent=0 noremap=0 nowait=0 expr=0 script=0 rhs="<C-W>d"
+global n <C-W>d  desc="Show diagnostics under the cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n <M-d>  desc="obelus: thread down half-page" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#1d8fa4a3ce45>
+global n <M-u>  desc="obelus: thread up half-page" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#6e0b763e9a0a>
+global n Y  desc=":help Y-default" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs="y$"
+global n [   desc="Add empty line above cursor" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [<C-L>  desc=":lpfile" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [<C-Q>  desc=":cpfile" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [<C-T>  desc=":ptprevious" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [A  desc=":rewind" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [B  desc=":brewind" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [D  desc="Jump to the first diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [L  desc=":lrewind" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [Q  desc=":crewind" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [T  desc=":trewind" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [a  desc=":previous" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [b  desc=":bprevious" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [d  desc="Jump to the previous diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [l  desc=":lprevious" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [q  desc=":cprevious" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n [t  desc=":tprevious" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n \o?  desc="obelus: toggle keybind hints" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#152ef1cb3bf1>
+global n \oA  desc="obelus: active tag's meta/batch thread" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#d8f9c4f16dc6>
+global n \oB  desc="obelus: toggle band/popup style" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#19561d8a8633>
+global n \oC  desc="obelus: cancel dispatch at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#810a37d5e5de>
+global n \oD  desc="obelus: dispatch all in parallel (one agent each)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#987b13f29afd>
+global n \oE  desc="obelus: cycle the agent permission level (global)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#49d5e9f53a5f>
+global n \oG  desc="obelus: toggle sticky tagging mode" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#df25ca822add>
+global n \oI  desc="obelus: clear every ask thread" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/review.lua#ae46a27907c2>
+global n \oJ  desc="obelus: scroll thread down" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#0944dbaca248>
+global n \oK  desc="obelus: scroll thread up" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#e5941c96d693>
+global n \oR  desc="obelus: toggle resolved at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#ce4d12f14a64>
+global n \oS  desc="obelus: force a new batch (even if one is open)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#7b31ff47dd28>
+global n \oT  desc="obelus: toggle (global)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#3041dafd8725>
+global n \oX  desc="obelus: clear all" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#daa5ef45fca0>
+global n \oa  desc="obelus: project thread" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#29ab3e9f8c50>
+global n \ob  desc="obelus: toggle inline bands" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#acb33886cedf>
+global n \oc  desc="obelus: comment line" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/capture.lua#3aba3b9afc93>
+global n \od  desc="obelus: dispatch one (background)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#a48d71fd09a5>
+global n \oe  desc="obelus: toggle agent edits (global)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#8fc53170de03>
+global n \of  desc="obelus: quick reply (inline float)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#6f1f5fa01ede>
+global n \og  desc="obelus: tag/untag thread (batch group)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#ba1f4eaa8182>
+global n \oh  desc="obelus: show/hide resolved" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#f71160ad047f>
+global n \oi  desc="obelus: ask about this line (read-only)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/review.lua#750233b3aa5c>
+global n \oj  desc="obelus: job output log" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#c984208d399a>
+global n \ol  desc="obelus: list" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#ae93cd3b690b>
+global n \om  desc="obelus: toggle inline/sidebar mode" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#21931b943e62>
+global n \oo  desc="obelus: open full thread (scrollable)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#b95dfc185fff>
+global n \op  desc="obelus: toggle threads sidebar" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#93a3caa08fba>
+global n \oq  desc="obelus: quickfix" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#d4ca4483baa6>
+global n \or  desc="obelus: reply to thread at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#0cfb254a9482>
+global n \os  desc="obelus: submit / continue batch (auto)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#7aa12f15b0e5>
+global n \ot  desc="obelus: toggle (buffer)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#02675a0ea10e>
+global n \ox  desc="obelus: delete at cursor" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#fb5df367a3c3>
+global n \oz  desc="obelus: pin/collapse band" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua <REPO>/lua/obelus/init.lua#8e8d3cb595ad>
+global n ]   desc="Add empty line below cursor" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]<C-L>  desc=":lnfile" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]<C-Q>  desc=":cnfile" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]<C-T>  desc=":ptnext" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]A  desc=":last" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]B  desc=":blast" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]D  desc="Jump to the last diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]L  desc=":llast" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]Q  desc=":clast" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]T  desc=":tlast" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]a  desc=":next" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]b  desc=":bnext" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]d  desc="Jump to the next diagnostic in the current buffer" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]l  desc=":lnext" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]q  desc=":cnext" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n ]t  desc=":tnext" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n gO  desc="vim.lsp.buf.document_symbol()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n gc  desc="Toggle comment" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n gcc  desc="Toggle comment line" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n gra  desc="vim.lsp.buf.code_action()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n gri  desc="vim.lsp.buf.implementation()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n grn  desc="vim.lsp.buf.rename()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n grr  desc="vim.lsp.buf.references()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n grt  desc="vim.lsp.buf.type_definition()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n grx  desc="vim.lsp.codelens.run()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global n gx  desc="Opens filepath or URI under cursor with the system handler (file explorer, web browser, â€¦)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global o an  desc="Select parent (outer) node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global o gc  desc="Comment textobject" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global o in  desc="Select child (inner) node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global s <C-S>  desc="vim.lsp.buf.signature_help()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global s <S-Tab>  desc="vim.snippet.jump if active, otherwise <S-Tab>" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global s <Tab>  desc="vim.snippet.jump if active, otherwise <Tab>" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v #  desc=":help v_#-default" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v *  desc=":help v_star-default" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v <C-S>  desc="vim.lsp.buf.signature_help()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v <S-Tab>  desc="vim.snippet.jump if active, otherwise <S-Tab>" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v <Tab>  desc="vim.snippet.jump if active, otherwise <Tab>" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v @  desc=":help v_@-default" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs="mode() ==# 'V' ? ':normal! @'.getcharstr().'<CR>' : '@'"
+global v Q  desc=":help v_Q-default" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs="mode() ==# 'V' ? ':normal! @<C-R>=reg_recorded()<CR><CR>' : 'Q'"
+global v [N  desc="Select previous sibling node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v [n  desc="Select previous node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v \oc  desc="obelus: comment selection" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').comment_visual()<CR>"
+global v \oi  desc="obelus: ask about the selection (read-only)" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').ask_visual()<CR>"
+global v ]N  desc="Select next sibling node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v ]n  desc="Select next node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v an  desc="Select parent (outer) node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v gc  desc="Toggle comment" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v gra  desc="vim.lsp.buf.code_action()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v gx  desc="Opens filepath or URI under cursor with the system handler (file explorer, web browser, â€¦)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global v in  desc="Select child (inner) node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x #  desc=":help v_#-default" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x *  desc=":help v_star-default" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x @  desc=":help v_@-default" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs="mode() ==# 'V' ? ':normal! @'.getcharstr().'<CR>' : '@'"
+global x Q  desc=":help v_Q-default" silent=1 noremap=1 nowait=0 expr=1 script=0 rhs="mode() ==# 'V' ? ':normal! @<C-R>=reg_recorded()<CR><CR>' : 'Q'"
+global x [N  desc="Select previous sibling node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x [n  desc="Select previous node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x \oc  desc="obelus: comment selection" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').comment_visual()<CR>"
+global x \oi  desc="obelus: ask about the selection (read-only)" silent=1 noremap=1 nowait=0 expr=0 script=0 rhs=":<C-U>lua require('obelus').ask_visual()<CR>"
+global x ]N  desc="Select next sibling node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x ]n  desc="Select next node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x an  desc="Select parent (outer) node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x gc  desc="Toggle comment" silent=0 noremap=1 nowait=0 expr=1 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x gra  desc="vim.lsp.buf.code_action()" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x gx  desc="Opens filepath or URI under cursor with the system handler (file explorer, web browser, â€¦)" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+global x in  desc="Select child (inner) node" silent=0 noremap=1 nowait=0 expr=0 script=0 rhs=<lua vim/_core/defaults#nosrc>
+## full after setup: autocmds (16)
+nvim.cmdwin CmdwinEnter pattern="[:>]" buffer=-  once=false desc="Limit syntax sync to maxlines=1 in the command window" run="syntax sync minlines=1 maxlines=1"
+nvim.popupmenu MenuPopup pattern="*" buffer=-  once=false desc="Mouse popup menu" run=<lua vim/_core/defaults#nosrc>
+nvim.swapfile SwapExists pattern="*" buffer=-  once=false desc="Skip the swapfile prompt when the swapfile is owned by a running Nvim process" run=<lua vim/_core/defaults#nosrc>
+nvim.terminal BufReadCmd pattern="term://*" buffer=-  once=false desc="Treat term:// buffers as terminal buffers" run="if !exists('b:term_title')|call jobstart(matchstr(expand(\"<amatch>\"), '\\c\\mterm://\\%(.\\{-}//\\%(\\d\\+:\\)\\?\\)\\?\\zs.*'), {'term': v:true, 'cwd': expand(get(matchlist(expand(\"<amatch>\"), '\\c\\mterm://\\(.\\{-}\\)//'), 1, ''))})"
+nvim.terminal TermClose pattern="*" buffer=-  once=false desc="Automatically close terminal buffers when started with no arguments and exiting without an error" run=<lua vim/_core/defaults#nosrc>
+nvim.terminal TermClose pattern="*" buffer=-  once=false desc="Displays the \"[Process exited]\" virtual text" run=<lua vim/_core/defaults#nosrc>
+nvim.terminal TermOpen pattern="*" buffer=-  once=false desc="Default settings for :terminal buffers" run=<lua vim/_core/defaults#nosrc>
+nvim.terminal TermRequest pattern="*" buffer=-  once=false desc="Handles OSC foreground/background color requests" run=<lua vim/_core/defaults#nosrc>
+nvim.terminal TermRequest pattern="*" buffer=-  once=false desc="Mark shell prompts indicated by OSC 133 sequences for navigation" run=<lua vim/_core/defaults#nosrc>
+obelus BufEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#51077263cd31>
+obelus BufReadPost pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#51077263cd31>
+obelus BufWritePost pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#859306e33f4a>
+obelus ColorScheme pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#d15c86ca8782>
+obelus CursorMoved pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#d8df28102929>
+obelus DirChanged pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#cd7f8981fc4c>
+obelus WinEnter pattern="*" buffer=-  once=false desc=nil run=<lua <REPO>/lua/obelus/init.lua#d8df28102929>
+## notifications
