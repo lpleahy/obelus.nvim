@@ -888,6 +888,62 @@ Every command is one line; `()` marks a cross-reference for more detail.
     Toggle thread display style (popup <-> inline band).
 :ObelusPanel                                                  *:ObelusPanel*
     Toggle the review threads sidebar.
+:ObelusMargin [on|off]                                        *:ObelusMargin*
+    Opt-in margin preview: source on the left, scroll-aligned thread cards and
+    connectors on the right. No argument toggles; on opens/focuses, off closes.
+    Requires a named normal buffer and at least 64 source-window columns.
+    Each card is a rounded box: the title (check mark, #id, line, status) sits
+    in its top border, the thread rows inside, the scroll hint (`a-b/n J/K`)
+    in its bottom border. The accent colour marks the active card's border,
+    title and connector, and tints its visible source range
+    (ObelusMarginActive / ObelusMarginSource, both overridable; the accent is
+    the @mention colour of the thread palette, `render.colors.mention`,
+    DiagnosticWarn by default).
+    Closed-fold text keeps its normal highlighting. While a margin is open for
+    a window, the hover preview float is not shown there; returning to that
+    source also hides any hover left by another window. Other sources keep
+    their hover previews; this source's hover returns on the next cursor move
+    after the margin closes. Cursor/click selects (not passive hover). A
+    comment created on the cursor line becomes the selected card. A selected
+    card that is resolved stays listed (shown as resolved) while resolved
+    cards are hidden, until another card is selected.
+    In the pane: [c / ]c previous/next, gd source, Enter / r reply, D send
+    selected, Space check (waits when Space is the leader), s batch checked
+    IDs (else selected), x resolve, o reopen, dd delete, C cancel, Tab expand,
+    J / K scroll the card, q close, ? more keys. Single keys follow
+    `keys.list` (|obelus-config-keys|) where a name exists for the verb.
+    For margin help from the source, Ctrl-w l then ?; source ? stays search.
+    Pane-local aliases: <leader>od send, <leader>os batch, <leader>or reply,
+    <leader>ox delete, <leader>oR resolve/reopen, <leader>oC cancel,
+    <leader>oh show/hide resolved, <leader>oo open the full thread (q returns
+    to the source), <leader>oJ / <leader>oK scroll the card.
+    Reply (Enter / r) opens a three-line composer inside the card, below its
+    last thread row; the source scrolls to the card's range first. It opens
+    in insert mode, where Enter inserts a newline. Enter in normal mode sends
+    (Esc then Enter). <M-CR> sends with the fast model; <C-s> saves without
+    sending; both work in insert and normal mode. <Esc> (from normal mode)
+    closes and keeps the text as the thread's draft.
+    Closing this inline reply returns to normal mode, including when saving
+    or closing from Insert, Replace or Virtual Replace (also via Ctrl-o).
+    Saving a non-empty draft either way also marks the thread `open` again. A
+    saved draft shows as the trailing `you ... · draft` row and is prefilled
+    the next time the composer opens on that card; to delete a draft open the
+    composer, clear the text, leave insert mode and press <Esc> (or q). A
+    fresh, never-sent comment keeps its own text: a reply typed on it becomes
+    a second turn. The composer follows its card when the pane repaints; when
+    the card leaves the pane (scrolled away, hidden or resolved), the composer
+    closes with a notice and keeps the draft (status unchanged). Closing the
+    margin also keeps the draft, without a notice. Deleting the card discards
+    its unsent text with the comment; a reload that drops the comment warns
+    that the reply was discarded. While the agent is replying on a card,
+    reply is refused for it; reply is also refused when the pane is too short
+    to hold the composer below the card.
+    Hidden cards lose their checks. Source edits block margin sends and reply
+    entry for that buffer's lifetime, even after save or off/on. Private marks
+    track display only; saved ranges and selected text are not repaired.
+    Existing obelus commands are unchanged. Uses configured transports; the
+    isolated preview launcher alone uses fake transport. Loading this command
+    does not enable the preview by default.
 :ObelusProject                                              *:ObelusProject*
     Open the project thread, creating it if needed (|obelus-project-thread|).
 :ObelusTagThread                                          *:ObelusTagThread*
@@ -1346,6 +1402,12 @@ list({backend?})                                              *obelus.list()*
     Open the review list ("buffer" | "quickfix" | "split").
 panel()                                                      *obelus.panel()*
     Toggle the review threads sidebar/popup.
+margin({on?})                                               *obelus.margin()*
+    Open (`true`), close (`false`), or toggle (`nil`) the opt-in margin preview
+    for the current source/pane window: boxed thread cards, an inline reply
+    composer inside the active card, pane-local <leader>o aliases. Closing
+    keeps an open reply as the thread's draft. See |:ObelusMargin| for keys
+    and preview limitations. Loads the margin module only when called.
 project()                                                  *obelus.project()*
     Get-or-create the project thread and open it in the current engagement
     modality (|obelus-project-thread|).

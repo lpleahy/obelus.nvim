@@ -18,6 +18,7 @@
 :ObelusList	obelus.txt	/*:ObelusList*
 :ObelusLoad	obelus.txt	/*:ObelusLoad*
 :ObelusLogs	obelus.txt	/*:ObelusLogs*
+:ObelusMargin	obelus.txt	/*:ObelusMargin*
 :ObelusMode	obelus.txt	/*:ObelusMode*
 :ObelusPanel	obelus.txt	/*:ObelusPanel*
 :ObelusPerms	obelus.txt	/*:ObelusPerms*
@@ -110,6 +111,7 @@ obelus.delete()	obelus.txt	/*obelus.delete()*
 obelus.dispatch()	obelus.txt	/*obelus.dispatch()*
 obelus.edit()	obelus.txt	/*obelus.edit()*
 obelus.list()	obelus.txt	/*obelus.list()*
+obelus.margin()	obelus.txt	/*obelus.margin()*
 obelus.open_chat()	obelus.txt	/*obelus.open_chat()*
 obelus.panel()	obelus.txt	/*obelus.panel()*
 obelus.project()	obelus.txt	/*obelus.project()*
