@@ -891,7 +891,8 @@ Every command is one line; `()` marks a cross-reference for more detail.
 :ObelusMargin [on|off]                                        *:ObelusMargin*
     Opt-in margin preview: source on the left, scroll-aligned thread cards and
     connectors on the right. No argument toggles; on opens/focuses, off closes.
-    Requires a named normal buffer and at least 64 source-window columns.
+    Requires a named normal buffer (or a named buffer a registered backend
+    owns, see |obelus-api-extension|) and at least 64 source-window columns.
     Each card is a rounded box: the title (check mark, #id, line, status) sits
     in its top border, the thread rows inside, the scroll hint (`a-b/n J/K`)
     in its bottom border. The accent colour marks the active card's border,
