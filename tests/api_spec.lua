@@ -2619,3 +2619,74 @@ T.it("turn events: a url is bounded, and a huge field is cut on a character with
     s.emit({ type = "done", text = "ok" })
   end)
 end)
+
+-- ── the margin view (:ObelusMargin) on a backend's buffer ──────────────────────
+
+local MARGIN_REFUSED = "obelus margin: open a named file in a normal window first"
+
+-- open the margin on the current window; returns its session (or nil) and the
+-- notifications it raised. Always closes it again.
+local function try_margin()
+  local margin = require("obelus.margin")
+  local msgs, restore = capture_notify()
+  local ok, err = pcall(margin.open)
+  restore()
+  local s = margin._state()
+  if s then
+    margin.close(s.source)
+  end
+  if not ok then
+    error(err, 0)
+  end
+  return s, msgs
+end
+
+T.it("margin: opens on a nofile buffer a registered backend owns", function()
+  with_backend(SEED, function(ctx)
+    T.eq(vim.bo[ctx.buf].buftype, "nofile")
+    T.eq(api.backend_for(ctx.buf), "memo")
+    local s, msgs = try_margin()
+    T.ok(s, "margin did not open")
+    T.eq(s.buf, ctx.buf)
+    T.eq(#msgs, 0)
+  end)
+end)
+
+T.it("margin: an unmatched nofile buffer is still refused with the same message", function()
+  with_backend(SEED, function()
+    local buf = memo_buffer("other://guide/1")
+    T.eq(vim.bo[buf].buftype, "nofile")
+    T.is_nil(api.backend_for(buf))
+    local s, msgs = try_margin()
+    T.is_nil(s)
+    T.eq(#msgs, 1)
+    T.eq(msgs[1].msg, MARGIN_REFUSED)
+    T.eq(msgs[1].level, vim.log.levels.WARN)
+    vim.cmd("enew")
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  end)
+end)
+
+T.it("margin: with no backend registered a nofile buffer is refused, a file opens", function()
+  T.fresh()
+  clear_backends()
+  local buf = memo_buffer()
+  local s, msgs = try_margin()
+  T.is_nil(s)
+  T.eq(#msgs, 1)
+  T.eq(msgs[1].msg, MARGIN_REFUSED)
+  vim.cmd("enew")
+  pcall(vim.api.nvim_buf_delete, buf, { force = true })
+
+  local path = vim.fn.tempname() .. ".lua"
+  vim.fn.writefile({ "local x = 1", "return x" }, path)
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+  local fbuf = vim.api.nvim_get_current_buf()
+  T.eq(vim.bo[fbuf].buftype, "")
+  s, msgs = try_margin()
+  T.ok(s, "margin did not open on a normal file")
+  T.eq(#msgs, 0)
+  vim.cmd("enew")
+  pcall(vim.api.nvim_buf_delete, fbuf, { force = true })
+  vim.fn.delete(path)
+end)

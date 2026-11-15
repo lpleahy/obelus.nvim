@@ -1335,7 +1335,8 @@ function M.open()
   end
   local source, buf = api.nvim_get_current_win(), api.nvim_get_current_buf()
   local file = require("obelus.nav").abspath(api.nvim_buf_get_name(buf))
-  if not file or vim.bo[buf].buftype ~= "" or api.nvim_win_get_config(source).relative ~= "" then
+  local owned = package.loaded["obelus.api"] ~= nil and require("obelus.api").backend_for(buf) ~= nil
+  if not file or (vim.bo[buf].buftype ~= "" and not owned) or api.nvim_win_get_config(source).relative ~= "" then
     return vim.notify("obelus margin: open a named file in a normal window first", vim.log.levels.WARN)
   end
   if api.nvim_win_get_width(source) < 64 then

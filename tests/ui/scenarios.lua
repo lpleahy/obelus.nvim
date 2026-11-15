@@ -713,6 +713,17 @@ scenario("api_events_margin_waiting", events_margin(events_waiting))
 scenario("api_events_margin_answered", events_margin(events_answered))
 scenario("api_events_margin_failed", events_margin(events_failed))
 
+-- the margin opened on the backend's own nofile buffer (not a file buffer): the
+-- backend owns it, so the margin accepts it
+scenario("api_margin_backend_nofile", function()
+  local ctx = fresh()
+  memo_guide(ctx, { MEMO_THREAD })
+  assert(vim.bo.buftype == "nofile", "the memo guide is not a nofile buffer")
+  cursor(4)
+  open_margin()
+  C.settle()
+end)
+
 -- the inline band on the backend's buffer, with the reply answered
 scenario("api_events_band_answered", function()
   local ctx = fresh({ render = { bands = { style = "inline" } } })
